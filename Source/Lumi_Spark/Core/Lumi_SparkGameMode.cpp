@@ -1,15 +1,14 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Lumi_SparkGameMode.h"
-#include "Lumi_SparkCharacter.h"
-#include "UObject/ConstructorHelpers.h"
+#include "LSPlayerController.h"
+#include "LSCharacterBase.h"
 
 ALumi_SparkGameMode::ALumi_SparkGameMode()
 {
-	// set default pawn class to our Blueprinted character
-	static ConstructorHelpers::FClassFinder<APawn> PlayerPawnBPClass(TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"));
-	if (PlayerPawnBPClass.Class != NULL)
-	{
-		DefaultPawnClass = PlayerPawnBPClass.Class;
-	}
+	//指定默认玩家控制器
+	PlayerControllerClass = ALSPlayerController::StaticClass();
+	
+	//指定默认生成的Pawn角色基类
+	DefaultPawnClass = ALSCharacterBase::StaticClass();
 }
