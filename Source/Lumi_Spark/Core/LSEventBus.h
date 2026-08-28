@@ -1,10 +1,10 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "LSEventBus.generated.h"
-#include "LSTypes.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "GameplayTagContainer.h"
+#include "LSTypes.h"
+#include "LSEventBus.generated.h"
 
 //1，战斗与伤害事件委托
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLSDamageDealt, const FLSDamageContext&, DamageContext);

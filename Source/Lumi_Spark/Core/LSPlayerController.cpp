@@ -176,6 +176,18 @@ void ALSPlayerController::HandleCrouchStarted()
 	}
 }
 
+void ALSPlayerController::HandleCrouchCompleted()
+{
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
+		{
+			if (MoveComp->IsSliding()) MoveComp->StopSlide();
+		}
+		Char->UnCrouch();
+	}
+}
+
 void ALSPlayerController::HandleToggleView()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
@@ -201,6 +213,16 @@ void ALSPlayerController::HandleADSStarted()
 	{
 		if (ULSCameraComponent* Cam = Char->GetCameraComponent()) Cam->EnterADS();
 		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent()) MoveComp->SetAiming(true);
+	}
+}
+
+void ALSPlayerController::HandleADSCompleted()
+{
+	bIsAiming = false;
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSCameraComponent* Cam = Char->GetCameraComponent()) Cam->ExitADS();
+		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent()) MoveComp->SetAiming(false);
 	}
 }
 

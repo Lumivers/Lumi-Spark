@@ -81,6 +81,12 @@ void ULSCameraComponent::ToggleCameraMode()
 	}
 }
 
+void ULSCameraComponent::EnterADS()
+{
+	bIsInADS = true;
+	SetCameraMode(ELSCameraMode::OverShoulder);
+}
+
 void ULSCameraComponent::ExitADS()
 {
 	bIsInADS = false;

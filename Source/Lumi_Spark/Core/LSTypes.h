@@ -14,6 +14,7 @@ enum class ELSWeaponSlot : uint8
 };
 
 //元素附着量级
+UENUM(Blueprintable)
 enum class ELSElementGauge : uint8
 {
 	None = 0,
@@ -127,10 +128,10 @@ namespace LSTags
 	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Entity_Moondrift);  // 月笼
 	
 	//伤害类型
-	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_Bullet,    "Damage.Type.Bullet");//子弹伤害
-	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_Explosion, "Damage.Type.Explosion");//投掷物爆炸伤害
-	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_Skill,     "Damage.Type.Skill");//技能伤害
-	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_Burst,     "Damage.Type.Burst");//元素爆发伤害
-	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_Reaction,  "Damage.Type.Reaction");//元素反应伤害
-	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_DoT,       "Damage.Type.DoT");//持续伤害
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_Bullet);//子弹伤害
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_Explosion);//投掷物爆炸伤害
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_Skill);//技能伤害
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_Burst);//元素爆发伤害
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_Reaction);//元素反应伤害
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Damage_Type_DoT);//持续伤害
 }
