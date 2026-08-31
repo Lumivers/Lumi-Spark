@@ -6,8 +6,8 @@
 #include "Camera/CameraComponent.h"
 #include "LSCameraComponent.generated.h"
 
+class USpringArmComponent;
 /** 视角模式枚举 */
-
 UENUM(BlueprintType)
 enum class ELSCameraMode : uint8
 {
@@ -64,6 +64,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Camera")
 	void ExitADS();//退出开镜
 	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Camera")
+	TObjectPtr<USpringArmComponent> SpringArm; // 弹簧臂组件，用于第三人称和过肩瞄准模式
+	
 protected:
 	virtual void BeginPlay() override;
 	
@@ -71,8 +74,9 @@ public:
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	
 private:
-	FVector TargetOffset;
-	float TargetFov;
+	ELSCameraMode PreADSMode = ELSCameraMode::FirstPerson;
+	float TargetArmLength = 0.0f;
+	FVector TargetSocketOffset = FVector::ZeroVector;
 	bool bIsInADS = false;
 	
 	// 逐帧更新摄像机平滑插值与防穿墙检测

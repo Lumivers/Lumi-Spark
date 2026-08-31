@@ -1,80 +1,82 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "LSCameraComponent.h"
 #include "GameFramework/Character.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Engine/World.h"
+#include "GameFramework/SpringArmComponent.h"
 
 ULSCameraComponent::ULSCameraComponent()
 {
-	//开启Tick支持逐帧平滑插值
 	PrimaryComponentTick.bCanEverTick = true;
-	
-	//默认启用Pawn控制旋转
-	bUsePawnControlRotation = true;
-	
-	//初始化目标值
-	TargetOffset = FPSOffset;
-	TargetFov = FPSFov;
-	FieldOfView	= FPSFov;
-	SetRelativeLocation(FPSOffset);
+	bUsePawnControlRotation = false; // 摄像机自身不旋转，由弹簧臂带动
 }
 
 void ULSCameraComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
 	PrimaryComponentTick.SetTickFunctionEnable(true);
-	//游戏开始的时候应用初始模式与模型显隐
+
+	// 【自愈防空指针】：如果蓝图缓存导致 SpringArm 为空，主动在 Owner 身上抓取！
+	if (!SpringArm && GetOwner())
+	{
+		SpringArm = GetOwner()->FindComponentByClass<USpringArmComponent>();
+	}
+
+	if (SpringArm)
+	{
+		AttachToComponent(SpringArm, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	}
+
 	SetCameraMode(CurrentMode);
 }
 
 void ULSCameraComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	
-	//逐帧更新位置与FOV平滑过渡
+
 	UpdateCameraInterpolation(DeltaTime);
 }
 
 void ULSCameraComponent::SetCameraMode(ELSCameraMode NewMode)
 {
 	CurrentMode = NewMode;
-	
-	switch (CurrentMode)
+
+	if (!SpringArm && GetOwner())
 	{
-		case ELSCameraMode::FirstPerson:
-			TargetOffset = FPSOffset;
-			TargetFov = FPSFov;
-			break;
-		
-		case ELSCameraMode::ThirdPerson:
-			//第三人称：摄像机在角色后方TPSArmLength距离处，高度与眼部持平
-			TargetOffset = FVector(-TPSArmLength, 0.f, FPSOffset.Z); // 第三人称相机位置由弹簧臂控制
-			TargetFov = TPSFov;
-			break;
-		
-		case ELSCameraMode::OverShoulder:
-			TargetOffset = ShoulderOffset;
-			TargetFov = ShoulderFov;
-			break;
-		
-		default:
-			break;
+		SpringArm = GetOwner()->FindComponentByClass<USpringArmComponent>();
 	}
-	
-	SetRelativeLocation(TargetOffset);
-	SetFieldOfView(TargetFov);
-	
+
+	if (SpringArm)
+	{
+		if (CurrentMode == ELSCameraMode::FirstPerson)
+		{
+			// 第一人称：臂长 0，无偏移，关碰撞
+			TargetArmLength = 0.0f;
+			TargetSocketOffset = FVector::ZeroVector;
+			SpringArm->bDoCollisionTest = false;
+		}
+		else if (CurrentMode == ELSCameraMode::ThirdPerson)
+		{
+			// 第三人称：臂长 300，右肩偏 (0, 50, 15)，开物理防穿墙！
+			TargetArmLength = 300.0f;
+			TargetSocketOffset = FVector(0.0f, 50.0f, 15.0f);
+			SpringArm->bDoCollisionTest = true;
+		}
+		else if (CurrentMode == ELSCameraMode::OverShoulder)
+		{
+			// 过肩瞄准：臂长 120，右肩偏 (0, 60, 10)
+			TargetArmLength = 120.0f;
+			TargetSocketOffset = FVector(0.0f, 60.0f, 10.0f);
+			SpringArm->bDoCollisionTest = true;
+		}
+	}
+
 	UpdateMeshVisibility();
 }
 
 void ULSCameraComponent::ToggleCameraMode()
 {
-	//在第三人称和第一人称之间切换
 	if (bIsInADS) return;
-	
+
 	if (CurrentMode == ELSCameraMode::FirstPerson)
 	{
 		SetCameraMode(ELSCameraMode::ThirdPerson);
@@ -87,62 +89,50 @@ void ULSCameraComponent::ToggleCameraMode()
 
 void ULSCameraComponent::EnterADS()
 {
+	if (bIsInADS) return;
 	bIsInADS = true;
+	PreADSMode = CurrentMode;
 	SetCameraMode(ELSCameraMode::OverShoulder);
 }
 
 void ULSCameraComponent::ExitADS()
 {
+	if (!bIsInADS) return;
 	bIsInADS = false;
-	SetCameraMode(ELSCameraMode::FirstPerson);
+	SetCameraMode(PreADSMode);
 }
 
 void ULSCameraComponent::UpdateCameraInterpolation(float DeltaTime)
 {
-	//1. 平滑插值位置
-	const FVector NewLocation = FMath::VInterpTo(GetRelativeLocation(), TargetOffset, DeltaTime, TransitionSpeed);
-	SetRelativeLocation(NewLocation);
-	
-	//2. 视场角FOV平滑插值
-	const float NewFov = FMath::FInterpTo(FieldOfView, TargetFov, DeltaTime, TransitionSpeed);
-	SetFieldOfView(NewFov);
-	
-	/*
-	//第三人称防穿墙检测(SweepSphere检测碰撞)
-	if (CurrentMode == ELSCameraMode::ThirdPerson && GetOwner())
+	if (SpringArm)
 	{
-		FHitResult HitResult;
-		const FVector Start = GetOwner()->GetActorLocation() + FVector(0.f, 0.f, FPSOffset.Z); //角色眼部高度
-		const FVector End = GetComponentLocation();
-		
-		FCollisionQueryParams QueryParams;
-		QueryParams.AddIgnoredActor(GetOwner());
-		
-		if (GetWorld()->SweepSingleByChannel(HitResult, Start, End, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(10.f), QueryParams))
-		{
-			//如果检测到碰撞，将摄像机位置调整到碰撞点前方
-			SetWorldLocation(HitResult.Location + HitResult.ImpactNormal * 5.f);
-		}
+		// 1. 平滑伸缩弹簧臂（第一人称 0 <-> 第三人称 300）
+		SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, TargetArmLength, DeltaTime, TransitionSpeed);
+
+		// 2. 平滑过渡右肩偏移
+		SpringArm->SocketOffset = FMath::VInterpTo(SpringArm->SocketOffset, TargetSocketOffset, DeltaTime, TransitionSpeed);
 	}
-	*/
+
+	// 摄像机始终固定在弹簧臂末端
+	SetRelativeLocation(FVector::ZeroVector);
 }
 
 void ULSCameraComponent::UpdateMeshVisibility()
 {
 	ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
 	if (!OwnerCharacter || !OwnerCharacter->GetMesh()) return;
-	
+
 	USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh();
-	
+
 	if (CurrentMode == ELSCameraMode::FirstPerson)
 	{
-		//第一人称：隐藏全身Mesh，显示第一人称手臂Mesh
+		// 第一人称：隐藏全身，投射地面阴影
 		Mesh->SetOwnerNoSee(true);
-		Mesh->bCastHiddenShadow = true; //隐藏时仍投射阴影
+		Mesh->bCastHiddenShadow = true;
 	}
 	else
 	{
-		//第三人称或过肩：显示全身Mesh，隐藏第一人称手臂Mesh
+		// 第三人称：显示全身
 		Mesh->SetOwnerNoSee(false);
 	}
 }

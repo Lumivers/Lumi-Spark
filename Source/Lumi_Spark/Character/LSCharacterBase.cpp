@@ -7,6 +7,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
+#include "GameFramework/SpringArmComponent.h"
 
 // 构造函数：用自定义的ULSMovementComponent 替换默认的CharacterMovementComponent
 ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -14,10 +15,19 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) 
  	// 开启Tick
 	PrimaryActorTick.bCanEverTick = true;
 	
+	//1,创建弹簧臂并插在角色眼部高度（0.0.65）
+	USpringArmComponent* SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	SpringArm->SetupAttachment(GetCapsuleComponent());
+	SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 65.f)); //角色眼部高度
+	SpringArm->TargetArmLength = 0.f; //默认第一人称，长度0
+	SpringArm->bUsePawnControlRotation = true; //弹簧臂跟随控制器旋转
+	SpringArm->bDoCollisionTest = false; //禁用弹簧臂碰撞检测，避免摄像机被遮挡
+	
 	//1. 创建摄像机组件并附加到根碰撞胶囊体
 	CameraComponent = CreateDefaultSubobject<ULSCameraComponent>(TEXT("LSCameraComponent"));
-	CameraComponent->SetupAttachment(GetCapsuleComponent());
-	CameraComponent->bUsePawnControlRotation = true; //摄像机跟随控制器旋转
+	CameraComponent->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+	CameraComponent->bUsePawnControlRotation = false; //摄像机交由弹簧臂控制旋转
+	CameraComponent->SpringArm = SpringArm; //将弹簧臂引用传递给摄像机组件，以便在切换视角时调整位置和FOV
 	
 	//2. 创建第一人称手臂Mesh组件并附加到摄像机组件
 	FPArmsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FPArmsMesh"));
