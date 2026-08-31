@@ -8,7 +8,6 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "Weapon/LSWeaponBase.h"
 
 // 构造函数：用自定义的ULSMovementComponent 替换默认的CharacterMovementComponent
 ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -59,27 +58,25 @@ void ALSCharacterBase::Tick(float DeltaTime)
 
 void ALSCharacterBase::StartFire()
 {
-	if (CurrentWeapon)
-	{
-		CurrentWeapon->StartFire();
-	}
-}
-
-void ALSCharacterBase::BeginPlay()
-{
-	Super::BeginPlay();
+	FVector EyeLoc;
+	FRotator EyeRot;
+	GetActorEyesViewPoint(EyeLoc, EyeRot); //获取角色眼睛位置和朝向
 	
-	//1，生成默认武器挂在右手插槽
-	if (DefaultWeaponClass)
+	FVector TraceEnd = EyeLoc + (EyeRot.Vector() * 5000.f); //发射终点
+	FHitResult Hit;
+	GetWorld()->LineTraceSingleByChannel(Hit, EyeLoc, TraceEnd, ECC_Visibility); //射线检测
+	
+	//4，绘制调试射线
+	FVector EndPoint = Hit.bBlockingHit ? Hit.ImpactPoint : TraceEnd;
+	DrawDebugLine(GetWorld(), EyeLoc, EndPoint, FColor::Red, false, 1.0f, 0, 2.0f);
+	if (Hit.bBlockingHit)
 	{
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.Owner = this;
-		SpawnParams.Instigator = GetInstigator();
-		
-		CurrentWeapon = GetWorld()->SpawnActor<ALSWeaponBase>(DefaultWeaponClass, SpawnParams);
-		if (CurrentWeapon)
-		{
-			CurrentWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, FName("hand_r")); //挂在右手插槽
-		}
+		DrawDebugSphere(GetWorld(), Hit.ImpactPoint, 10.0f, 12, FColor::Green, false, 1.0f);
 	}
+	
+	//5,开火瞬间需要有后坐力
+	AddControllerPitchInput(-0.8f);
+	AddControllerYawInput(FMath::FRandRange(-0.2f, 0.2f));
+	AddControllerPitchInput(-0.8f);
+	AccumulatedPitchRecoil += 0.8f; //累积俯仰后坐力
 }

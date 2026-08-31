@@ -5,7 +5,7 @@
 ULSRecoilComponent::ULSRecoilComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-	PrimaryComponentTick.bStartWithTickEnabled = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 	
 	//默认提供一组经典突击步枪弹道模式
 	RecoilPattern = {
@@ -19,19 +19,12 @@ ULSRecoilComponent::ULSRecoilComponent()
 	};
 }
 
-void ULSRecoilComponent::BeginPlay()
-{
-	Super::BeginPlay();
-	
-	PrimaryComponentTick.SetTickFunctionEnable(true);
-}
-
 void ULSRecoilComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	
 	//仅在停火且开启回正时执行平滑插值
-	if (bEnableRecovery && !bIsFiring)
+	if (bEnableRecovery & !bIsFiring)
 	{
 		ProcessRecovery(DeltaTime);
 	}

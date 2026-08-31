@@ -63,20 +63,10 @@ void ULSCameraComponent::SetCameraMode(ELSCameraMode NewMode)
 		}
 		else if (CurrentMode == ELSCameraMode::OverShoulder)
 		{
-			if (PreADSMode == ELSCameraMode::FirstPerson)
-			{
-				// 【第一人称开镜】：臂长依然为 0，不偏移，纯拉近 FOV 到 60度！
-				TargetArmLength = 0.0f;
-				TargetSocketOffset = FVector::ZeroVector;
-				SpringArm->bDoCollisionTest = false;
-			}
-			else
-			{
-				// 【第三人称开镜】：拉近到右肩 (0, 60, 10)，臂长 120
-				TargetArmLength = 120.0f;
-				TargetSocketOffset = FVector(0.0f, 60.0f, 10.0f);
-				SpringArm->bDoCollisionTest = true;
-			}
+			// 过肩瞄准：臂长 120，右肩偏 (0, 60, 10)
+			TargetArmLength = 120.0f;
+			TargetSocketOffset = FVector(0.0f, 60.0f, 10.0f);
+			SpringArm->bDoCollisionTest = true;
 		}
 	}
 
@@ -125,17 +115,24 @@ void ULSCameraComponent::UpdateCameraInterpolation(float DeltaTime)
 
 	// 摄像机始终固定在弹簧臂末端
 	SetRelativeLocation(FVector::ZeroVector);
-	const float TargetFov = (CurrentMode == ELSCameraMode::OverShoulder) ? 60.0f : 90.0f;
-	SetFieldOfView(FMath::FInterpTo(FieldOfView, TargetFov, DeltaTime, TransitionSpeed));
 }
 
 void ULSCameraComponent::UpdateMeshVisibility()
 {
 	ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
 	if (!OwnerCharacter || !OwnerCharacter->GetMesh()) return;
+
 	USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh();
-	// 只要是第一人称，或者是在第一人称下开镜，统统隐藏身体！
-	const bool bShouldHideBody = (CurrentMode == ELSCameraMode::FirstPerson) || (CurrentMode == ELSCameraMode::OverShoulder && PreADSMode == ELSCameraMode::FirstPerson);
-	Mesh->SetOwnerNoSee(bShouldHideBody);
-	Mesh->bCastHiddenShadow = bShouldHideBody;
+
+	if (CurrentMode == ELSCameraMode::FirstPerson)
+	{
+		// 第一人称：隐藏全身，投射地面阴影
+		Mesh->SetOwnerNoSee(true);
+		Mesh->bCastHiddenShadow = true;
+	}
+	else
+	{
+		// 第三人称：显示全身
+		Mesh->SetOwnerNoSee(false);
+	}
 }

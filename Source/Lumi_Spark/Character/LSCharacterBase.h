@@ -13,7 +13,6 @@ class USkeletalMeshComponent;
 class UInputMappingContext;
 class UInputAction;
 struct FInputActionValue;
-class ALSWeaponBase;
 
 UCLASS()
 class LUMI_SPARK_API ALSCharacterBase : public ACharacter
@@ -36,14 +35,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULSMovementComponent> LSMovementComponent;
 	
-	//默认佩戴的武器类
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TSubclassOf<ALSWeaponBase> DefaultWeaponClass;
-	
-	//当前持有的武器实例
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
-	TObjectPtr<ALSWeaponBase> CurrentWeapon;
-	
 	//获取摄像机组件
 	FORCEINLINE ULSCameraComponent* GetCameraComponent() const { return CameraComponent; }
 	
@@ -54,7 +45,6 @@ public:
 	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
-	virtual void BeginPlay() override;
 	
 	void StartFire();
 	

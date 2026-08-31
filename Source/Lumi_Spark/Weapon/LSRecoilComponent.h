@@ -37,7 +37,6 @@ public:
 	void ResetRecoil();
 	
 protected:
-	virtual void BeginPlay() override;
 	//后坐力模式配置
 	
 	//预定义弹道序列：每发子弹的（yaw左右偏，pitch上抬量）
