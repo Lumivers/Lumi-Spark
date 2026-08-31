@@ -25,6 +25,7 @@ void ULSCameraComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	
+	PrimaryComponentTick.SetTickFunctionEnable(true);
 	//游戏开始的时候应用初始模式与模型显隐
 	SetCameraMode(CurrentMode);
 }
@@ -62,6 +63,9 @@ void ULSCameraComponent::SetCameraMode(ELSCameraMode NewMode)
 		default:
 			break;
 	}
+	
+	SetRelativeLocation(TargetOffset);
+	SetFieldOfView(TargetFov);
 	
 	UpdateMeshVisibility();
 }
@@ -103,6 +107,7 @@ void ULSCameraComponent::UpdateCameraInterpolation(float DeltaTime)
 	const float NewFov = FMath::FInterpTo(FieldOfView, TargetFov, DeltaTime, TransitionSpeed);
 	SetFieldOfView(NewFov);
 	
+	/*
 	//第三人称防穿墙检测(SweepSphere检测碰撞)
 	if (CurrentMode == ELSCameraMode::ThirdPerson && GetOwner())
 	{
@@ -119,6 +124,7 @@ void ULSCameraComponent::UpdateCameraInterpolation(float DeltaTime)
 			SetWorldLocation(HitResult.Location + HitResult.ImpactNormal * 5.f);
 		}
 	}
+	*/
 }
 
 void ULSCameraComponent::UpdateMeshVisibility()

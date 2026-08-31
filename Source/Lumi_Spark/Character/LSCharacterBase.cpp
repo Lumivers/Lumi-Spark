@@ -6,9 +6,7 @@
 #include "LSMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "EnhancedInputComponent.h"
-#include "EnhancedInputSubsystems.h"
-#include "InputActionValue.h"
+#include "DrawDebugHelpers.h"
 
 // 构造函数：用自定义的ULSMovementComponent 替换默认的CharacterMovementComponent
 ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -34,209 +32,41 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) 
 	GetMesh()->bCastHiddenShadow = true; //隐藏时仍投射阴影
 }
 
-// Called when the game starts or when spawned
-void ALSCharacterBase::BeginPlay()
-{
-	Super::BeginPlay();
-	
-	//注册默认输入映射上下文
-	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
-	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
-		{
-			if (DefaultMappingContext){
-			Subsystem->AddMappingContext(DefaultMappingContext, 0);
-			}
-		}
-	}
-}
-
 // Called every frame
 void ALSCharacterBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-}
-
-// Called to bind functionality to input
-void ALSCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
-{
-	Super::SetupPlayerInputComponent(PlayerInputComponent);
 	
-	//转化为Enhanced Input Component进行绑定
-	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	//处理后坐力恢复：每帧减少累积的俯仰后坐力，直到归零
+	if (AccumulatedPitchRecoil > 0.01f)
 	{
-		//移动
-		if (MoveAction)
-		{
-			EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ALSCharacterBase::Move);
-		}
-		
-		//视角旋转
-		if (LookAction)
-		{
-			EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ALSCharacterBase::Look);
-		}
-		
-		//跳跃
-		if (JumpAction)
-		{
-			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
-			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
-		}
-		
-		//冲刺
-		if (SprintAction)
-		{
-			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Started, this, &ALSCharacterBase::StartSprint);
-			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Completed, this, &ALSCharacterBase::StopSprint);
-		}
-		
-		//闪避
-		if (DashAction)
-		{
-			EnhancedInputComponent->BindAction(DashAction, ETriggerEvent::Started, this, &ALSCharacterBase::HandleDash);
-		}
-		
-		//下蹲/滑铲
-		if (CrouchAction)
-		{
-			EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &ALSCharacterBase::StartCrouchOrSlide);
-			EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Completed, this, &ALSCharacterBase::StopCrouchOrSlide);
-		}
-		
-		//切换视角模式
-		if (ToggleCameraModeAction)
-		{
-			EnhancedInputComponent->BindAction(ToggleCameraModeAction, ETriggerEvent::Started, this, &ALSCharacterBase::HandleToggleCameraMode);
-		}
-		
-		//开镜/过肩瞄准
-		if (ADSAction)
-		{
-			EnhancedInputComponent->BindAction(ADSAction, ETriggerEvent::Started, this, &ALSCharacterBase::StartADS);
-			EnhancedInputComponent->BindAction(ADSAction, ETriggerEvent::Completed, this, &ALSCharacterBase::StopADS);
-			EnhancedInputComponent->BindAction(ADSAction, ETriggerEvent::Canceled, this, &ALSCharacterBase::StopADS);
-		}
+		const float RecoveryStep = AccumulatedPitchRecoil * FMath::Clamp(DeltaTime * 10.0f, 0.0f, 1.0f); //每秒恢复10倍的后坐力
+		AddControllerPitchInput(RecoveryStep);
+		AccumulatedPitchRecoil -= RecoveryStep;
 	}
 }
 
-//移动处理：根据控制器yaw朝向施加前后左右位移
-void ALSCharacterBase::Move(const FInputActionValue& Value)
+void ALSCharacterBase::StartFire()
 {
-	const FVector2D MovementVector = Value.Get<FVector2D>();
+	FVector EyeLoc;
+	FRotator EyeRot;
+	GetActorEyesViewPoint(EyeLoc, EyeRot); //获取角色眼睛位置和朝向
 	
-	if (Controller != nullptr)
-	{
-		// 获取控制器的旋转
-		const FRotator Rotation = Controller->GetControlRotation();
-		const FRotator YawRotation(0, Rotation.Yaw, 0);
-		
-		// 计算前向和右向向量
-		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-		
-		// 添加移动输入
-		AddMovementInput(ForwardDirection, MovementVector.Y);
-		AddMovementInput(RightDirection, MovementVector.X);
-	}
-}
-
-//视角旋转处理：根据输入值添加控制器的Yaw和Pitch旋转
-void ALSCharacterBase::Look(const FInputActionValue& Value)
-{
-	const FVector2D LookAxisVector = Value.Get<FVector2D>();
+	FVector TraceEnd = EyeLoc + (EyeRot.Vector() * 5000.f); //发射终点
+	FHitResult Hit;
+	GetWorld()->LineTraceSingleByChannel(Hit, EyeLoc, TraceEnd, ECC_Visibility); //射线检测
 	
-	if (Controller != nullptr)
+	//4，绘制调试射线
+	FVector EndPoint = Hit.bBlockingHit ? Hit.ImpactPoint : TraceEnd;
+	DrawDebugLine(GetWorld(), EyeLoc, EndPoint, FColor::Red, false, 1.0f, 0, 2.0f);
+	if (Hit.bBlockingHit)
 	{
-		// 添加视角旋转输入
-		AddControllerYawInput(LookAxisVector.X);
-		AddControllerPitchInput(LookAxisVector.Y);
+		DrawDebugSphere(GetWorld(), Hit.ImpactPoint, 10.0f, 12, FColor::Green, false, 1.0f);
 	}
-}
-
-//切换一三人称视角
-void ALSCharacterBase::HandleToggleCameraMode(const FInputActionValue& Value)
-{
-	if (CameraComponent)
-	{
-		CameraComponent->ToggleCameraMode();
-	}
-}
-
-//开镜瞄准：摄像机拉进+移动组件减速
-void ALSCharacterBase::StartADS(const FInputActionValue& Value)
-{
-	if (CameraComponent)
-	{
-		CameraComponent->EnterADS();
-	}
-	if (LSMovementComponent)
-	{
-		LSMovementComponent->SetAiming(true);
-	}
-}
-
-//停止开镜瞄准：摄像机拉出+移动组件恢复速度
-void ALSCharacterBase::StopADS(const FInputActionValue& Value)
-{
-	if (CameraComponent)
-	{
-		CameraComponent->ExitADS();
-	}
-	if (LSMovementComponent)
-	{
-		LSMovementComponent->SetAiming(false);
-	}
-}
-
-//开始冲刺
-void ALSCharacterBase::StartSprint(const FInputActionValue& Value)
-{
-	if (LSMovementComponent)
-	{
-		LSMovementComponent->StartSprint();
-	}
-}
-
-//停止冲刺
-void ALSCharacterBase::StopSprint(const FInputActionValue& Value)
-{
-	if (LSMovementComponent)
-	{
-		LSMovementComponent->StopSprint();
-	}
-}
-
-//触发闪避与无敌帧
-void ALSCharacterBase::HandleDash(const FInputActionValue& Value)
-{
-	if (LSMovementComponent)
-	{
-		LSMovementComponent->TryDash();
-	}
-}
-
-//下蹲或滑铲：按下时尝试滑铲，若不满足条件则下蹲
-void ALSCharacterBase::StartCrouchOrSlide(const FInputActionValue& Value)
-{
-	if (!LSMovementComponent) return;
-
-	if (LSMovementComponent->IsSprinting())
-	{
-		LSMovementComponent->StartSlide();
-	}
-	else
-	{
-		Crouch();
-	}
-}
-
-//结束滑铲/下蹲：松开时停止滑铲或下蹲
-void ALSCharacterBase::StopCrouchOrSlide(const FInputActionValue& Value)
-{
-	if (LSMovementComponent && LSMovementComponent->IsSliding())
-	{
-		LSMovementComponent->StopSlide();
-	}
-	UnCrouch();
+	
+	//5,开火瞬间需要有后坐力
+	AddControllerPitchInput(-0.8f);
+	AddControllerYawInput(FMath::FRandRange(-0.2f, 0.2f));
+	AddControllerPitchInput(-0.8f);
+	AccumulatedPitchRecoil += 0.8f; //累积俯仰后坐力
 }
