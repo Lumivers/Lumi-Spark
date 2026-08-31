@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
+#include "DrawDebugHelpers.h"
 
 ALSWeaponBase::ALSWeaponBase()
 {
@@ -130,9 +131,12 @@ void ALSWeaponBase::FireOnce()
 			QueryParams
 		);
 		
+		FVector VisualEnd = bHit ? HitResult.ImpactPoint : TraceEnd;
+		DrawDebugLine(GetWorld(), MuzzleLocation, VisualEnd, FColor::Orange, false, 0.5f, 0, 2.0f);
+		
 		if (bHit)
 		{
-			ProcessHit(HitResult);
+			DrawDebugSphere(GetWorld(), HitResult.ImpactPoint, 8.0f, 12, FColor::Red, false, 0.5f);
 		}
 	}
 	

@@ -5,6 +5,7 @@
 #include "LSCharacterBase.h"
 #include "LSCameraComponent.h"
 #include "LSMovementComponent.h"
+#include "Weapon/LSWeaponBase.h"
 
 ALSPlayerController::ALSPlayerController()
 {
@@ -198,12 +199,23 @@ void ALSPlayerController::HandleToggleView()
 
 void ALSPlayerController::HandleFireStarted()
 {
-	// 预留：通知 WeaponComponent 触发开火
+	//按下左键通知开火
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		Char->StartFire();
+	}
 }
 
 void ALSPlayerController::HandleFireCompleted()
 {
-	// 预留：通知 WeaponComponent 停止开火
+	// 松开左键 -> 通知武器停止连射
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (Char->CurrentWeapon)
+		{
+			Char->CurrentWeapon->StopFire();
+		}
+	}
 }
 
 void ALSPlayerController::HandleADSStarted()
