@@ -8,6 +8,7 @@
 UENUM(Blueprintable)
 enum class ELSWeaponSlot : uint8
 {
+	None = 0 UMETA(DisplayName = "无/空手"),
 	MainWeapon UMETA(DisplayName = "主武器 (slot 1)"),
 	SubWeapon UMETA(DisplayName = "副武器 (slot 2)"),
 	Throwable UMETA(DisplayName = "元素投掷物 (slot 3)")

@@ -125,6 +125,10 @@ protected:
 	void HandleSwitchCharacter();
 	void HandleInteract();
 	
+	void HandleSwitchWeapon1();
+	void HandleSwitchWeapon2();
+	void HandleQuickSwitchWeapon();
+
 private:
 	bool bIsAiming = false;
 };

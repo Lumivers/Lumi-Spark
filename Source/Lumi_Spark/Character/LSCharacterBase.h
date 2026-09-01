@@ -12,6 +12,7 @@ class ULSMovementComponent;
 class USkeletalMeshComponent;
 class UInputMappingContext;
 class UInputAction;
+class ULSWeaponComponent;
 struct FInputActionValue;
 
 UCLASS()
@@ -35,6 +36,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULSMovementComponent> LSMovementComponent;
 	
+	//武器组件
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ULSWeaponComponent> WeaponComponent;
+	
 	//获取摄像机组件
 	FORCEINLINE ULSCameraComponent* GetCameraComponent() const { return CameraComponent; }
 	
@@ -46,8 +51,8 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	
-	void StartFire();
-	
+	//获取武器组件
+	FORCEINLINE ULSWeaponComponent* GetWeaponComponent() const { return WeaponComponent; }
+
 private:
-	float AccumulatedPitchRecoil = 0.0f; // 累积的俯仰后坐力值
 };

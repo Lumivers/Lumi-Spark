@@ -78,6 +78,7 @@ private:
 	float TargetArmLength = 0.0f;
 	FVector TargetSocketOffset = FVector::ZeroVector;
 	bool bIsInADS = false;
+	float TargetFov = 90.f;
 	
 	// 逐帧更新摄像机平滑插值与防穿墙检测
 	void UpdateCameraInterpolation(float DeltaTime);

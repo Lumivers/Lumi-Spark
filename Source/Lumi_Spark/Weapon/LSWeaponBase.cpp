@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
+#include "DrawDebugHelpers.h"
 
 ALSWeaponBase::ALSWeaponBase()
 {
@@ -48,7 +49,7 @@ void ALSWeaponBase::StartFire()
 {
 	if (!CanFire())
 	{
-		//弹夹空了自动触发换弹
+		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("❌ CanFire 失败！Ammo=%d, Reloading=%d"), CurrentAmmo, (int32)bIsReloading));
 		if (CurrentAmmo <= 0 && CanReload())
 		{
 			Reload();
@@ -86,6 +87,7 @@ void ALSWeaponBase::StopFire()
 
 void ALSWeaponBase::FireOnce()
 {
+	GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Green, TEXT("🔥 枪械正在发射 Hitscan 射线！"));
 	if (!CanFire())
 	{
 		StopFire();
@@ -122,16 +124,13 @@ void ALSWeaponBase::FireOnce()
 		QueryParams.bReturnPhysicalMaterial = true;
 		
 		// 使用 ECC_Visibility 通道进行命中检测
-		const bool bHit = GetWorld()->LineTraceSingleByChannel(
-			HitResult,
-			MuzzleLocation,
-			TraceEnd,
-			ECC_Visibility,
-			QueryParams
-		);
+		const bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult,MuzzleLocation,TraceEnd,ECC_Visibility,QueryParams);
 		
+		const FVector ImpactPoint = bHit ? HitResult.ImpactPoint : TraceEnd;
+		DrawDebugLine(GetWorld(), MuzzleLocation, ImpactPoint, FColor::Red, false, 0.5f, 0, 1.0f);
 		if (bHit)
 		{
+			DrawDebugSphere(GetWorld(), ImpactPoint, 8.0f, 12, FColor::Green, false, 0.5f);
 			ProcessHit(HitResult);
 		}
 	}

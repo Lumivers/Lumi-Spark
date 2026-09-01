@@ -92,14 +92,28 @@ void ULSCameraComponent::EnterADS()
 	if (bIsInADS) return;
 	bIsInADS = true;
 	PreADSMode = CurrentMode;
-	SetCameraMode(ELSCameraMode::OverShoulder);
+	TargetFov = ShoulderFov;
+	
+	if (CurrentMode == ELSCameraMode::ThirdPerson)
+	{
+		SetCameraMode(ELSCameraMode::OverShoulder);
+	}
 }
 
 void ULSCameraComponent::ExitADS()
 {
 	if (!bIsInADS) return;
 	bIsInADS = false;
-	SetCameraMode(PreADSMode);
+	
+	if (PreADSMode == ELSCameraMode::FirstPerson)
+	{
+		TargetFov = FPSFov;
+	}
+	else if (PreADSMode == ELSCameraMode::ThirdPerson)
+	{
+		TargetFov = TPSFov;
+		SetCameraMode(ELSCameraMode::ThirdPerson);
+	}
 }
 
 void ULSCameraComponent::UpdateCameraInterpolation(float DeltaTime)
@@ -113,6 +127,9 @@ void ULSCameraComponent::UpdateCameraInterpolation(float DeltaTime)
 		SpringArm->SocketOffset = FMath::VInterpTo(SpringArm->SocketOffset, TargetSocketOffset, DeltaTime, TransitionSpeed);
 	}
 
+	// 3. 平滑过渡 FOV
+	FieldOfView = FMath::FInterpTo(FieldOfView, TargetFov, DeltaTime, TransitionSpeed);
+	
 	// 摄像机始终固定在弹簧臂末端
 	SetRelativeLocation(FVector::ZeroVector);
 }

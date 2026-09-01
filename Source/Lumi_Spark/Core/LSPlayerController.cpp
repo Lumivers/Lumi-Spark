@@ -5,6 +5,7 @@
 #include "LSCharacterBase.h"
 #include "LSCameraComponent.h"
 #include "LSMovementComponent.h"
+#include "Weapon/LSWeaponComponent.h"
 
 ALSPlayerController::ALSPlayerController()
 {
@@ -70,6 +71,10 @@ void ALSPlayerController::SetupInputComponent()
 		}
 		if (IA_SwitchCharacter) EnhancedInputComponent->BindAction(IA_SwitchCharacter, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchCharacter);
 		if (IA_Interact) EnhancedInputComponent->BindAction(IA_Interact, ETriggerEvent::Started, this, &ALSPlayerController::HandleInteract);
+		
+		if (IA_SwitchWeapon1) EnhancedInputComponent->BindAction(IA_SwitchWeapon1, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchWeapon1);
+		if (IA_SwitchWeapon2) EnhancedInputComponent->BindAction(IA_SwitchWeapon2, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchWeapon2);
+		if (IA_QuickSwitchWeapon) EnhancedInputComponent->BindAction(IA_QuickSwitchWeapon, ETriggerEvent::Started, this, &ALSPlayerController::HandleQuickSwitchWeapon);
 	}
 }
 
@@ -198,17 +203,27 @@ void ALSPlayerController::HandleToggleView()
 
 void ALSPlayerController::HandleFireStarted()
 {
-	// 预留：通知 WeaponComponent 触发开火
+	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("🎯 [Input] 触发了鼠标左键开火！"));
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent())
+		{
+			WeaponComp->StartFire();
+		}
+	}
 }
 
 void ALSPlayerController::HandleFireCompleted()
 {
-	// 预留：通知 WeaponComponent 停止开火
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent()) WeaponComp->StopFire();
+	}
 }
 
 void ALSPlayerController::HandleADSStarted()
 {
-	bIsAiming = false;
+	bIsAiming = true;
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
 		if (ULSCameraComponent* Cam = Char->GetCameraComponent()) Cam->EnterADS();
@@ -228,7 +243,10 @@ void ALSPlayerController::HandleADSCompleted()
 
 void ALSPlayerController::HandleReload()
 {
-	// 预留：通知 WeaponComponent 执行换弹
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent()) WeaponComp->Reload();
+	}
 }
 
 void ALSPlayerController::HandleSkill()
@@ -259,4 +277,23 @@ void ALSPlayerController::HandleSwitchCharacter()
 void ALSPlayerController::HandleInteract()
 {
 	// 预留：拾取掉落物 / 交互
+}
+
+void ALSPlayerController::HandleSwitchWeapon1()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Cyan, TEXT("🔄 [Input] 按了 1 键切主武器！"));
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+		if (ULSWeaponComponent* Comp = Char->GetWeaponComponent()) Comp->EquipWeapon(ELSWeaponSlot::MainWeapon);
+}
+void ALSPlayerController::HandleSwitchWeapon2()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Cyan, TEXT("🔄 [Input] 按了 2 键切副武器！"));
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+		if (ULSWeaponComponent* Comp = Char->GetWeaponComponent()) Comp->EquipWeapon(ELSWeaponSlot::SubWeapon);
+}
+
+void ALSPlayerController::HandleQuickSwitchWeapon()
+{
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+		if (ULSWeaponComponent* Comp = Char->GetWeaponComponent()) Comp->QuickSwitchWeapon();
 }

@@ -1,4 +1,4 @@
-﻿#include "LSRecoilComponent.h"
+#include "LSRecoilComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 
@@ -24,21 +24,35 @@ void ULSRecoilComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	
 	//仅在停火且开启回正时执行平滑插值
-	if (bEnableRecovery & !bIsFiring)
+	if (bEnableRecovery && !bIsFiring)
 	{
 		ProcessRecovery(DeltaTime);
+	}
+	
+	//回正完毕后关闭Tick节省性能
+	if (!bIsFiring && AccumulatedRecoil.IsNearlyZero(0.01f))
+	{
+		SetComponentTickEnabled(false);
 	}
 }
 
 void ULSRecoilComponent::StartRecoil()
 {
 	bIsFiring = true;
+	//开火期间不需要Tick回正，但提前启用避免StopRecoil时遗漏
+	SetComponentTickEnabled(true);
 }
 
 void ULSRecoilComponent::StopRecoil()
 {
 	bIsFiring = false;
 	CurrentPatternIndex = 0; //重置弹道模式索引
+	
+	//停火后启用Tick，让ProcessRecovery可以平滑回正
+	if (bEnableRecovery && !AccumulatedRecoil.IsNearlyZero(0.01f))
+	{
+		SetComponentTickEnabled(true);
+	}
 }
 
 void ULSRecoilComponent::ResetRecoil()
