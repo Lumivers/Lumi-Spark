@@ -6,6 +6,10 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "DrawDebugHelpers.h"
+#include "Kismet/GameplayStatics.h"
+#include "Particles/ParticleSystemComponent.h"
+#include "Animation/AnimMontage.h"
+#include "Character/LSCharacterBase.h"
 
 ALSWeaponBase::ALSWeaponBase()
 {
@@ -103,6 +107,42 @@ void ALSWeaponBase::FireOnce()
 	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
 	OnWeaponFired.Broadcast();
 	
+	//播放开火枪声
+	if (FireSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(GetWorld(), FireSound, GetActorLocation());
+	}
+	
+	//在枪口插槽生成火光粒子
+	if (MuzzleFlashEmitter && WeaponMesh)
+	{
+		UGameplayStatics::SpawnEmitterAttached(
+			MuzzleFlashEmitter, 
+			WeaponMesh, 
+			MuzzleSocketName, 
+			FVector::ZeroVector, 
+			FRotator::ZeroRotator, 
+			EAttachLocation::SnapToTarget);
+	}
+	
+	//驱动角色与手臂播放开火动作蒙太奇
+	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
+	{
+		if (CharacterFireMontage && OwnerChar->GetMesh())
+		{
+			const float Duration = OwnerChar->PlayAnimMontage(CharacterFireMontage);
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, Duration > 0.0f ? FColor::Green : FColor::Red, 
+				FString::Printf(TEXT("🎬 PlayFireMontage: 播放时长 = %.2f 秒 (如果为0说明骨骼不匹配被引擎拒绝!)"), Duration));
+		}
+		if (FPArmsFireMontage && OwnerChar->GetFPArmsMesh())
+		{
+			if (UAnimInstance* ArmsAnimInst = OwnerChar->GetFPArmsMesh()->GetAnimInstance())
+			{
+				ArmsAnimInst->Montage_Play(FPArmsFireMontage);
+			}
+		}
+	}
+	
 	//2，检测当前是否处于开镜状态（计算ADS散布和后坐力）
 	bool bIsADS = false;
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
@@ -146,6 +186,10 @@ void ALSWeaponBase::FireOnce()
 	if (CurrentAmmo <= 0)
 	{
 		StopFire();
+		if (CanReload())
+		{
+			Reload();
+		}
 	}
 }
 void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
@@ -191,6 +235,29 @@ void ALSWeaponBase::Reload()
 	StopFire();
 	bIsReloading = true;
 	OnReloadStart.Broadcast();
+	
+	//播放换弹音效
+	if (ReloadSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, ReloadSound, GetActorLocation());
+	}
+	
+	//播放换弹动作蒙太奇
+	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
+	{
+		if (CharacterReloadMontage && OwnerChar->GetMesh())
+		{
+			OwnerChar->PlayAnimMontage(CharacterReloadMontage);
+		}
+		if (FPArmsReloadMontage && OwnerChar->GetFPArmsMesh())
+		{
+			if (UAnimInstance* ArmsAnimInst = OwnerChar->GetFPArmsMesh()->GetAnimInstance())
+			{
+				ArmsAnimInst->Montage_Play(FPArmsReloadMontage);
+			}
+		}
+	}
+	
 	GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ALSWeaponBase::FinishReload, ReloadTime, false);
 }
 

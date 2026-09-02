@@ -91,6 +91,38 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Components")
 	TObjectPtr<ULSRecoilComponent> RecoilComponent;
 	
+	//动画
+	
+	//角色全身开火动作蒙太奇
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TObjectPtr<UAnimMontage> CharacterFireMontage;
+	
+	//第一人称手臂开火动作蒙太奇
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TObjectPtr<UAnimMontage> FPArmsFireMontage;
+	
+	//角色全身换弹动作蒙太奇
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TObjectPtr<UAnimMontage> CharacterReloadMontage;
+	
+	//第一人称手臂换弹动作蒙太奇
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TObjectPtr<UAnimMontage> FPArmsReloadMontage;
+	
+	//音效与开火表现
+	
+	//开火音效
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	TObjectPtr<USoundBase> FireSound;
+	
+	//换弹音效
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	TObjectPtr<USoundBase> ReloadSound;
+	
+	//枪口火光粒子
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	TObjectPtr<UParticleSystem> MuzzleFlashEmitter;
+	
 	//武器基础身份
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Identity")
 	FText WeaponDisplayName = FText::FromString(TEXT("基础步枪"));

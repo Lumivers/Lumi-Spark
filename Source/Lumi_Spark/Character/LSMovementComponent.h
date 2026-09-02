@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -90,6 +90,9 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Movement")
 	FORCEINLINE bool IsInvincible() const { return bIsInvincible; }
+	
+	UFUNCTION(BlueprintCallable, Category = "Movement")
+	FORCEINLINE bool IsAiming() const { return bIsAiming; }
 	
 	UFUNCTION(BlueprintCallable, Category = "Movement")
 	FORCEINLINE ELSMovementState GetCurrentMovementState() const { return CurrentMovementState; }

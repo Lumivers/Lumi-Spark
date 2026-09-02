@@ -64,6 +64,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Camera")
 	void ExitADS();//退出开镜
 	
+	UFUNCTION(BlueprintCallable, Category="Camera")
+	FORCEINLINE bool IsADS() const { return bIsInADS; }
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Camera")
 	TObjectPtr<USpringArmComponent> SpringArm; // 弹簧臂组件，用于第三人称和过肩瞄准模式
 	

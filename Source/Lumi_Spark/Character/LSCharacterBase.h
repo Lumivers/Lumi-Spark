@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "LSMovementComponent.h"
 #include "LSCharacterBase.generated.h"
 
 //前向声明
@@ -46,7 +47,8 @@ public:
 	//获取第一人称手臂Mesh
 	FORCEINLINE USkeletalMeshComponent* GetFPArmsMesh() const { return FPArmsMesh; }
 	
-	FORCEINLINE ULSMovementComponent* GetLSMovementComponent() const { return LSMovementComponent; }
+	// ✅ 正确写法：
+	FORCEINLINE ULSMovementComponent* GetLSMovementComponent() const { return Cast<ULSMovementComponent>(GetCharacterMovement()); }
 	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
