@@ -30,6 +30,7 @@ void ULSWeaponComponent::BeginPlay()
 	if (SecondaryWeapon)
 	{
 		AttachWeaponToSocket(SecondaryWeapon, HolsterSocketName);
+		OnWeaponChanged.Broadcast(CurrentWeapon);
 	}
 }
 
@@ -99,6 +100,7 @@ void ULSWeaponComponent::EquipWeapon(ELSWeaponSlot NewSlot)
 	CurrentWeapon = PendingWeapon;
 	CurrentSlot = NewSlot;
 	AttachWeaponToSocket(CurrentWeapon, HandSocketName);
+	OnWeaponChanged.Broadcast(CurrentWeapon);
 }
 
 void ULSWeaponComponent::QuickSwitchWeapon()

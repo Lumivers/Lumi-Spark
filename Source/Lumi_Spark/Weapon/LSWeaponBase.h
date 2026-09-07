@@ -67,6 +67,14 @@ public:
 	FORCEINLINE int32 GetMagazineSize() const { return MagazineSize; }
 	FORCEINLINE int32 GetCurrentReserveAmmo() const { return CurrentReserveAmmo; }
 	FORCEINLINE FGameplayTag GetElementTag() const { return ElementTag; }
+	FORCEINLINE float GetCurrentSpread() const { return CurrentSpread; }
+	FORCEINLINE float GetBaseSpread() const { return BaseSpread; }
+	FORCEINLINE float GetMaxSpread() const { return MaxSpread; }
+	
+	FORCEINLINE float GetSpreadRatio() const 
+	{ 
+		return (MaxSpread > BaseSpread) ? FMath::Clamp((CurrentSpread - BaseSpread) / (MaxSpread - BaseSpread), 0.0f, 1.0f) : 0.0f; 
+	}
 	
 	//委托广播
 	UPROPERTY(BlueprintAssignable, Category = "Weapon|Events")

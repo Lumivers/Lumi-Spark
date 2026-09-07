@@ -7,6 +7,8 @@
 
 class ALSWeaponBase;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLSWeaponChanged, ALSWeaponBase*, NewWeapon);
+
 UCLASS(ClassGroup=(Custom), meta = (BlueprintSpawnableComponent))
 class LUMI_SPARK_API ULSWeaponComponent : public UActorComponent
 {
@@ -33,6 +35,9 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Weapon|Switch")
 	void QuickSwitchWeapon(); //快速切换主副武器
+	
+	UPROPERTY(BlueprintAssignable, Category = "Weapon|Events")
+	FOnLSWeaponChanged OnWeaponChanged;
 	
 	void StartFire();
 	void StopFire();

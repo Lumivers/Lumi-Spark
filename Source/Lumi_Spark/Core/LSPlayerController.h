@@ -25,6 +25,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Context")
 	TObjectPtr<UInputMappingContext> UIModeMappingContext;
 	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+	TSubclassOf<UUserWidget> HUDWidgetClass;
+	
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> HUDWidgetInstance = nullptr;
+	
 	//2，角色核心3c移动与视角
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
 	TObjectPtr<UInputAction> IA_Move;

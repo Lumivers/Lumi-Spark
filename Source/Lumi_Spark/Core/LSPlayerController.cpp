@@ -6,6 +6,7 @@
 #include "LSCameraComponent.h"
 #include "LSMovementComponent.h"
 #include "Weapon/LSWeaponComponent.h"
+#include "Blueprint/UserWidget.h"
 
 ALSPlayerController::ALSPlayerController()
 {
@@ -18,6 +19,15 @@ void ALSPlayerController::BeginPlay()
 	
 	//默认进入纯游戏战斗输入模式
 	SwitchToGameInputMode();
+	
+	if (IsLocalController() && HUDWidgetClass)
+	{
+		HUDWidgetInstance = CreateWidget<UUserWidget>(this, HUDWidgetClass);
+		if (HUDWidgetInstance)
+		{
+			HUDWidgetInstance->AddToViewport();
+		}
+	}
 }
 
 void ALSPlayerController::SetupInputComponent()
