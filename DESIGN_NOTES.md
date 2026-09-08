@@ -91,8 +91,32 @@
 
 ## 4. 后续待推进 C++ 模块路线图
 
-1. **战斗伤害计算与抗性公式 (`LSDamageCalculator`)**：
-   - 纯 C++ 数学库，纳管：基础倍率区、攻击/防御力区（等级减伤）、双暴区、元素增幅区（融化 2.0x/1.5x、蒸发 2.0x/1.5x）、元素精通增伤区、抗性穿透区（40% 超导物理减抗）。
-2. **高等元素论附着与反应引擎 (`LSElementComponent`)**：
+1. **战斗伤害计算与抗性公式 (`LSDamageCalculator`)**：[当前推进]
+   - 纯 C++ 静态数学库，纳管：基础倍率区、攻击/防御力区（等级减伤）、双暴区、元素增幅区（融化 2.0x/1.5x、蒸发 2.0x/1.5x）、元素精通增伤区、抗性穿透区（40% 超导物理减抗）。
+2. **高等元素论附着与反应引擎 (`LSElementComponent`)**：[下一阶段]
    - 元素附着衰减公式（`1U/2U/4U` 真实消耗与剩余衰减计时器）。
    - 16 种元素反应状态机、元素共存规则（水雷共存感电、冰草共存冻结草核）与草种子实体生命周期。
+
+---
+
+## 4. 模块二：战斗伤害计算与护甲抗性公式 (LSDamageCalculator)
+
+### 4.1 架构定位与设计哲学
+- **源码文件**：`Source/Lumi_Spark/Combat/LSDamageCalculator.{h,cpp}`
+- **技术选型**：继承自 `UBlueprintFunctionLibrary` 的纯静态无状态数学引擎（Stateless Pure C++ Formula Engine）。
+- **设计优势**：
+  - 零实例化与常驻内存开销，枪械 (`LSWeaponBase`)、手雷 (`LSGrenadeBase`)、元素反应 (`LSElementComponent`) 均可使用 `ULSDamageCalculator::CalculateDamage(...)` 单行完成全局计算。
+  - 数据与算法解耦：通过 `FLSAttackerStats` 与 `FLSDefenderStats` 承载攻击方与防守方的等级、双暴、精通与抗性，计算完成后自动回填 `FLSDamageContext`。
+
+### 4.2 六大核心乘区数学模型
+$$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \text{CritMultiplier} \times \text{ReactionMultiplier} \times \text{DefFactor} \times \text{ResFactor}$$
+
+| 乘区 | 计算公式 / 逻辑 | 典型数值特性 |
+| :--- | :--- | :--- |
+| **1. 基础与增伤区** | $\text{BaseDamage} \times (1 + \text{DamageBonus})$ | 枪械面板或手雷标称伤害，乘以对应属性伤害加成杯。 |
+| **2. 双暴区 (Crit)** | 命中弱点 (Headshot) 必暴；或随机判定 $\text{Rand} < \text{CritRate}$，暴击伤害为 $(1 + \text{CritDamage})$ | 50% 暴击率 / 100% 暴伤时，平均期望输出倍率为 1.5x。 |
+| **3. 增幅反应区 (Amp)** | 顺向 (水打火/火打冰) 2.0x，反向 (火打水/冰打火) 1.5x；受精通加成 $1 + \frac{2.78 \times \text{EM}}{\text{EM} + 1400}$ | 精通对增幅反应为边际收益递减曲线。 |
+| **4. 防御力区 (Def)** | $\frac{\text{AtkLv} + 100}{(\text{AtkLv} + 100) + (\text{DefLv} + 100) \times (1 - \text{DefShred}) \times (1 - \text{DefIgnore})}$ | 同级对决未减防时标准承伤比为 50%；等级压制会影响承伤。 |
+| **5. 抗性区 (Res)** | 分段函数：<br>• $\text{Res} < 0$: $1 - \frac{\text{Res}}{2}$<br>• $0 \le \text{Res} < 0.75$: $1 - \text{Res}$<br>• $\text{Res} \ge 0.75$: $\frac{1}{1 + 4 \times \text{Res}}$ | 负抗性收益折半（超导 -40% 物理抗性若将抗性打至负值，实际增益平滑过渡）。 |
+| **6. 剧变反应区 (Trans)** | $\text{LevelBaseDamage} \times \text{ReactionCoeff} \times (1 + \frac{16 \times \text{EM}}{\text{EM} + 2000}) \times \text{ResFactor}$ | **完全无视敌方防御力 (Def)**，仅由角色等级基数、剧变倍率与目标元素抗性决定。 |
+
