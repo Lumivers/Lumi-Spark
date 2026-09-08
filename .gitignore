@@ -76,3 +76,4 @@ Plugins/**/Intermediate/*
 DerivedDataCache/*
 
 *.md
+!DESIGN_NOTES.md
