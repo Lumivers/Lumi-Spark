@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Core/LSTypes.h"
+#include "Engine/NetSerialization.h"
 #include "LSWeaponBase.generated.h"
 
 class USkeletalMeshComponent;
@@ -37,6 +38,7 @@ public:
 	ALSWeaponBase();
 	
 	virtual void Tick(float DeltaTime) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
 	//核心交互接口
 	
@@ -182,13 +184,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Ammo", meta = (ClampMin = "1"))
 	int32 MagazineSize = 30;
 	
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Ammo")
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentAmmo, VisibleInstanceOnly, BlueprintReadOnly, Category = "Weapon|Ammo")
 	int32 CurrentAmmo = 90;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Ammo", meta = (ClampMin = "0"))
 	int32 MaxReserveAmmo = 180;
 	
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Ammo")
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentReserveAmmo, VisibleInstanceOnly, BlueprintReadOnly, Category = "Weapon|Ammo")
 	int32 CurrentReserveAmmo = 180;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Ammo", meta = (ClampMin = "0.1"))
@@ -225,6 +227,27 @@ protected:
 	//执行单发HitScan射线射击
 	virtual void FireOnce();
 	
+	// 本地播放开火视听表现（枪声、枪口粒子、蒙太奇、后坐力抖动）
+	void PlayLocalFireEffects(bool bIsADS);
+	
+	// 网络RPC接口
+	
+	//1，服务端权威开火RPC（扣弹药、服务端射线检测、伤害计算）
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_Fire(const FVector_NetQuantize& MuzzleLoc, const FVector_NetQuantize& TraceEnd, bool bIsADS);
+	
+	// 2，远端客户端广播
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_FireEffects();
+	
+	//3，服务端向开火客户端回传打击确认（触发本地 HUD 准星 HitMarker 闪红与音效）
+	UFUNCTION(Client, Reliable)
+	void Client_HitConfirm(bool bIsHeadshot, float FinalDamage);
+	
+	//4，服务端权威换弹RPC（扣除储备弹药、广播换弹动画与音效）
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_Reload();
+	
 	//完成换弹逻辑
 	virtual void FinishReload();
 	
@@ -236,4 +259,10 @@ protected:
 	
 	//获取双段视察矫正后的设计起点与终点
 	bool CalculateTraceEndpoints(FVector& OutMuzzleLoc, FVector& OutTraceEnd, bool bIsADS) const;
+	
+	UFUNCTION()
+	void OnRep_CurrentAmmo();
+	
+	UFUNCTION()
+	void OnRep_CurrentReserveAmmo();
 };

@@ -29,9 +29,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Socket")
 	FName HolsterSocketName = FName("WeaponHolsterSocket");
 	
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	
 	//1，指定槽位切枪
 	UFUNCTION(BlueprintCallable, Category = "Weapon|Switch")
 	void EquipWeapon(ELSWeaponSlot NewSlot);
+	
+	// 服务端权威切枪RPC
+	UFUNCTION(Server, Reliable)
+	void Server_EquipWeapon(ELSWeaponSlot NewSlot);
 	
 	UFUNCTION(BlueprintCallable, Category = "Weapon|Switch")
 	void QuickSwitchWeapon(); //快速切换主副武器
@@ -52,16 +58,20 @@ public:
 	
 protected:
 	//运行时实例化的主副武器Actor指针
-	UPROPERTY(Transient)
+	UPROPERTY(Replicated)
 	TObjectPtr<ALSWeaponBase> PrimaryWeapon = nullptr;
 	
-	UPROPERTY(Transient)
+	UPROPERTY(Replicated)
 	TObjectPtr<ALSWeaponBase> SecondaryWeapon = nullptr;
 	
-	UPROPERTY(Transient)
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentWeapon)
 	TObjectPtr<ALSWeaponBase> CurrentWeapon = nullptr;
 	
+	UPROPERTY(Replicated)
 	ELSWeaponSlot CurrentSlot = ELSWeaponSlot::MainWeapon;
+	
+	UFUNCTION()
+	void OnRep_CurrentWeapon(ALSWeaponBase* OldWeapon);
 	
 private:
 	ALSWeaponBase* SpawnWeapon(TSubclassOf<ALSWeaponBase> WeaponClass);

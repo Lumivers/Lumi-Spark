@@ -1,15 +1,23 @@
 #include "LSWeaponComponent.h"
 #include "Weapon/LSWeaponBase.h"
 #include "GameFramework/Character.h"
+#include "Net/UnrealNetwork.h"
 
 ULSWeaponComponent::ULSWeaponComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	SetIsReplicatedByDefault(true);
 }
 
 void ULSWeaponComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	// 客户端严禁自行 Spawn 武器，必须由服务端生成并通过引擎复制给客户端
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
 
 	// 1. 生成主副武器
 	if (DefaultPrimaryClass) PrimaryWeapon = SpawnWeapon(DefaultPrimaryClass);
@@ -21,6 +29,7 @@ void ULSWeaponComponent::BeginPlay()
 		CurrentWeapon = PrimaryWeapon;
 		CurrentSlot = ELSWeaponSlot::MainWeapon;
 		AttachWeaponToSocket(CurrentWeapon, HandSocketName);
+		OnWeaponChanged.Broadcast(CurrentWeapon);
 	}
 	else
 	{
@@ -86,6 +95,13 @@ void ULSWeaponComponent::EquipWeapon(ELSWeaponSlot NewSlot)
 	//如果当前槽位就是目标槽位，或者目标槽位无效，直接返回
 	if (NewSlot == CurrentSlot || NewSlot == ELSWeaponSlot::None) return;
 	
+	// 若当前是客户端，向服务端发送 RPC 请求
+	if (GetOwner() && !GetOwner()->HasAuthority())
+	{
+		Server_EquipWeapon(NewSlot);
+		return;
+	}
+	
 	ALSWeaponBase* PendingWeapon = (NewSlot == ELSWeaponSlot::MainWeapon) ? PrimaryWeapon : SecondaryWeapon;
 	if (!PendingWeapon) return;
 	
@@ -100,6 +116,7 @@ void ULSWeaponComponent::EquipWeapon(ELSWeaponSlot NewSlot)
 	CurrentWeapon = PendingWeapon;
 	CurrentSlot = NewSlot;
 	AttachWeaponToSocket(CurrentWeapon, HandSocketName);
+	
 	OnWeaponChanged.Broadcast(CurrentWeapon);
 }
 
@@ -107,4 +124,35 @@ void ULSWeaponComponent::QuickSwitchWeapon()
 {
 	const ELSWeaponSlot TargetSlot = (CurrentSlot == ELSWeaponSlot::MainWeapon) ? ELSWeaponSlot::SubWeapon : ELSWeaponSlot::MainWeapon;
 	EquipWeapon(TargetSlot);
+}
+
+void ULSWeaponComponent::Server_EquipWeapon_Implementation(ELSWeaponSlot NewSlot)
+{
+	EquipWeapon(NewSlot);
+}
+
+// 客户端接收服务端同步：将手上的枪换到手上，旧枪挂回背部
+void ULSWeaponComponent::OnRep_CurrentWeapon(ALSWeaponBase* OldWeapon)
+{
+	if (OldWeapon)
+	{
+		AttachWeaponToSocket(OldWeapon, HolsterSocketName);
+	}
+	if (CurrentWeapon)
+	{
+		AttachWeaponToSocket(CurrentWeapon, HandSocketName);
+	}
+	
+	OnWeaponChanged.Broadcast(CurrentWeapon);
+}
+
+//注册同步属性
+void ULSWeaponComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	
+	DOREPLIFETIME(ULSWeaponComponent, PrimaryWeapon);
+	DOREPLIFETIME(ULSWeaponComponent, SecondaryWeapon);
+	DOREPLIFETIME(ULSWeaponComponent, CurrentWeapon);
+	DOREPLIFETIME(ULSWeaponComponent, CurrentSlot);
 }

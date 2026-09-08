@@ -10,10 +10,13 @@
 #include "Particles/ParticleSystemComponent.h"
 #include "Animation/AnimMontage.h"
 #include "Character/LSCharacterBase.h"
+#include "Net/UnrealNetwork.h"
 
 ALSWeaponBase::ALSWeaponBase()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	bReplicates = true;
+	SetReplicateMovement(true);
 	
 	//1，初始化武器网格体
 	WeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("WeaponMesh"));
@@ -102,38 +105,49 @@ void ALSWeaponBase::FireOnce()
 		return;
 	}
 	
-	//1，扣除弹药并广播
-	CurrentAmmo--;
-	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
-	OnWeaponFired.Broadcast();
+	//1，计算是否开镜与双段射线端点
+	bool bIsADS = false;
+	if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		// 判断角色身上是否有 State.ADS 状态或通过 Tag 查询
+	}
 	
-	//播放开火枪声
+	FVector MuzzleLocation;
+	FVector TraceEnd;
+	if (!CalculateTraceEndpoints(MuzzleLocation, TraceEnd, bIsADS))
+	{
+		return;
+	}
+	
+	// 2，本地先行表现
+	PlayLocalFireEffects(bIsADS);
+	
+	// 3，向服务端发送开火请求（服务端权威处理弹药扣除、射线检测、伤害计算）
+	Server_Fire(MuzzleLocation, TraceEnd, bIsADS);
+}
+
+void ALSWeaponBase::PlayLocalFireEffects(bool bIsADS)
+{
+	// 播放枪声
 	if (FireSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(GetWorld(), FireSound, GetActorLocation());
 	}
 	
-	//在枪口插槽生成火光粒子
+	// 播放枪口火光粒子
 	if (MuzzleFlashEmitter && WeaponMesh)
 	{
-		UGameplayStatics::SpawnEmitterAttached(
-			MuzzleFlashEmitter, 
-			WeaponMesh, 
-			MuzzleSocketName, 
-			FVector::ZeroVector, 
-			FRotator::ZeroRotator, 
-			EAttachLocation::SnapToTarget);
+		UGameplayStatics::SpawnEmitterAttached(MuzzleFlashEmitter, WeaponMesh, MuzzleSocketName, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget);
 	}
 	
-	//驱动角色与手臂播放开火动作蒙太奇
+	// 播放角色全身开火动作蒙太奇
 	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
 	{
 		if (CharacterFireMontage && OwnerChar->GetMesh())
 		{
-			const float Duration = OwnerChar->PlayAnimMontage(CharacterFireMontage);
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, Duration > 0.0f ? FColor::Green : FColor::Red, 
-				FString::Printf(TEXT("🎬 PlayFireMontage: 播放时长 = %.2f 秒 (如果为0说明骨骼不匹配被引擎拒绝!)"), Duration));
+			OwnerChar->PlayAnimMontage(CharacterFireMontage);
 		}
+		
 		if (FPArmsFireMontage && OwnerChar->GetFPArmsMesh())
 		{
 			if (UAnimInstance* ArmsAnimInst = OwnerChar->GetFPArmsMesh()->GetAnimInstance())
@@ -143,55 +157,73 @@ void ALSWeaponBase::FireOnce()
 		}
 	}
 	
-	//2，检测当前是否处于开镜状态（计算ADS散布和后坐力）
-	bool bIsADS = false;
-	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (OwnerPawn)
-	{
-		// 判断角色身上是否有 State.ADS 状态或通过 Tag 查询
-	}
-	
-	// 3. 计算双段 Hitscan 射线端点
-	FVector MuzzleLocation;
-	FVector TraceEnd;
-	if (CalculateTraceEndpoints(MuzzleLocation, TraceEnd, bIsADS))
-	{
-		FHitResult HitResult;
-		FCollisionQueryParams QueryParams;
-		QueryParams.AddIgnoredActor(this);
-		QueryParams.AddIgnoredActor(GetOwner());
-		QueryParams.bTraceComplex = true;
-		QueryParams.bReturnPhysicalMaterial = true;
-		
-		// 使用 ECC_Visibility 通道进行命中检测
-		const bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult,MuzzleLocation,TraceEnd,ECC_Visibility,QueryParams);
-		
-		const FVector ImpactPoint = bHit ? HitResult.ImpactPoint : TraceEnd;
-		DrawDebugLine(GetWorld(), MuzzleLocation, ImpactPoint, FColor::Red, false, 0.5f, 0, 1.0f);
-		if (bHit)
-		{
-			DrawDebugSphere(GetWorld(), ImpactPoint, 8.0f, 12, FColor::Green, false, 0.5f);
-			ProcessHit(HitResult);
-		}
-	}
-	
-	// 4. 触发后坐力与动态散布增长
+	// 后坐力与动态散布增长
 	if (RecoilComponent)
 	{
-		RecoilComponent->ApplyRecoil(bIsADS);
+		RecoilComponent->ApplyRecoil();
 	}
 	CurrentSpread = FMath::Min(CurrentSpread + SpreadIncreasePerShot, MaxSpread);
 	
-	// 若弹药打空，自动停火
-	if (CurrentAmmo <= 0)
+	OnWeaponFired.Broadcast();
+}
+
+// 服务端权威开火处理
+
+bool ALSWeaponBase::Server_Fire_Validate(const FVector_NetQuantize& MuzzleLoc, const FVector_NetQuantize& TraceEnd, bool bIsADS)
+{
+	return true;
+}
+
+void ALSWeaponBase::Server_Fire_Implementation(const FVector_NetQuantize& MuzzleLoc, const FVector_NetQuantize& TraceEnd, bool bIsADS)
+{
+	if (!CanFire()) return;
+	
+	// 1，服务端权威扣除弹药
+	CurrentAmmo--;
+	
+	//2，广播给其他远端观察者播放火光与枪声
+	Multicast_FireEffects();
+	
+	//3，执行服务端射线检测
+	FHitResult HitResult;
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+	QueryParams.AddIgnoredActor(GetOwner());
+	QueryParams.bTraceComplex = true;
+	QueryParams.bReturnPhysicalMaterial = true;
+	
+	const bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, MuzzleLoc, TraceEnd, ECC_Visibility, QueryParams);
+	
+	if (bHit)
 	{
-		StopFire();
-		if (CanReload())
-		{
-			Reload();
-		}
+		// 4，处理命中目标（伤害计算、弱点爆头、元素附着与总线广播）
+		ProcessHit(HitResult);
 	}
 }
+
+// 远端客户端播放开火视听表现
+void ALSWeaponBase::Multicast_FireEffects_Implementation()
+{
+	//如果是本地玩家自己开火，则不重复播放
+	if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		if (OwnerPawn->IsLocallyControlled())
+		{
+			return;
+		}
+	}
+	
+	//其他远端客户端播放枪声与火光
+	if (FireSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(GetWorld(), FireSound, GetActorLocation());
+	}
+	if (MuzzleFlashEmitter && WeaponMesh)
+	{
+		UGameplayStatics::SpawnEmitterAttached(MuzzleFlashEmitter, WeaponMesh, MuzzleSocketName, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget);
+	}
+}
+
 void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
 {
 	AActor* HitActor = Hit.GetActor();
@@ -226,6 +258,23 @@ void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
 	{
 		EventBus->OnDamageDealt.Broadcast(DamageContext);
 	}
+	
+	// 5. 回传给开火客户端，触发本地 HUD 准星 HitMarker 闪红与音效
+	Client_HitConfirm(bIsHeadshot, FinalDamage);
+}
+
+void ALSWeaponBase::Client_HitConfirm_Implementation(bool bIsHeadshot, float FinalDamage)
+{
+	//客户端收到服务端的权威命中确认，在本地广播伤害上下文。
+	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
+	{
+		FLSDamageContext DamageContext;
+		DamageContext.DamageCauser = Cast<AActor>(GetOwner());
+		DamageContext.FinalDamage = FinalDamage;
+		DamageContext.bIsHeadshot = bIsHeadshot;
+		
+		EventBus->OnDamageDealt.Broadcast(DamageContext);
+	}
 }
 
 void ALSWeaponBase::Reload()
@@ -233,8 +282,6 @@ void ALSWeaponBase::Reload()
 	if (!CanReload()) return;
 	// 停止正在进行的射击并重置后坐力
 	StopFire();
-	bIsReloading = true;
-	OnReloadStart.Broadcast();
 	
 	//播放换弹音效
 	if (ReloadSound)
@@ -258,6 +305,23 @@ void ALSWeaponBase::Reload()
 		}
 	}
 	
+	//发送 Server RPC 在服务端倒计时填充弹药
+	Server_Reload();
+}
+
+bool ALSWeaponBase::Server_Reload_Validate()
+{
+	return true;
+}
+
+void ALSWeaponBase::Server_Reload_Implementation()
+{
+	if (!CanReload()) return;
+	
+	bIsReloading = true;
+	OnReloadStart.Broadcast();
+	
+	//服务端倒计时换弹
 	GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ALSWeaponBase::FinishReload, ReloadTime, false);
 }
 
@@ -342,4 +406,23 @@ bool ALSWeaponBase::CalculateTraceEndpoints(FVector& OutMuzzleLoc, FVector& OutT
 	// 5. 第二段：从枪口连接到目标点并延伸
 	OutTraceEnd = OutMuzzleLoc + (TargetPoint - OutMuzzleLoc).GetSafeNormal() * MaxRange;
 	return true;
+}
+
+void ALSWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	
+	DOREPLIFETIME(ALSWeaponBase, CurrentAmmo);
+	DOREPLIFETIME(ALSWeaponBase, CurrentReserveAmmo);
+}
+
+void ALSWeaponBase::OnRep_CurrentAmmo()
+{
+	// 客户端收到服务端权威弹药同步，广播委托刷新本地 UMG
+	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
+}
+
+void ALSWeaponBase::OnRep_CurrentReserveAmmo()
+{
+	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
 }

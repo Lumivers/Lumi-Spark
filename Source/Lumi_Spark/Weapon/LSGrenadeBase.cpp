@@ -13,6 +13,10 @@
 ALSGrenadeBase::ALSGrenadeBase()
 {
     PrimaryActorTick.bCanEverTick = false;// 手雷物理交由 ProjectileMovement 纳管，无须自身 Tick
+	
+	// 开启网络同步与物理弹道同步
+	bReplicates = true;
+	SetReplicateMovement(true);
 
     // 1. 物理碰撞球体（RootComponent）
     CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("SphereComp"));
