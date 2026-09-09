@@ -130,77 +130,80 @@ float ULSElementComponent::ArbitrateReaction(AActor* InstigatorActor, const FGam
 		ReactionTag = LSTags::TAG_Reaction_Melt;
 		ConsumptionRatio = 0.5f; // 逆向冰打火 (2:1)
 	}
-	// ─── 剧变与控制反应 ───
+	// ─── 2. 感电共存特化 (水 + 雷) ───
+	else if ((Incoming == LSTags::TAG_Element_Hydro && TargetAura.ElementTag == LSTags::TAG_Element_Electro) ||
+			 (Incoming == LSTags::TAG_Element_Electro && TargetAura.ElementTag == LSTags::TAG_Element_Hydro))
+	{
+		// 水与雷共存！不直接冲抵底元素，将触发元素也作为底元素保留在池中
+		AttachNewAura(Incoming, IncomingGauge, 0.1053f);
+		
+		ReactionTag = LSTags::TAG_Reaction_ElectroCharged;
+		// 立即触发首次感电电击
+		const float ReactionDamage = ULSDamageCalculator::CalculateTransformativeReactionDamage(ReactionTag, 90, 100.f, 0.1f, 0.0f);
+		if (ULSEventBus* EventBus = ULSEventBus::Get(this))
+		{
+			EventBus->OnElementReactionTriggered.Broadcast(GetOwner(), ReactionTag, ReactionDamage, InstigatorActor);
+		}
+		OnReactionTriggered.Broadcast(ReactionTag, ReactionDamage, InstigatorActor, GetOwner());
+		return 0.0f; // 已将触发元素纳管为共存底，剩余量归零
+	}
+	// ─── 3. 超载 (火 + 雷) ───
 	else if ((Incoming == LSTags::TAG_Element_Pyro && TargetAura.ElementTag == LSTags::TAG_Element_Electro) ||
 			 (Incoming == LSTags::TAG_Element_Electro && TargetAura.ElementTag == LSTags::TAG_Element_Pyro))
 	{
-		ReactionTag = LSTags::TAG_Reaction_Overload; // 超载 (AOE 爆轰)
+		ReactionTag = LSTags::TAG_Reaction_Overload;
 		ConsumptionRatio = 1.0f;
+		TriggerOverloadExplosion(InstigatorActor);
 	}
+	// ─── 4. 超导 (冰 + 雷) ───
 	else if ((Incoming == LSTags::TAG_Element_Cryo && TargetAura.ElementTag == LSTags::TAG_Element_Electro) ||
 			 (Incoming == LSTags::TAG_Element_Electro && TargetAura.ElementTag == LSTags::TAG_Element_Cryo))
 	{
-		ReactionTag = LSTags::TAG_Reaction_Superconduct; // 超导 (-40% 物理抗性)
+		ReactionTag = LSTags::TAG_Reaction_Superconduct;
 		ConsumptionRatio = 1.0f;
 	}
+	// ─── 5. 冻结 (水 + 冰) ───
 	else if ((Incoming == LSTags::TAG_Element_Hydro && TargetAura.ElementTag == LSTags::TAG_Element_Cryo) ||
 			 (Incoming == LSTags::TAG_Element_Cryo && TargetAura.ElementTag == LSTags::TAG_Element_Hydro))
 	{
-		ReactionTag = LSTags::TAG_Reaction_Freeze; // 冻结 (定身)
+		ReactionTag = LSTags::TAG_Reaction_Freeze;
 		ConsumptionRatio = 1.0f;
 	}
-	// ─── 草系生态 (Bloom / Quicken / Burning) ───
-	else if ((Incoming == LSTags::TAG_Element_Hydro && TargetAura.ElementTag == LSTags::TAG_Element_Dendro) ||
-			 (Incoming == LSTags::TAG_Element_Dendro && TargetAura.ElementTag == LSTags::TAG_Element_Hydro))
-	{
-		ReactionTag = LSTags::TAG_Reaction_Bloom; // 绽放 (催生草原核)
-		ConsumptionRatio = (Incoming == LSTags::TAG_Element_Hydro) ? 0.5f : 2.0f;
-	}
-	else if ((Incoming == LSTags::TAG_Element_Electro && TargetAura.ElementTag == LSTags::TAG_Element_Dendro) ||
-			 (Incoming == LSTags::TAG_Element_Dendro && TargetAura.ElementTag == LSTags::TAG_Element_Electro))
-	{
-		ReactionTag = LSTags::TAG_Reaction_Quicken; // 原激化
-		ConsumptionRatio = 1.0f;
-	}
-	else if ((Incoming == LSTags::TAG_Element_Pyro && TargetAura.ElementTag == LSTags::TAG_Element_Dendro) ||
-			 (Incoming == LSTags::TAG_Element_Dendro && TargetAura.ElementTag == LSTags::TAG_Element_Pyro))
-	{
-		ReactionTag = LSTags::TAG_Reaction_Burning; // 燃烧
-		ConsumptionRatio = 1.0f;
-	}
-	// ─── 风与岩特化 (Swirl / Crystallize) ───
+	// ─── 6. 风系扩散 (Anemo) ───
 	else if (Incoming == LSTags::TAG_Element_Anemo)
 	{
-		ReactionTag = LSTags::TAG_Reaction_Swirl; // 扩散
+		ReactionTag = LSTags::TAG_Reaction_Swirl;
 		ConsumptionRatio = 0.5f;
+		// 范围溅射传染当前的底元素
+		TriggerSwirlSpread(InstigatorActor, TargetAura.ElementTag);
 	}
+	// ─── 7. 岩系结晶 (Geo) ───
 	else if (Incoming == LSTags::TAG_Element_Geo)
 	{
-		ReactionTag = LSTags::TAG_Reaction_Crystallize; // 结晶
+		ReactionTag = LSTags::TAG_Reaction_Crystallize;
 		ConsumptionRatio = 0.5f;
 	}
 
 	if (!ReactionTag.IsValid())
 	{
-		return IncomingGauge; // 无有效反应对，原样保留
+		return IncomingGauge;
 	}
 
 	// 扣除底元素
 	const float DepletedAura = IncomingGauge * ConsumptionRatio;
 	TargetAura.CurrentGauge -= DepletedAura;
 
-	// 计算剩余未被消耗的触发元素量
 	const float RemainderIncoming = (TargetAura.CurrentGauge < 0.0f) ? (-TargetAura.CurrentGauge / ConsumptionRatio) : 0.0f;
-
-	// 派发反应广播与计算剧变伤害
+	
+	// 剧变反应伤害广播
 	const float ReactionDamage = ULSDamageCalculator::CalculateTransformativeReactionDamage(ReactionTag, 90, 100.f, 0.1f, 0.0f);
-
+	
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
 	{
 		EventBus->OnElementReactionTriggered.Broadcast(GetOwner(), ReactionTag, ReactionDamage, InstigatorActor);
 	}
 	OnReactionTriggered.Broadcast(ReactionTag, ReactionDamage, InstigatorActor, GetOwner());
-
+	
 	return RemainderIncoming;
 }
 
@@ -222,7 +225,10 @@ void ULSElementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 
-	// 线性自然衰减
+	//1,水雷共存感电周期跳电检查
+	ProcessELectroChargedTick(DeltaTime);
+
+	// 2,线性自然衰减
 	for (int32 i = ActiveAuras.Num() - 1; i >= 0; --i)
 	{
 		ActiveAuras[i].CurrentGauge -= ActiveAuras[i].DecayRate * DeltaTime;
@@ -310,4 +316,94 @@ void ULSElementComponent::OnRep_ActiveAuras()
 void ULSElementComponent::NotifyAuraChanged()
 {
 	OnAuraChanged.Broadcast(GetActiveElementTags());
+}
+
+void ULSElementComponent::ProcessElectroChargedTick(float DeltaTime)
+{
+	const bool bHasHydro = HasElementAura(LSTags::TAG_Element_Hydro);
+	const bool bHasElectro = HasElementAura(LSTags::TAG_Element_Electro);
+
+	if (bHasHydro && bHasElectro)
+	{
+		ElectroChargedTimer += DeltaTime;
+		if (ElectroChargedTimer >= 1.0f)
+		{
+			ElectroChargedTimer = 0.0f;
+
+			// 每秒跳电：造成感电伤害
+			const float ReactionDamage = ULSDamageCalculator::CalculateTransformativeReactionDamage(
+				LSTags::TAG_Reaction_ElectroCharged, 90, 100.f, 0.1f, 0.0f
+			);
+
+			// 水雷双方各扣除 0.4U
+			for (int32 i = ActiveAuras.Num() - 1; i >= 0; --i)
+			{
+				if (ActiveAuras[i].ElementTag == LSTags::TAG_Element_Hydro ||
+					ActiveAuras[i].ElementTag == LSTags::TAG_Element_Electro)
+				{
+					ActiveAuras[i].CurrentGauge -= 0.4f;
+					if (ActiveAuras[i].CurrentGauge <= 0.0f)
+					{
+						ActiveAuras.RemoveAt(i);
+					}
+				}
+			}
+
+			if (ULSEventBus* EventBus = ULSEventBus::Get(this))
+			{
+				EventBus->OnElementReactionTriggered.Broadcast(GetOwner(), LSTags::TAG_Reaction_ElectroCharged, ReactionDamage, nullptr);
+			}
+			OnReactionTriggered.Broadcast(LSTags::TAG_Reaction_ElectroCharged, ReactionDamage, nullptr, GetOwner());
+		}
+	}
+	else
+	{
+		ElectroChargedTimer = 0.0f;
+	}
+}
+
+void ULSElementComponent::TriggerSwirlSpread(AActor* InstigatorActor, const FGameplayTag& AuraToSpread)
+{
+	if (!GetOwner() || !GetWorld()) return;
+
+	const FVector Origin = GetOwner()->GetActorLocation();
+	const float SwirlRadius = 500.0f; // 5米扩散半径
+
+	TArray<FOverlapResult> Overlaps;
+	FCollisionShape Sphere = FCollisionShape::MakeSphere(SwirlRadius);
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(GetOwner());
+
+	const bool bHit = GetWorld()->OverlapMultiByChannel(Overlaps, Origin, FQuat::Identity, ECC_Pawn, Sphere, Params);
+	if (bHit)
+	{
+		for (const FOverlapResult& Overlap : Overlaps)
+		{
+			AActor* NearbyActor = Overlap.GetActor();
+			if (NearbyActor && NearbyActor != GetOwner())
+			{
+				if (ULSElementComponent* NearbyComp = NearbyActor->FindComponentByClass<ULSElementComponent>())
+				{
+					// 向周围敌人附着被扩散的属性 (1U 弱元素)
+					NearbyComp->ApplyElement(InstigatorActor, AuraToSpread, ELSElementGauge::Light);
+				}
+			}
+		}
+	}
+}
+
+void ULSElementComponent::TriggerOverloadExplosion(AActor* InstigatorActor)
+{
+	if (!GetOwner() || !GetWorld()) return;
+
+	const FVector Origin = GetOwner()->GetActorLocation();
+	const float Radius = 400.0f;
+
+	// 对角色施加击退冲量 (LaunchCharacter)
+	if (ACharacter* Char = Cast<ACharacter>(GetOwner()))
+	{
+		FVector KnockbackDir = (Origin - (InstigatorActor ? InstigatorActor->GetActorLocation() : Origin)).GetSafeNormal();
+		KnockbackDir.Z = 0.5f; // 略微向上抛起
+		Char->LaunchCharacter(KnockbackDir * 600.0f, true, true);
+	}
 }

@@ -11,6 +11,8 @@
 #include "Animation/AnimMontage.h"
 #include "Character/LSCharacterBase.h"
 #include "Net/UnrealNetwork.h"
+#include "Element/LSElementComponent.h"
+#include "Combat/LSDamageCalculator.h"
 
 ALSWeaponBase::ALSWeaponBase()
 {
@@ -252,15 +254,44 @@ void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
 	DamageContext.DamageTypeTag = LSTags::TAG_Damage_Type_Bullet;
 	DamageContext.bIsHeadshot = bIsHeadshot;
 	DamageContext.HitResult = Hit;
-	
-	// 4. 通过全局事件总线解耦广播（UI 准星跳字、音效、怪物扣血统一监听此事件）
+
+	//4, 查询受到攻击目标身上是否有元素组件
+	ULSElementComponent* TargetElementComp = HitActor->FindComponentByClass<ULSElementComponent>();
+	FGameplayTag AuraTag = TargetElementComp ? TargetElementComp->GetPrimaryAuraTag() : FGameplayTag();
+
+	//5, 组装攻击者与防御者战斗属性包
+	FLSAttackerStats AttackerStats;
+	AttackerStats.Attack = BaseDamage;
+	AttackerStats.CritRate = 0.05f; // 默认暴击率5%
+	AttackerStats.CritDamage = 0.5f; // 默认暴击伤害+50%
+	AttackerStats.ElementalMastery = 100.0f; //默认元素精通100
+	AttackerStats.Level = 90; //默认攻击者等级90
+
+	FLSDefenderStats DefenderStats;
+	DefenderStats.Level = 90; //默认防御者等级90
+	DefenderStats.Defense = 500.0f;
+	DefenderStats.ElementalResistance = 0.1f; //默认抗性10
+
+	//调用伤害计算器计算最终伤害
+	FLSDamageResult DamageResult = ULSDamageCalculator::CalculateDamage(DamageContext, AttackerStats, DefenderStats, AuraTag);
+
+	//6,服务端权威附加元素附着
+	if (TargetElementComp && ElementTag.IsValid())
+	{
+		TargetElementComp->ApplyElement(GetOwner() ? GetOwner() : this, ElementTag, ElementGauge);
+	}
+
+	//7, 触发引擎标准伤害流程
+	HitActor->TakeDamage(DamageContext.FinalDamage, FDamageEvent(), (GetOwner() ? GetOwner()->GetInstigatorController() : nullptr), this);
+
+	// 8. 通过全局事件总线解耦广播（UI 准星跳字、音效、怪物扣血统一监听此事件）
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
 	{
 		EventBus->OnDamageDealt.Broadcast(DamageContext);
 	}
 	
-	// 5. 回传给开火客户端，触发本地 HUD 准星 HitMarker 闪红与音效
-	Client_HitConfirm(bIsHeadshot, FinalDamage);
+	// 9. 回传给开火客户端，触发本地 HUD 准星 HitMarker 闪红与音效
+	Client_HitConfirm(DamageContext.bIsHeadshot, DamageContext.FinalDamage);
 }
 
 void ALSWeaponBase::Client_HitConfirm_Implementation(bool bIsHeadshot, float FinalDamage)

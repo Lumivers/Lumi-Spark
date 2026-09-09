@@ -1,4 +1,4 @@
-﻿#include "LSTypes.h"
+#include "LSTypes.h"
 
 namespace LSTags
 {

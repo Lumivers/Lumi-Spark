@@ -8,6 +8,9 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "weapon/LSWeaponComponent.h"
+#include "Element/LSElementComponent.h"
+#include "Core/LSEventBus.h"
+#include "Net/UnrealNetwork.h"
 
 // 构造函数：用自定义的ULSMovementComponent 替换默认的CharacterMovementComponent
 ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -42,6 +45,9 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) 
 	GetMesh()->bCastHiddenShadow = true; //隐藏时仍投射阴影
 	
 	WeaponComponent = CreateDefaultSubobject<ULSWeaponComponent>(TEXT("LSWeaponComp"));
+
+	//挂载元素附着中枢
+	ElementComponent = CreateDefaultSubObject<ULSElementComponent>(TEXT("LSElementComp"));
 }
 
 // Called every frame
@@ -50,4 +56,75 @@ void ALSCharacterBase::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	
 	//后坐力恢复现已由 WeaponBase 上的 LSRecoilComponent 自动处理
+}
+
+void ALSCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ALSCharacterBase, CurrentHealth);
+}
+
+void ALSCharacterBase::BeginPlay()
+{
+	Super::BeginPlay();
+	CurrentHealth = MaxHealth;
+}
+
+float ALSCharacterBase::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser)
+{
+	if (!HasAuthority() || CurrentHealth <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	// 1. 无敌帧拦截（移动组件在闪避期间广播的 Invincible 状态）
+	if (ULSMovementComponent* MoveComp = GetLSMovementComponent())
+	{
+		if (MoveComp->IsInvincible())
+		{
+			return 0.0f; // 处于闪避无敌帧，彻底免伤！
+		}
+	}
+
+	// 2. 权威扣除生命值
+	const float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	CurrentHealth = FMath::Clamp(CurrentHealth - ActualDamage, 0.0f, MaxHealth);
+
+	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+
+	// 3. 判定死亡
+	if (CurrentHealth <= 0.0f)
+	{
+		Die(DamageCauser);
+	}
+
+	return ActualDamage;
+}
+
+void ALSCharacterBase::Die(AActor* Killer)
+{
+	// 关闭碰撞，防止死后继续挡子弹
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	
+	// 禁用输入
+	if (AController* PC = GetController())
+	{
+		PC->SetIgnoreMoveInput(true);
+		PC->SetIgnoreLookInput(true);
+	}
+
+	// 通过总线向全关卡广播死亡事件（驱动结算、任务计数）
+	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
+	{
+		EventBus->OnCharacterDied.Broadcast(this);
+		if (Killer)
+		{
+			EventBus->OnEnemyKilled.Broadcast(this, Killer);
+		}
+	}
+}
+
+void ALSCharacterBase::OnRep_CurrentHealth()
+{
+	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
 }

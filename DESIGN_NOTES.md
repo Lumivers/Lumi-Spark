@@ -23,6 +23,9 @@
 19. [多人联机网络架构与权威属性同步（Multiplayer Replication Architecture）](#19-多人联机网络架构与权威属性同步multiplayer-replication-architecture)
 20. [高保真网络射击模型：客户端先行预测与服务端权威命中确认（Networked Hitscan Pipeline）](#20-高保真网络射击模型客户端先行预测与服务端权威命中确认networked-hitscan-pipeline)
 21. [高等元素论附着与 16 种元素反应规则引擎（LSElementComponent）](#21-高等元素论附着与-16-种元素反应规则引擎lselementcomponent)
+22. [全乘区伤害管线接入与武器-元素中枢咬合（Hitscan Damage & Aura Application Pipeline）](#22-全乘区伤害管线接入与武器-元素中枢咬合hitscan-damage--aura-application-pipeline)
+23. [次生反应深度结算：感电水雷共存、风系扩散溅射与冻结定身（Secondary Reaction Mechanics）](#23-次生反应深度结算感电水雷共存风系扩散溅射与冻结定身secondary-reaction-mechanics)
+24. [角色基础承伤中枢与无敌帧生命周期（Character Damage Intake & Invincibility Pipeline）](#24-角色基础承伤中枢与无敌帧生命周期character-damage-intake--invincibility-pipeline)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -573,6 +576,71 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
 ### 21.5 极值性能优化（按需使能 Tick）
 - 身上无任何元素附着时：`SetComponentTickEnabled(false)` 完全关闭 Tick，单局千只怪物同屏零 CPU 消耗；
 - 元素命中附着时：瞬间使能 Tick 执行衰减，全部衰减完毕或反应耗尽后自动关停 Tick。
+
+---
+
+## 22. 全乘区伤害管线接入与武器-元素中枢咬合（Hitscan Damage & Aura Application Pipeline）
+
+### 22.1 为什么要进行深度咬合
+在早期的单机原型中，武器射击往往只是简单的“射线检测到 Actor $\rightarrow$ 扣减固定血量”。这种做法无法承载类似《原神》与现代 3A 射击深度融合的玩法：
+1. **元素乘区失效**：如果武器命中不查询目标的底元素状态，增幅反应（如火打水反向蒸发 1.5x、水打火顺向蒸发 2.0x）就无法作用于子弹的直伤上。
+2. **挂元素与伤害割裂**：高射速冲锋枪与单发重狙若挂元素逻辑独立于射击流程，会导致网络开销倍增且无法精确受到 ICD 节流保护。
+3. **缺少防作弊与权威属性归一化**：攻击者面板（攻击力、暴击、精通）与防御者面板（防御力、抗性）必须在服务端权威计算，杜绝客户端直接上报虚假伤害。
+
+### 22.2 核心设计哲学与数据流
+- **数据流闭环**：
+  $$\text{Hitscan 命中} \rightarrow \text{提取防御者 ElementComponent} \rightarrow \text{提取 AttackerStats \& DefenderStats} \rightarrow \text{LSDamageCalculator 七乘区计算} \rightarrow \text{权威施加元素附着 (ApplyElement)} \rightarrow \text{权威 TakeDamage 扣血} \rightarrow \text{总线广播 OnDamageDealt} \rightarrow \text{Client_HitConfirm}$$
+- **增幅反应实时乘算**：
+  - 子弹在触碰敌人体表的一瞬间，优先读取其 `PrimaryAuraTag`。
+  - 若触发增幅反应（如火打水），直接通过公式提升当前发子弹的直接伤害倍率，并置位 `bIsReactionDamage = true`。
+- **元素附着与 ICD 严格防刷**：
+  - 伤害计算完毕后，立刻调用受击目标的 `ApplyElement(DamageCauser, ElementTag, ElementGauge)`。
+  - 受击者的 `LSElementComponent` 内部依靠统一的 `CheckAndUpdateICD`（2.5 秒 / 3 次命中计数器）自动拦截超频附着，高射速武器（如 900 RPM 冲锋枪）不会导致全屏无限反应。
+
+---
+
+## 23. 次生反应深度结算：感电水雷共存、风系扩散溅射与冻结定身（Secondary Reaction Mechanics）
+
+### 23.1 水雷共存与感电 DoT 跳电机制
+- **原神经典机制复刻**：
+  在绝大多数元素反应中，两种异色元素相遇会瞬间相消。唯独 **水 (Hydro) 与 雷 (Electro)** 是特例！
+- **共存实现**：
+  - 遇到水+雷碰撞时，附着池不会立刻删除底元素，而是将两者同时保留在 `ActiveAuras` 数组中。
+  - `LSElementComponent` 在 `TickComponent` 中启动 `ElectroChargedTimer`。
+  - **周期结算**：每隔 $1.0\text{s}$ 触发一次感电电击，造成剧变反应伤害（无视防御力，受等级与精通加成），同时双方元素量各扣除 $0.4\text{U}$，直到某一方归零退出共存态。
+
+### 23.2 风系扩散 (Swirl) 范围传染模型
+- **机制定位**：群体清杂与大范围挂元素的战术催化剂。
+- **实现方案**：
+  - 当风属性（`TAG_Element_Anemo`）命中带有水/火/雷/冰底元素的目标时，扣除其 $0.5\text{U}$ 底元素。
+  - 服务端在命中点执行 `GetWorld()->OverlapMultiByChannel`（或球形检测，半径 $500\text{cm}$）。
+  - 对周围所有有效敌对目标造成扩散剧变伤害，并将被扩散的底元素以 $1\text{U}$ 弱元素附着在周围所有目标身上，实现“全屏点燃/全屏导电”的视觉与数值爆发！
+
+### 23.3 冻结定身 (Freeze) 与状态锁
+- **机制定位**：高压战场下的硬控与拆火手段。
+- **实现方案**：
+  - 水与冰相遇，生成冻结壳（Frozen Aura）。
+  - 冻结时间公式：$T = 2.0 \times \sqrt{\text{Gauge}}$（强元素冻结时间显著长于弱元素）。
+  - 服务端向受击者赋予 `TAG_State_Frozen` 标签。
+  - 若受击者为角色，调用其 `LSMovementComponent` 临时挂起位移输入，进入完全定身态；计时结束自动解锁。
+
+---
+
+## 24. 角色基础承伤中枢与无敌帧生命周期（Character Damage Intake & Invincibility Pipeline）
+
+### 24.1 为什么要收拢到 CharacterBase
+角色身上拥有复杂的移动状态机（冲刺、滑铲、闪避无敌帧）与网络属性。如果扣血逻辑散落在各个武器或手雷中，极易出现无敌帧穿透、死亡状态重入崩溃等严重问题。
+
+### 24.2 核心承伤设计
+- **无敌帧拦截（I-Frame Protection）**：
+  - 在 `TakeDamage` 第一行首先检查自身是否包含 `TAG_State_Invincible`（由 `LSMovementComponent` 在翻滚闪避时动态赋予）。
+  - 处于无敌帧期间，`TakeDamage` 直接返回 0，免除一切直伤与剧变伤害。
+- **生命值权威同步与 RepNotify**：
+  - `CurrentHealth` 标记 `ReplicatedUsing = OnRep_CurrentHealth`。
+  - 服务端权威扣血，本地与远端监听到数值变化时派发 `OnHealthChanged`，解耦驱动 HUD 界面血条动画平滑插值。
+- **死亡状态机锁与防止二次死亡**：
+  - 当 `CurrentHealth <= 0.0f` 时，角色附加 `TAG_State_Dead`。
+  - 彻底关闭 CapsuleComponent 碰撞与输入，停止 Tick，通过事件总线广播 `OnCharacterDied` 与 `OnEnemyKilled`。
 
 
 

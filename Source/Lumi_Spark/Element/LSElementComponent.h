@@ -130,4 +130,14 @@ private:
 
 	// 广播附着改变
 	void NotifyAuraChanged();
+	
+	// ─── 次生反应内部处理 ───
+	// 触发感电周期跳电 DoT
+	void ProcessElectroChargedTick(float DeltaTime);
+
+	// 触发风系扩散范围传染
+	void TriggerSwirlSpread(AActor* InstigatorActor, const FGameplayTag& AuraToSpread);
+
+	//触发超载范围爆轰与物理击退
+	void TriggerOverloadedExplosion(AActor* InstigatorActor);
 };
