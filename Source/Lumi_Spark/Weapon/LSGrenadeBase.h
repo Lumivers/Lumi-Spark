@@ -28,7 +28,7 @@ public:
     // 组件获取接口
     FORCEINLINE USphereComponent* GetCollisionComp() const { return CollisionComp; }
     FORCEINLINE UStaticMeshComponent* GetMeshComp() const { return MeshComp; }
-    FORCEINLINE UProjectileMovementComponent* GetProjectileMovement() const { return projectileMovement; }
+	FORCEINLINE UProjectileMovementComponent* GetProjectileMovement() const { return ProjectileMovement; }
 
     // 核心逻辑接口：触发爆炸
     UFUNCTION(BluePrintCallable, CateGory = "Grenade|Combat")
@@ -48,7 +48,7 @@ protected:
 
     //抛物线与物理弹道运动纳管组件
     UPROPERTY(VisibleAnyWhere, BlueprintReadOnly, CateGory = "Grenade|Components")
-    TObjectPtr<UProjectileMovementComponent> projectileMovement;
+    TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
     // ─── 引信与爆炸规则 ───
 	// 引信倒计时（秒）
@@ -82,10 +82,10 @@ protected:
 
     // 伤害径向衰减指数（1.0 为线性递减，>1.0 边缘衰减更快）
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, CateGory = "Grenade|Damage", meta = (ClampMin = 0.1))
-    float DamageFalloffExponent = 1.0f
+    float DamageFalloffExponent = 1.0f;
 
     // 爆炸中心产生的物理击退冲量大小
-    UPROPERTY(EditDefaultOnly, BlueprintReadOnly, CateGory = "Grenade|Physics")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, CateGory = "Grenade|Physics")
     float ExplosionImpulse = 40000.0f;
 
     // ─── 元素属性注入 ───
@@ -131,11 +131,11 @@ private:
 
 /** 烈火高爆手雷：超强爆炸破坏力、较大击退、施加 2U 强火附着 */
 UCLASS()
-class LUMI_SPARK_API ALSGrenade_Puro : public ALSGrenadeBase
+class LUMI_SPARK_API ALSGrenade_Pyro : public ALSGrenadeBase
 {
     GENERATED_BODY()
 public:
-    ALSGrenade_Puro();
+    ALSGrenade_Pyro();
 };
 
 /** 潮汐激流手雷：范围波及广、全场大范围潮湿浸染、施加 2U 强水附着 */

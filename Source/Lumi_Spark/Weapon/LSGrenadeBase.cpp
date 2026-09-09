@@ -152,7 +152,7 @@ void ALSGrenadeBase::PerformExplosionDamageAndElement(const FVector& ExplosionCe
         if (bBlocked)
         {
             // 射线被阻挡，免疫爆炸伤害
-            DrawDebugLine(Getworld(), ExplosionCenter, SightHit.ImpactPoint, FColor::Red, false, 1.5f, 0, 1.0f);
+            DrawDebugLine(GetWorld(), ExplosionCenter, SightHit.ImpactPoint, FColor::Red, false, 1.5f, 0, 1.0f);
             continue;
         }
 

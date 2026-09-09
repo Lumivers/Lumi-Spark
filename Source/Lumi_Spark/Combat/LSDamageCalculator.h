@@ -12,11 +12,11 @@
 USTRUCT(BlueprintType)
 struct LUMI_SPARK_API FLSAttackerStats
 {
-    Generated_BODY()
+    GENERATED_BODY();
 
     //攻击者等级（影响防御力减伤比与剧变反应伤害基数）
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
-    int32 level = 90;
+    int32 Level = 90;
 
     //基础攻击力
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
@@ -40,7 +40,7 @@ struct LUMI_SPARK_API FLSAttackerStats
 
     //无视防御力比例（0~1）
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float IgnoreDefense = 0.0f;
+    float DefIgnoreRate = 0.0f;
 };
 
 /**
@@ -124,14 +124,14 @@ public:
 	 * @param AuraElementTag 目标身上当前附着的底元素 Tag（若有）
 	 */
     UFUNCTION(BlueprintCallable, Category = "Combat|Damage")
-    static FLSDamageResult CalculateDamage(UPARAM(ref) FLSDamageContext& InOutContext, const FLSAttackerStats& AttackerStats, const FLSDefenderStats& DefenderStats, FGameplayTag& AuraElementTag = FGameplayTag());
+    static FLSDamageResult CalculateDamage(UPARAM(ref) FLSDamageContext& InOutContext, const FLSAttackerStats& AttackerStats, const FLSDefenderStats& DefenderStats, FGameplayTag AuraElementTag = FGameplayTag());
 
     /**
 	 * 1. 防御区减免系数公式 (基于等级与防御穿透)
 	 * 公式：(AtkLv + 100) / [ (AtkLv + 100) + (DefLv + 100) * (1 - DefShred) * (1 - DefIgnore) ]
 	 */
     UFUNCTION(BlueprintPure, Category = "Combat|ForMula")
-    static float CalculateDefenseMultiplier(int32 AttackerLevel, int32 DefenderLevel, float DefShredRate, float DefIgnoreRate);
+    static float CalculateDefenseFactor(int32 AttackerLevel, int32 DefenderLevel, float DefShredRate, float DefIgnoreRate);
 
     /**
 	 * 2. 抗性区减免系数公式 (三段分段函数)

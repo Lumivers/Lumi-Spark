@@ -9,10 +9,10 @@
 | 阶段里程碑 | 包含核心模块 | 状态 | 当前完成度 |
 | :--- | :--- | :---: | :---: |
 | **阶段 1：3C 核心框架与基础层** | `LSCameraComponent`, `LSMovementComponent`, `LSCharacterBase`, `LSPlayerController`, `LSTypes`, `LSEventBus`, `GameMode` | **已完成实机验证** | **100% ✅** |
-| **阶段 2：武器与投掷物系统** | `LSWeaponBase`, `LSWeaponComponent`, `LSHitscanTrace`, `LSElementProjectile`(手雷), 后坐力系统 | **准备开始** | 0% |
-| **阶段 3：高等元素论与反应引擎** | `LSElementComponent`(1U/2U/4U/ICD), `LSElementReactionManager`, 16 种反应结算 | **待开始** | 0% |
+| **阶段 2：武器与投掷物系统 + 网络化** | `LSWeaponBase`, `LSWeaponComponent`, `LSRecoilComponent`, `ALSGrenadeBase`(6元素手雷), `LSDamageCalculator`, Server RPC/属性复制, `LSHUDWidget` | **C++ 核心已交付** | **100% ✅** |
+| **阶段 3：高等元素论与反应引擎** | `LSElementComponent`(1U/2U/4U/ICD衰减), 16 种元素反应状态机, 草原核生态, 反应效果结算 | **🔥 当前推进中** | **进行中...** |
 | **阶段 4：双角色即时切换与技能** | `LSTeamSwitchComponent`, `LSSkillComponent`, `LSPlayerState`, 独立 CD 体系 | **待开始** | 0% |
-| **阶段 5：2~4人联机合作网络架构** | Listen Server, Server RPC, 属性复制, 客户端预测, 动态怪物缩放, 倒地互救 | **架构规划中** | 0% |
+| **阶段 5：2~4人联机合作网络架构** | Listen Server, 动态怪物数值缩放, 复合破盾, 倒地互救 (核心射击/手雷网络已前置并入阶段2) | **部分前置完成** | 35% |
 | **阶段 6：地脉遗迹随机地图生成 (PCG)** | 模块化房间拼装 (Dungeon Generator), 地脉紊乱词条, 宝箱与撤离点分布 | **方案规划中** | 0% |
 | **阶段 7：敌人 AI、UI 与完整闭环** | 行为树、仇恨表、Boss 机制、伤害飘字、准星 HitMarker、结算面板 | **待开始** | 0% |
 
@@ -28,6 +28,33 @@
 - [x] **玩家控制器 (`LSPlayerController`)**：战斗模式与 UI 菜单模式 IMC 切换、开镜灵敏度 0.6x 平滑衰减、16 项动作通道前置绑定。
 - [x] **GameMode 配置 (`Lumi_SparkGameMode`)**：指定默认 Controller 与 DefaultPawn。
 - [ ] **【当前下一步】编辑器内实机测试**：配置 Enhanced Input 资产，挂载小白人模型，在关卡中试跑 3C 手感！
+
+---
+
+## 🎯 阶段 2 详细交付清单 (Phase 2 Checklist - 100% 完成 ✅)
+
+- [x] **武器基类与射击 (`LSWeaponBase`)**：双段视差矫正 Hitscan 射线、线性距离衰减、爆头弱点判定、弹药扣除与权威同步、动态准星散布比率。
+- [x] **双武器槽位管理器 (`LSWeaponComponent`)**：主副武器槽位、手部 (`HandSocket`) 与背部 (`HolsterSocket`) 挂载、快速切枪、切枪广播委托。
+- [x] **程序化后坐力系统 (`LSRecoilComponent`)**：模式弹道 (Pattern Recoil)、随机扰动、按需使能 Tick 的平滑视角回正机制。
+- [x] **元素物理投掷物系统 (`ALSGrenadeBase`)**：抛物线弹跳、防穿墙视线遮挡检测、径向伤害衰减、向心吸附黑洞机制、六大元素手雷派生类。
+- [x] **战斗伤害计算器 (`LSDamageCalculator`)**：纯静态七乘区无状态数学库、暴击率/暴伤、等级防御减免、抗性分段函数、剧变反应基数拟合。
+- [x] **网络联机前置集成**：武器与手雷 `bReplicates` 属性复制、`OnRep_CurrentWeapon` 多端同步、`Server_Fire` 客户端预测与服务端裁决、`Client_HitConfirm` 命中确认闭环。
+- [x] **战斗 HUD 中枢 (`LSHUDWidget`)**：监听武器切换与弹药广播、零耦合监听总线命中事件触发 HitMarker、暴露动态准星散布比例。
+
+---
+
+## 🔥 阶段 3：高等元素论与反应引擎 (Phase 3 - 当前进行中)
+
+- [ ] **元素附着与衰减组件 (`LSElementComponent`)**：
+  - 附着池管理（火/水/雷/冰/草/岩/风当前附着元素）。
+  - 1U/2U/4U 附着量级自然线性衰减模型（9.5s / 12s / 17s 衰减计时器，0.8x 附着消耗惩罚）。
+- [ ] **16 种元素反应状态机与消耗矩阵**：
+  - 增幅反应结算：蒸发 (2.0x/1.5x)、融化 (2.0x/1.5x) 元素量 2:1 或 1:2 消耗扣除。
+  - 剧变反应触发：超载 (AOE 爆轰+击飞)、感电 (多目标链式电击跳跃)、超导 (-40% 物理抗性削减)、冻结 (定身状态锁控制) 与碎冰。
+  - 草系生态引擎：原绽放 (生成草原核实体数据)、烈绽放 (火引爆核)、超绽放 (雷追踪导弹)、原激化 (赋予激化底)、超激化与蔓激化。
+  - 风/岩特化：扩散 (全屏溅射传染其他敌人)、结晶 (生成对应属性元素护盾)。
+- [ ] **ICD 附着内置冷却 (Internal Cooldown)**：
+  - 经典“2.5 秒 / 3 次命中”规则，防止高射速武器无限高频附着反应破坏平衡。
 
 ---
 

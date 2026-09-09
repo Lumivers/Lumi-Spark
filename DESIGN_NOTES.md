@@ -22,6 +22,7 @@
 18. [后续待推进 C++ 模块路线图](#18-后续待推进-c-模块路线图)
 19. [多人联机网络架构与权威属性同步（Multiplayer Replication Architecture）](#19-多人联机网络架构与权威属性同步multiplayer-replication-architecture)
 20. [高保真网络射击模型：客户端先行预测与服务端权威命中确认（Networked Hitscan Pipeline）](#20-高保真网络射击模型客户端先行预测与服务端权威命中确认networked-hitscan-pipeline)
+21. [高等元素论附着与 16 种元素反应规则引擎（LSElementComponent）](#21-高等元素论附着与-16-种元素反应规则引擎lselementcomponent)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -378,6 +379,29 @@ PlayerController::HandleFireStarted()
 
 ---
 
+### 11.10 [2026-09-09] 成员变量大小写脱节与非 const 引用默认实参右值绑定失败
+
+**现象**：
+- `Generated_BODY() 必须有返回值类型`
+- `非 const 左值引用 'AuraElementTag' 到 FGameplayTag 类型不能绑定到类型 FGameplayTag 的右值`
+- `无法解析符号 'ProjectileMovement'`
+- `Class ULSDamageCalculator 没有 FDamageResult(...) 类型的成员 'CalculateDamage'`
+
+**根因剖析**：
+1. **宏大小写敏感性**：
+   - 虚幻头文件工具宏必须严格全大写 `GENERATED_BODY()`。若写为 `Generated_BODY()`，C++ 编译器会将其误识别为一个没有返回值类型的普通成员函数。
+2. **C++ 右值引用绑定规则**：
+   - 当函数形参为非常量左值引用（`FGameplayTag&`）时，不能使用 `FGameplayTag()` 临时右值作为默认实参；且若头文件声明为 `&` 引用而实现文件写为值传递，会导致函数签名不一致从而报找不到成员函数。对于轻量级 POD/结构体，传值（`FGameplayTag AuraElementTag = FGameplayTag()`）兼具安全与简洁。
+3. **大小写命名漂移**：
+   - C++ 区分大小写，`projectileMovement` 与 `ProjectileMovement`、`level` 与 `Level`、`IgnoreDefense` 与 `DefIgnoreRate` 的微小命名偏差，会导致符号解析链断裂。
+
+**解决方案**：
+- 结构体宏更正为 `GENERATED_BODY()`；
+- `AuraElementTag` 形参改为按值传递 `FGameplayTag AuraElementTag = FGameplayTag()`；
+- 统一头文件与实现文件的成员变量大小写与函数命名（`CalculateDefenseFactor` 与 `ProjectileMovement`）。
+
+---
+
 ## 15. 元素物理投掷物系统 (ALSGrenadeBase)
 
 ### 15.1 架构定位与职责
@@ -502,6 +526,54 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
 3. **段落 C：远端广播与打击确认反馈（Multicast & Client Hit Confirm）**：
    - **向其他玩家**：触发 `Multicast_FireEffects`（带本地玩家排除过滤），让远端观察者看到并听到该角色在开枪；
    - **向开火玩家**：服务端命中敌人后，通过 `Client_HitConfirm(bIsHeadshot, FinalDamage)` 精准回传给开火者；客户端在本地派发伤害事件，无缝触发 UMG 准星 HitMarker 闪红变色与打击 Tick 音效，完美闭环！
+
+---
+
+## 21. 高等元素论附着与 16 种元素反应规则引擎（LSElementComponent）
+
+### 21.1 架构定位与设计哲学
+- **源码文件**：`Source/Lumi_Spark/Element/LSElementComponent.{h,cpp}`
+- **技术选型**：纯数据驱动与状态机纳管的 `UActorComponent`，可挂载于玩家角色、队友、怪物或场景交互物上。
+- **设计优势**：
+  - 彻底解耦发射源（枪械、手雷、技能）与受击者：武器只负责广播“对目标施加了 X 元素 Y 量级”，反应与附着判定全部收拢在目标自身的 `LSElementComponent` 内部仲裁；
+  - 严格实现原神高等元素论底层数学逻辑（衰减公式、0.8x 附着税、克制倍率消耗、ICD 计数器）。
+
+### 21.2 附着池与 1U/2U/4U 线性衰减模型
+- **元素附着税 (Aura Tax)**：
+  元素一旦脱离攻击判定附着在目标体表成为“底元素”，其实际剩余量级立刻折损 20%（即初始附着量 $Gauge_{\text{attach}} = Gauge_{\text{base}} \times 0.8$）。
+- **线性衰减速率模型**：
+  衰减率由初始量级与标称寿命决定：$DecayRate = \frac{Gauge_{\text{base}}}{Duration}$
+  - **1U 弱元素**：标称 9.5s，附着量 0.8U，衰减速率 $0.1053\text{ U/s}$；
+  - **2U 强元素**：标称 12.0s，附着量 1.6U，衰减速率 $0.1667\text{ U/s}$；
+  - **4U 超强元素**：标称 17.0s，附着量 3.2U，衰减速率 $0.2353\text{ U/s}$。
+- **同元素刷新规则**：
+  当同属性元素再次命中时，取两者中当前剩余量级与剩余寿命的最大值，衰减速率继承高阶衰减率。
+
+### 21.3 附着内置冷却 (ICD - Internal Cooldown)
+- 高频射速武器（如 900 RPM 冲锋枪）若每发子弹都挂元素，会导致反应频率彻底失控。
+- 引入工业级 **“2.5 秒 / 3 次命中” 计数器**：
+  - 同一伤害源在 2.5 秒内首次命中附着元素；后续第 2、3 次命中只造成直接伤害不挂元素，直到第 4 次命中或时间超过 2.5 秒重置计数器才再次挂元素。
+
+### 21.4 16 种元素反应消耗与状态机矩阵
+- **增幅反应 (Amplifying)**：
+  - 顺向（水打火 / 火打冰）：反应消耗比 1:2，触发者 1 单位消耗底元素 2 单位，瞬间清空底元素；
+  - 逆向（火打水 / 冰打火）：反应消耗比 2:1，触发者 2 单位仅消耗底元素 1 单位，底元素通常可残留供二次反应。
+- **剧变反应 (Transformative)**：
+  - 超载 (火+雷)、超导 (冰+雷)、碎冰：1:1 等量消耗，触发即时范围物理/元素爆轰；
+  - 感电 (水+雷)：独特共存态！水雷同时存在于附着池中，每秒触发一次电击 DoT，各扣除 0.4U，直到一方耗尽；
+  - 冻结 (水+冰)：生成冰冻壳 (Frozen Aura)，锁定角色位移状态机（进入 Stun 定身态），持续时间 $T = 2 \times \sqrt{Gauge}$。
+- **草系三态反应 (Dendro Ecology)**：
+  - 原绽放 (水+草)：生成草原核实体标签（`TAG_Entity_DendroCore`）；
+  - 烈绽放 (火点核) 与 超绽放 (雷引核)：分别转化高额范围火伤与自动索敌弹道；
+  - 原激化 (雷+草)：施加激化底，后续雷击触发超激化增伤、草击触发蔓激化增伤。
+- **风岩特化**：
+  - 扩散 (Swirl)：消耗 0.5U 底元素，将元素向周边敌人大范围溅射传染；
+  - 结晶 (Crystallize)：消耗 0.5U 底元素，生成护盾晶片。
+
+### 21.5 极值性能优化（按需使能 Tick）
+- 身上无任何元素附着时：`SetComponentTickEnabled(false)` 完全关闭 Tick，单局千只怪物同屏零 CPU 消耗；
+- 元素命中附着时：瞬间使能 Tick 执行衰减，全部衰减完毕或反应耗尽后自动关停 Tick。
+
 
 
 
