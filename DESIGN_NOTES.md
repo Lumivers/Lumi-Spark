@@ -26,6 +26,8 @@
 22. [全乘区伤害管线接入与武器-元素中枢咬合（Hitscan Damage & Aura Application Pipeline）](#22-全乘区伤害管线接入与武器-元素中枢咬合hitscan-damage--aura-application-pipeline)
 23. [次生反应深度结算：感电水雷共存、风系扩散溅射与冻结定身（Secondary Reaction Mechanics）](#23-次生反应深度结算感电水雷共存风系扩散溅射与冻结定身secondary-reaction-mechanics)
 24. [角色基础承伤中枢与无敌帧生命周期（Character Damage Intake & Invincibility Pipeline）](#24-角色基础承伤中枢与无敌帧生命周期character-damage-intake--invincibility-pipeline)
+25. [草系生态实体与绽放连锁引擎（ALSDendroCore & Bloom Ecology）](#25-草系生态实体与绽放连锁引擎alsdendrocore--bloom-ecology)
+26. [战斗伤害飘字与打击反馈管线（Combat Damage Floating Numbers & Feedback Pipeline）](#26-战斗伤害飘字与打击反馈管线combat-damage-floating-numbers--feedback-pipeline)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -641,6 +643,60 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
 - **死亡状态机锁与防止二次死亡**：
   - 当 `CurrentHealth <= 0.0f` 时，角色附加 `TAG_State_Dead`。
   - 彻底关闭 CapsuleComponent 碰撞与输入，停止 Tick，通过事件总线广播 `OnCharacterDied` 与 `OnEnemyKilled`。
+
+---
+
+## 25. 草系生态实体与绽放连锁引擎（ALSDendroCore & Bloom Ecology）
+
+### 25.1 为什么要设计独立的草种子实体
+在原神的高等元素论中，草系反应之所以具备革命性的玩法深度，是因为它颠覆了传统反应“瞬时结算并消散”的模式，而是**在物理空间中生成了一个可供二次交互的战术实体（草原核）**：
+1. **升维战斗维度**：由点对点的射击命中，升维为“战场空间布雷与二次引爆链”。
+2. **多元素跨职业 Combo**：水系与草系负责“造核”，火系队友负责“烈绽放引爆”，雷系队友负责“超绽放索敌”，极大增强联机配合趣味。
+
+### 25.2 核心架构与三态分支
+- **物理与生命周期管理**：
+  - 采用纯 C++ `ALSDendroCore : public AActor`，挂载 `USphereComponent` 开启刚体物理模拟（`bSimulatePhysics = true`），落地后可自然在斜坡与地形弹跳滚动。
+  - 采用 `bReplicates = true` 与 `SetReplicateMovement(true)`，服务端权威 Spawn 与引爆，客户端平滑插值。
+  - 具备 $6.0\text{s}$ 自然超时计时器。
+- **三态分支结算**：
+  - **1. 原绽放超时自爆 (Bloom)**：若 $6\text{s}$ 内未受火/雷触碰，自动以 $2.0\text{x}$ 剧变系数爆轰半径 $350\text{cm}$ 范围内的敌人。
+  - **2. 烈绽放火爆轰 (Burgeon)**：受火属性直伤或手雷攻击触发，立刻清除计时器，以 $3.0\text{x}$ 超高剧变系数对半径 $500\text{cm}$ 造成大范围火草爆轰与物理击退冲量。
+  - **3. 超绽放追踪飞弹 (Hyperbloom)**：受雷属性触碰触发，立即关闭刚体物理模拟，转由 `UProjectileMovementComponent` 接管动力，自动寻找 $15\text{m}$ 范围内最近的敌对目标进行极速回旋俯冲，命中造成 $3.0\text{x}$ 单体精确穿透打击！
+
+### 25.3 关键性能考量
+- **0-Tick 常驻策略**：
+  草原核在地面等待引爆时 `bCanEverTick = false`，完全通过 `FTimerManager` 管理到期自爆，场景中同时存在数十颗草种子也不会增加任何 CPU 帧耗。
+- **物理与动力学切换陷阱**：
+  在触发超绽放启动飞弹时，必须先将 `SphereCollision->SetSimulatePhysics(false)`，否则重力刚体运算会与飞弹组件的向心加速度争抢控制权，导致 Actor 在空中剧烈抖动抽搐。
+
+---
+
+## 26. 战斗伤害飘字与打击反馈管线（Combat Damage Floating Numbers & Feedback Pipeline）
+
+### 26.1 为什么要采用事件驱动型飘字中枢
+在射击游戏中，每一发子弹的命中反馈（Hit Feedback）是爽快感的核心命脉。传统做法常让武器类直接 `CreateWidget` 生成跳字，这会导致：
+1. **模块强耦合**：武器强依赖 UI，无法做到纯无头（Headless）服务器运行。
+2. **多端视角混乱**：远端玩家造成的伤害容易误投影在本地屏幕上。
+3. **同屏文本重叠穿模**：高射速冲锋枪连续命中同一点时，几十个数字完全重叠在一块，形成视觉垃圾。
+
+### 26.2 核心架构与表现分流
+- **全局事件总线解耦**：
+  UI 层 `ULSDamagePopWidget` 仅需在 `NativeConstruct` 中监听 `EventBus->OnDamageDealt` 与 `OnElementReactionTriggered`，发射端无需感知任何 UI 的存在。
+- **全元素色相标准（Elemental Color Scheme）**：
+  - **火 (Pyro)**：朱红 / 橙红 `FLinearColor(1.0f, 0.35f, 0.1f)`
+  - **水 (Hydro)**：湛蓝 `FLinearColor(0.1f, 0.6f, 1.0f)`
+  - **雷 (Electro)**：紫晶 `FLinearColor(0.75f, 0.3f, 1.0f)`
+  - **冰 (Cryo)**：冰蓝 `FLinearColor(0.4f, 0.9f, 1.0f)`
+  - **草 (Dendro)**：荧光草绿 `FLinearColor(0.35f, 0.95f, 0.15f)`
+  - **风 (Anemo)**：青翠 / 薄荷绿 `FLinearColor(0.3f, 1.0f, 0.8f)`
+  - **岩 (Geo)**：琥珀金 `FLinearColor(1.0f, 0.8f, 0.2f)`
+  - **物理 (Physical)**：纯白 `FLinearColor::White`
+- **暴击与反应的视觉分级**：
+  - **常规命中**：基准字号，轻微向上漂移并渐隐。
+  - **弱点爆头 / 暴击**：字号放大 $1.4\text{x}$，颜色泛金光，追加感叹号（如 `9820!`）与急促的 Pop-Scale 弹性动画。
+  - **元素反应**：数字上方悬浮反应名称标识（如“蒸发 15400”、“超载 8600”）。
+- **3D 投影与防重叠离散算法**：
+  利用 `ProjectWorldLocationToWidgetPosition` 将 3D 命中点转换为 2D 屏幕坐标，同时引入极坐标随机径向偏移（Radial Jitter），高频命中时数字呈喷泉状向斜上方散开，视觉清晰不挡视线。
 
 
 

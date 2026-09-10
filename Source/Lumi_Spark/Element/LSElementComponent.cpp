@@ -3,6 +3,7 @@
 #include "Combat/LSDamageCalculator.h"
 #include "Net/UnrealNetwork.h"
 #include "Kismet/GameplayStatics.h"
+#include "Element/LSDendroCore.h"
 
 ULSElementComponent::ULSElementComponent()
 {
@@ -176,6 +177,41 @@ float ULSElementComponent::ArbitrateReaction(AActor* InstigatorActor, const FGam
 		ConsumptionRatio = 0.5f;
 		// 范围溅射传染当前的底元素
 		TriggerSwirlSpread(InstigatorActor, TargetAura.ElementTag);
+	}
+		// ─── 6.5 草系生态三态反应 ───
+	// 绽放 (水 + 草) ➔ 催生草原核
+	else if ((Incoming == LSTags::TAG_Element_Hydro && TargetAura.ElementTag == LSTags::TAG_Element_Dendro) ||
+			 (Incoming == LSTags::TAG_Element_Dendro && TargetAura.ElementTag == LSTags::TAG_Element_Hydro))
+	{
+		ReactionTag = LSTags::TAG_Reaction_Bloom;
+		ConsumptionRatio = (Incoming == LSTags::TAG_Element_Hydro) ? 0.5f : 2.0f;
+
+		// 在目标脚下生成草原核实体
+		if (GetOwner() && GetWorld())
+		{
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			FVector SpawnLoc = GetOwner()->GetActorLocation() + FVector(FMath::RandRange(-40.f, 40.f), FMath::RandRange(-40.f, 40.f), 10.f);
+
+			if (ALSDendroCore* Core = GetWorld()->SpawnActor<ALSDendroCore>(ALSDendroCore::StaticClass(), SpawnLoc, FRotator::ZeroRotator, SpawnParams))
+			{
+				Core->InitializeCore(InstigatorActor, 90, 100.0f);
+			}
+		}
+	}
+	// 原激化 (雷 + 草)
+	else if ((Incoming == LSTags::TAG_Element_Electro && TargetAura.ElementTag == LSTags::TAG_Element_Dendro) ||
+			 (Incoming == LSTags::TAG_Element_Dendro && TargetAura.ElementTag == LSTags::TAG_Element_Electro))
+	{
+		ReactionTag = LSTags::TAG_Reaction_Quicken;
+		ConsumptionRatio = 1.0f;
+	}
+	// 燃烧 (火 + 草)
+	else if ((Incoming == LSTags::TAG_Element_Pyro && TargetAura.ElementTag == LSTags::TAG_Element_Dendro) ||
+			 (Incoming == LSTags::TAG_Element_Dendro && TargetAura.ElementTag == LSTags::TAG_Element_Pyro))
+	{
+		ReactionTag = LSTags::TAG_Reaction_Burning;
+		ConsumptionRatio = 1.0f;
 	}
 	// ─── 7. 岩系结晶 (Geo) ───
 	else if (Incoming == LSTags::TAG_Element_Geo)
