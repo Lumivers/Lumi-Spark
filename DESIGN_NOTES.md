@@ -28,6 +28,7 @@
 24. [角色基础承伤中枢与无敌帧生命周期（Character Damage Intake & Invincibility Pipeline）](#24-角色基础承伤中枢与无敌帧生命周期character-damage-intake--invincibility-pipeline)
 25. [草系生态实体与绽放连锁引擎（ALSDendroCore & Bloom Ecology）](#25-草系生态实体与绽放连锁引擎alsdendrocore--bloom-ecology)
 26. [战斗伤害飘字与打击反馈管线（Combat Damage Floating Numbers & Feedback Pipeline）](#26-战斗伤害飘字与打击反馈管线combat-damage-floating-numbers--feedback-pipeline)
+27. [双角色即时切换与动量继承中枢（LSTeamSwitchComponent & Seamless Possession）](#27-双角色即时切换与动量继承中枢lsteamswitchcomponent--seamless-possession)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -697,6 +698,41 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
   - **元素反应**：数字上方悬浮反应名称标识（如“蒸发 15400”、“超载 8600”）。
 - **3D 投影与防重叠离散算法**：
   利用 `ProjectWorldLocationToWidgetPosition` 将 3D 命中点转换为 2D 屏幕坐标，同时引入极坐标随机径向偏移（Radial Jitter），高频命中时数字呈喷泉状向斜上方散开，视觉清晰不挡视线。
+
+---
+
+## 27. 双角色即时切换与动量继承中枢（LSTeamSwitchComponent & Seamless Possession）
+
+### 27.1 为什么将切换中枢挂载于 PlayerController
+在动作射击游戏中，角色（Pawn）是多变的执行者，而玩家控制器（PlayerController）是玩家在游戏世界的意志载体。
+- **架构方案对比**：
+  - *方案 A（挂在 Character 上）*：切人时组件自身随着旧角色被换下场（UnPossess / 隐藏），新角色需要持有另一套组件并进行繁重的状态同步；若旧角色死亡，组件生命周期瞬间错乱。
+  - *方案 B（挂在 PlayerController 上，当前方案）*：控制器是永存的生命体，天然拥有对任意 Pawn 执行 `Possess()` 与 `UnPossess()` 的最高统御权。由控制器持有 `ULSTeamSwitchComponent` 纳管双角色槽位，数据流向清晰，零状态割裂。
+
+### 27.2 顶级手感保障：动量移交与准星视角 0 误差锁定
+第一人称射击中，视角微小的抖动都会让玩家产生强烈的晕动症与脱手感：
+1. **准星像素级锁死（ControlRotation Preservation）**：
+   - 虚幻引擎默认在执行 `Possess(NewChar)` 时，控制器会尝试对齐新 Pawn 的局部朝向。
+   - 在交接前，显式保存当前视线朝向：`SavedControlRot = PC->GetControlRotation()`；
+   - 在新角色完成 `Possess` 后的同一执行帧内，强制回填 `PC->SetControlRotation(SavedControlRot)`，彻底消除切人瞬间准星乱晃的恶劣手感。
+2. **移动动量无缝继承（Velocity Carry-over）**：
+   - 提取旧角色的实时速度向量 `SavedVelocity = OutChar->GetVelocity()`；
+   - 注入新角色的 `UCharacterMovementComponent->Velocity`。
+   - 玩家在奔跑冲刺、空中起跳或斜坡滑铲中按 Tab 切人，新角色落地丝滑衔接，绝不发生“撞墙原地急停”。
+
+### 27.3 角色后台休眠模式（EnterBackgroundMode）
+双角色常驻内存，严禁在每次切人时频繁 `SpawnActor` / `Destroy`（杜绝 GC 掉帧与资产异步加载黑屏）：
+- **物理与渲染脱敏**：
+  - `SetActorHiddenInGame(true)`：隐藏躯干、武器与专属第一人称手臂；
+  - `SetCollisionEnabled(ECollisionEnabled::NoCollision)`：**关闭物理胶囊体碰撞**，防止退场的后台角色化身“空气隐形人”挡住主控玩家走位或拦截怪物子弹；
+  - 停止移动组件并打断正在进行的开火与换弹动作。
+
+### 27.4 极值性能与状态防护
+- **按需使能 Tick（On-Demand Tick）**：
+  - `bStartWithTickEnabled = false`。
+  - 仅在玩家触发 Tab 切换进入 `SwitchCooldown`（1.5s）倒计时时，才启动短暂的 Tick 衰减；CD 归零后立即关闭 Tick，日常状态 0 CPU 开销。
+- **死人保护与状态锁**：
+  - `CanSwitch()` 严格校验待命角色的 `CurrentHealth > 0` 与 `IsDead()` 标记；待命角色阵亡时封锁切换通道，杜绝切出死亡尸体导致控制器挂起的致命缺陷。
 
 
 

@@ -7,10 +7,13 @@
 #include "LSMovementComponent.h"
 #include "Weapon/LSWeaponComponent.h"
 #include "Blueprint/UserWidget.h"
+#include "Character/LSTeamSwitchComponent.h"
 
 ALSPlayerController::ALSPlayerController()
 {
 	bShowMouseCursor = false;
+
+	TeamSwitchComponent = CreateDefaultSubobject<ULSTeamSwitchComponent>(TEXT("TeamSwitchComponent"));
 }
 
 void ALSPlayerController::BeginPlay()
@@ -281,7 +284,10 @@ void ALSPlayerController::HandleThrowGrenadeCompleted()
 
 void ALSPlayerController::HandleSwitchCharacter()
 {
-	// 预留：通知 TeamSwitchComponent 执行 Tab 键双人小队对调
+	if (TeamSwitchComponent)
+	{
+		TeamSwitchComponent->ToggleCharacter();
+	}
 }
 
 void ALSPlayerController::HandleInteract()

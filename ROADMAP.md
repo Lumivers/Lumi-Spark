@@ -11,7 +11,7 @@
 | **阶段 1：3C 核心框架与基础层** | `LSCameraComponent`, `LSMovementComponent`, `LSCharacterBase`, `LSPlayerController`, `LSTypes`, `LSEventBus`, `GameMode` | **已完成实机验证** | **100% ✅** |
 | **阶段 2：武器与投掷物系统 + 网络化** | `LSWeaponBase`, `LSWeaponComponent`, `LSRecoilComponent`, `ALSGrenadeBase`(6元素手雷), `LSDamageCalculator`, Server RPC/属性复制, `LSHUDWidget` | **C++ 核心已交付** | **100% ✅** |
 | **阶段 3：高等元素论与反应引擎** | `LSElementComponent`(1U/2U/4U/ICD衰减), 16 种元素反应状态机, `ALSDendroCore`草原核生态, `ULSDamagePopWidget`飘字 | **已完成闭环交付** | **100% ✅** |
-| **阶段 4：双角色即时切换与技能** | `LSTeamSwitchComponent`, `LSSkillComponent`, `LSPlayerState`, 独立 CD 体系 | **🔥 下一步推进目标** | 0% |
+| **阶段 4：双角色即时切换与技能** | `LSTeamSwitchComponent`, `LSSkillComponent`, `LSPlayerState`, 独立 CD 体系 | **🔥 当前推进中** | **35%** |
 | **阶段 5：2~4人联机合作网络架构** | Listen Server, 动态怪物数值缩放, 复合破盾, 倒地互救 (核心射击/手雷网络已前置并入阶段2) | **部分前置完成** | 35% |
 | **阶段 6：地脉遗迹随机地图生成 (PCG)** | 模块化房间拼装 (Dungeon Generator), 地脉紊乱词条, 宝箱与撤离点分布 | **方案规划中** | 0% |
 | **阶段 7：敌人 AI、UI 与完整闭环** | 行为树、仇恨表、Boss 机制、伤害飘字、准星 HitMarker、结算面板 | **待开始** | 0% |
@@ -66,7 +66,20 @@
 
 ---
 
-## 🌐 阶段 5 扩展：2~4人联机合作架构规划 (Multiplayer Co-op)
+## 🔥 阶段 4：双角色即时切换与技能体系 (Phase 4 - 当前推进中)
+
+- [x] **双角色小队管理与即时切换中枢 (`ULSTeamSwitchComponent`)**：
+  - 纳管主副两名常驻角色槽位，Tab 键 0.2 秒极速无缝对调。
+  - 核心手感保障：视角朝向（ControlRotation）像素级绝对锁死，移动速度向量（Velocity）无缝继承。
+  - 角色后台休眠状态机：退场角色隐身、脱敏物理胶囊体碰撞、打断当前开火换弹。
+  - 控制器 Possession 交接：PlayerController 权威换绑 Pawn 并维持第一人称相机状态。
+  - 按需使能 Tick 机制：仅切人冷却（1.5s）倒计时短暂使能，归零自动挂起，零空跑开销。
+- [ ] **副角色生成配置与小队多武器持久化**：
+  - 角色配装与双枪槽位独立保持，换人自动刷新 HUD 武器图标与弹药。
+- [ ] **E/Q 技能与后台独立 CD 走表 (`ULSSkillComponent`)**：
+  - 战术 E 技能与元素爆发 Q 充能系统，后台角色 CD 独立流逝。
+
+---
 
 ### 1. 网络角色与权威划分 (Network Authority)
 - **Server 权威端 (Authority)**：

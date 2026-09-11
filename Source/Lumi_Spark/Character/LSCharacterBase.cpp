@@ -128,3 +128,40 @@ void ALSCharacterBase::OnRep_CurrentHealth()
 {
 	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
 }
+
+void ALSCharacterBase::EnterBackgroundMode()
+{
+	// 1. 隐藏全身与第一人称手臂
+	SetActorHiddenInGame(true);
+
+	// 2. 关闭物理胶囊体碰撞（防止在后台时挡住子弹或被怪物打中）
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// 3. 停止移动组件
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->StopMovementImmediately();
+		MoveComp->DisableMovement();
+	}
+}
+
+void ALSCharacterBase::ExitBackgroundMode()
+{
+	// 1. 重新显形
+	SetActorHiddenInGame(false);
+
+	// 2. 恢复碰撞
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+
+	// 3. 恢复移动模式为行走
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->SetMovementMode(MOVE_Walking);
+	}
+
+	// 4. 重新让摄像机对准当前手臂显隐状态
+	if (CameraComponent)
+	{
+		CameraComponent->UpdateMeshVisibility();
+	}
+}

@@ -56,6 +56,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Health|Events")
 	FOnLSHealthChanged OnHealthChanged;
 
+	//进退场与小队状态
+	UFUNCTION(BlueprintCallable, Category = "Team")
+	virtual void EnterBackgroundMode(); // 进入后台模式（隐身、关碰撞、轻量更新）
+
+	UFUNCTION(BlueprintCallable, Category = "Team")
+	virtual void ExitBackgroundMode();  // 退出后台模式（显形、开碰撞
+
+	UFUNCTION(BlueprintCallable, BluePrintPure, Category = "Health")
+	bool IsDead() const { return CurrentHealth <= 0.0f; }
+
 protected:
     // 摄像机组件
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))

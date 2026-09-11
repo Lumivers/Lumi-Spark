@@ -9,6 +9,7 @@ class UInputMappingContext;
 class UInputAction;
 struct FInputActionValue;
 class ALSCharacterBase;
+class ULSTeamSwitchComponent;
 
 UCLASS()
 class LUMI_SPARK_API ALSPlayerController : public APlayerController
@@ -94,6 +95,11 @@ public:
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Sensitivity")
 	float ADSSensitivityMultiplier = 0.6f;//开镜灵敏度衰减倍率
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Team", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ULSTeamSwitchComponent> TeamSwitchComponent;
+
+	FORCEINLINE ULSTeamSwitchComponent* GetTeamSwitchComponent() const { return TeamSwitchComponent; }
 	
 	//6，模式切换接口
 	UFUNCTION(BlueprintCallable, Category = "Input")
