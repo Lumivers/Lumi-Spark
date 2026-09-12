@@ -29,6 +29,7 @@ public:
     FORCEINLINE USphereComponent* GetCollisionComp() const { return CollisionComp; }
     FORCEINLINE UStaticMeshComponent* GetMeshComp() const { return MeshComp; }
 	FORCEINLINE UProjectileMovementComponent* GetProjectileMovement() const { return ProjectileMovement; }
+	FORCEINLINE FGameplayTag GetElementTag() const { return ElementTag; }
 
     // 核心逻辑接口：触发爆炸
     UFUNCTION(BluePrintCallable, CateGory = "Grenade|Combat")

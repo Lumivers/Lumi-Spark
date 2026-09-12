@@ -13,6 +13,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Element/LSElementComponent.h"
 #include "Combat/LSDamageCalculator.h"
+#include "Engine/DamageEvents.h"
 
 ALSWeaponBase::ALSWeaponBase()
 {

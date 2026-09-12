@@ -76,6 +76,9 @@ protected:
 public:
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	
+	// 根据当前模式更新角色全身Mesh和第一人称手臂的显隐
+	void UpdateMeshVisibility();
+	
 private:
 	ELSCameraMode PreADSMode = ELSCameraMode::FirstPerson;
 	float TargetArmLength = 0.0f;
@@ -85,7 +88,4 @@ private:
 	
 	// 逐帧更新摄像机平滑插值与防穿墙检测
 	void UpdateCameraInterpolation(float DeltaTime);
-	
-	// 根据当前模式更新角色全身Mesh和第一人称手臂的显隐
-	void UpdateMeshVisibility();
 };

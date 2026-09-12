@@ -1,171 +1,107 @@
-#include "Character/LSTeamSwitchComponent.h"
-#include "Character/LSCharacterBase.h"
-#include "Character/LSMovementComponent.h"
-#include "Weapon/LSWeaponComponent.h"
-#include "Core/LSEventBus.h"
-#include "GameFramework/PlayerController.h"
+#pragma once
 
-ULSTeamSwitchComponent::ULSTeamSwitchComponent()
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "LSTeamSwitchComponent.generated.h"
+
+class ALSCharacterBase;
+
+// ─── 委托声明 ───
+// 角色切换完成广播：(退场角色, 入场角色, 新激活的角色索引)
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLSTeamSwitch, ALSCharacterBase*, OutCharacter, ALSCharacterBase*, InCharacter, int32, NewActiveIndex);
+
+// 换人冷却倒计时变更广播：(当前剩余冷却, 最大冷却)
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSSwitchCooldownChanged, float, CurrentCooldown, float, MaxCooldown);
+
+UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+class LUMI_SPARK_API ULSTeamSwitchComponent : public UActorComponent
 {
-	PrimaryComponentTick.bCanEverTick = true;
-	PrimaryComponentTick.bStartWithTickEnabled = false; // 初始关闭 Tick，切人进入 CD 时才按需使能（极致性能）
-}
+	GENERATED_BODY()
 
-void ULSTeamSwitchComponent::BeginPlay()
-{
-	Super::BeginPlay();
-	TeamMembers.SetNumZeroed(2);
-}
+public:
+	ULSTeamSwitchComponent();
 
-void ULSTeamSwitchComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	virtual void BeginPlay() override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	// 冷却计时递减
-	if (CooldownTimer > 0.0f)
-	{
-		CooldownTimer -= DeltaTime;
-		OnSwitchCooldownChanged.Broadcast(FMath::Max(0.0f, CooldownTimer), SwitchCooldown);
+	/**
+	 * 初始化双人小队
+	 * @param PrimaryCharacter 默认登场的主角色（Slot 0）
+	 * @param SecondaryClass 待命副角色类型（Slot 1），服务端将在后台静默生成该实例
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Team")
+	void SetupTeam(ALSCharacterBase* PrimaryCharacter, TSubclassOf<ALSCharacterBase> SecondaryClass);
 
-		if (CooldownTimer <= 0.0f)
-		{
-			CooldownTimer = 0.0f;
-			SetComponentTickEnabled(false); // CD 恢复，关闭 Tick 消除 CPU 消耗
-		}
-	}
-}
+	/** 当前是否满足切换条件（CD结束、目标角色存活等） */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	bool CanSwitch() const;
 
-void ULSTeamSwitchComponent::SetupTeam(ALSCharacterBase* PrimaryCharacter, TSubclassOf<ALSCharacterBase> SecondaryClass)
-{
-	if (!PrimaryCharacter || !GetWorld()) return;
+	/** 切换到另一名角色（0 <-> 1 对调） */
+	UFUNCTION(BlueprintCallable, Category = "Team")
+	bool ToggleCharacter();
 
-	TeamMembers[0] = PrimaryCharacter;
-	ActiveIndex = 0;
+	/** 显式切换到指定索引角色 */
+	UFUNCTION(BlueprintCallable, Category = "Team")
+	bool SwitchTo(int32 TargetIndex);
 
-	// 服务端权威生成副角色（Slot 1），并立刻送入后台休眠
-	if (GetOwner() && GetOwner()->HasAuthority() && SecondaryClass)
-	{
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		SpawnParams.Owner = GetOwner();
+	/** 获取当前在场活跃角色 */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	ALSCharacterBase* GetActiveCharacter() const;
 
-		// 生成在主角色附近但隐藏并关闭碰撞
-		FVector SpawnLoc = PrimaryCharacter->GetActorLocation();
-		FRotator SpawnRot = PrimaryCharacter->GetActorRotation();
+	/** 获取当前待命后台角色 */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	ALSCharacterBase* GetInactiveCharacter() const;
 
-		if (ALSCharacterBase* SecondaryChar = GetWorld()->SpawnActor<ALSCharacterBase>(SecondaryClass, SpawnLoc, SpawnRot, SpawnParams))
-		{
-			TeamMembers[1] = SecondaryChar;
-			SecondaryChar->EnterBackgroundMode(); // 立即隐身并进入后台休眠
-		}
-	}
-}
+	/** 获取当前切换冷却剩余时间 */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	float GetCooldownTimer() const { return CooldownTimer; }
 
-bool ULSTeamSwitchComponent::CanSwitch() const
-{
-	// 1. 冷却中无法切换
-	if (CooldownTimer > 0.0f) return false;
+	/** 获取最大切换冷却时间 */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	float GetSwitchCooldown() const { return SwitchCooldown; }
 
-	// 2. 小队成员不齐或未初始化
-	if (!TeamMembers.IsValidIndex(0) || !TeamMembers.IsValidIndex(1)) return false;
-	if (!TeamMembers[0] || !TeamMembers[1]) return false;
+	/** 获取当前活跃角色的槽位索引 */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	int32 GetActiveIndex() const { return ActiveIndex; }
 
-	// 3. 待命角色若已死亡不可切出
-	const int32 TargetIndex = (ActiveIndex == 0) ? 1 : 0;
-	ALSCharacterBase* TargetChar = TeamMembers[TargetIndex];
-	if (!TargetChar || TargetChar->IsDead()) return false;
+public:
+	// ─── 委托事件 ───
+	UPROPERTY(BlueprintAssignable, Category = "Team|Events")
+	FOnLSTeamSwitch OnTeamSwitch;
 
-	// 4. 当前在场角色若处于死亡状态不可普通对调
-	ALSCharacterBase* CurrentChar = TeamMembers[ActiveIndex];
-	if (CurrentChar && CurrentChar->IsDead()) return false;
+	UPROPERTY(BlueprintAssignable, Category = "Team|Events")
+	FOnLSSwitchCooldownChanged OnSwitchCooldownChanged;
 
-	return true;
-}
+protected:
+	/**
+	 * 执行角色的无缝交接逻辑（坐标交接、视线/动量继承、Controller Possession 转移）
+	 */
+	void PerformSwitch(ALSCharacterBase* OutChar, ALSCharacterBase* InChar, int32 NewIndex);
 
-bool ULSTeamSwitchComponent::ToggleCharacter()
-{
-	const int32 TargetIndex = (ActiveIndex == 0) ? 1 : 0;
-	return SwitchTo(TargetIndex);
-}
+protected:
+	// ─── 配置与运行时状态 ───
 
-bool ULSTeamSwitchComponent::SwitchTo(int32 TargetIndex)
-{
-	if (TargetIndex == ActiveIndex) return false;
-	if (!CanSwitch()) return false;
+	/** 小队成员数组（固定容量 2：[0] 主角色，[1] 副角色） */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<ALSCharacterBase>> TeamMembers;
 
-	ALSCharacterBase* OutChar = TeamMembers[ActiveIndex];
-	ALSCharacterBase* InChar = TeamMembers[TargetIndex];
+	/** 当前在场角色的槽位索引（0 或 1） */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Team")
+	int32 ActiveIndex = 0;
 
-	if (!OutChar || !InChar) return false;
+	/** 切换角色的基础冷却时间（秒） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Team|Config")
+	float SwitchCooldown = 1.0f;
 
-	PerformSwitch(OutChar, InChar, TargetIndex);
-	return true;
-}
+	/** 换人冷却剩余计时器 */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Team")
+	float CooldownTimer = 0.0f;
 
-void ULSTeamSwitchComponent::PerformSwitch(ALSCharacterBase* OutChar, ALSCharacterBase* InChar, int32 NewIndex)
-{
-	APlayerController* PC = Cast<APlayerController>(GetOwner());
-	if (!PC) return;
+	/** 切换时是否继承角色移动动量（速度向量），保障奔跑/滑铲时的丝滑无缝感 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Team|Config")
+	bool bInheritVelocity = true;
 
-	// ─── 1. 锁死并备份当前的竞技核心参数 ───
-	const FRotator SavedControlRot = PC->GetControlRotation(); // 准星视角绝对保存
-	const FVector SavedVelocity = OutChar->GetVelocity();     // 当前移动动量向量
-	const FVector SavedLocation = OutChar->GetActorLocation(); // 空间绝对坐标
-
-	// ─── 2. 退场角色清理 ───
-	// 停火并打断开镜
-	if (ULSWeaponComponent* OutWeaponComp = OutChar->GetWeaponComponent())
-	{
-		OutWeaponComp->StopFire();
-	}
-	OutChar->EnterBackgroundMode(); // 隐身、关碰撞、后台轻量更新
-
-	// ─── 3. 入场角色位置与物理状态移交 ───
-	InChar->SetActorLocation(SavedLocation);
-	if (bInheritAimDirection)
-	{
-		InChar->SetActorRotation(FRotator(0.f, SavedControlRot.Yaw, 0.f));
-	}
-
-	InChar->ExitBackgroundMode(); // 显形、恢复碰撞、激活第一人称专属手臂
-
-	// 动量无缝注入：如果之前在冲刺/滑铲，新角色直接继承速度，绝对不卡顿！
-	if (bInheritVelocity)
-	{
-		if (UCharacterMovementComponent* InMove = InChar->GetCharacterMovement())
-		{
-			InMove->Velocity = SavedVelocity;
-		}
-	}
-
-	// ─── 4. 控制器 Possession 交接 ───
-	PC->UnPossess();
-	PC->Possess(InChar);
-
-	// 瞬间恢复 ControlRotation，保障第一人称视野零跳动
-	PC->SetControlRotation(SavedControlRot);
-
-	// ─── 5. 状态同步与事件广播 ───
-	ActiveIndex = NewIndex;
-	CooldownTimer = SwitchCooldown;
-	SetComponentTickEnabled(true); // 开启 Tick 走 CD 衰减
-
-	// 广播本地委托与跨系统全局事件总线
-	OnTeamSwitch.Broadcast(OutChar, InChar, ActiveIndex);
-
-	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
-	{
-		EventBus->OnCharacterSwitched.Broadcast((ActiveIndex == 0) ? 1 : 0, ActiveIndex);
-	}
-}
-
-ALSCharacterBase* ULSTeamSwitchComponent::GetActiveCharacter() const
-{
-	return TeamMembers.IsValidIndex(ActiveIndex) ? TeamMembers[ActiveIndex].Get() : nullptr;
-}
-
-ALSCharacterBase* ULSTeamSwitchComponent::GetInactiveCharacter() const
-{
-	const int32 InactiveIdx = (ActiveIndex == 0) ? 1 : 0;
-	return TeamMembers.IsValidIndex(InactiveIdx) ? TeamMembers[InactiveIdx].Get() : nullptr;
-}
+	/** 切换时新角色是否继承当前的准星朝向 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Team|Config")
+	bool bInheritAimDirection = true;
+};

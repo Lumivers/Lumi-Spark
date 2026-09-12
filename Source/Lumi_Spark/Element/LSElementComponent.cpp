@@ -4,6 +4,8 @@
 #include "Net/UnrealNetwork.h"
 #include "Kismet/GameplayStatics.h"
 #include "Element/LSDendroCore.h"
+#include "Engine/OverlapResult.h"
+#include "GameFramework/Character.h"
 
 ULSElementComponent::ULSElementComponent()
 {
@@ -262,7 +264,7 @@ void ULSElementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 
 	//1,水雷共存感电周期跳电检查
-	ProcessELectroChargedTick(DeltaTime);
+	ProcessElectroChargedTick(DeltaTime);
 
 	// 2,线性自然衰减
 	for (int32 i = ActiveAuras.Num() - 1; i >= 0; --i)

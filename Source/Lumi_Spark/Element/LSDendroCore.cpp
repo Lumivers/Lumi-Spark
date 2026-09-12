@@ -7,6 +7,9 @@
 #include "Weapon/LSWeaponBase.h"
 #include "Weapon/LSGrenadeBase.h"
 #include "Kismet/GameplayStatics.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/DamageEvents.h"
+#include "GameFramework/Character.h"
 
 ALSDendroCore::ALSDendroCore()
 {

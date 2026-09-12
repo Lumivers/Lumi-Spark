@@ -47,7 +47,7 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) 
 	WeaponComponent = CreateDefaultSubobject<ULSWeaponComponent>(TEXT("LSWeaponComp"));
 
 	//挂载元素附着中枢
-	ElementComponent = CreateDefaultSubObject<ULSElementComponent>(TEXT("LSElementComp"));
+	ElementComponent = CreateDefaultSubobject<ULSElementComponent>(TEXT("LSElementComp"));
 }
 
 // Called every frame

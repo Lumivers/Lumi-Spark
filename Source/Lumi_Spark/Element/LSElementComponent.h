@@ -139,5 +139,5 @@ private:
 	void TriggerSwirlSpread(AActor* InstigatorActor, const FGameplayTag& AuraToSpread);
 
 	//触发超载范围爆轰与物理击退
-	void TriggerOverloadedExplosion(AActor* InstigatorActor);
+	void TriggerOverloadExplosion(AActor* InstigatorActor);
 };
