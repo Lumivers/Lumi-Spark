@@ -779,6 +779,19 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
   - 当 `.cpp` 中的 `ULSElementComponent::TriggerOverloadExplosion` 找不到头文件对应的虚幻反射/类声明签名时，编译器无法建立该函数体与类作用域（Class Scope）的合法绑定；
   - 此时函数体内的成员变量和基类方法（来自 `UActorComponent` 的 `GetOwner()`、`GetWorld()`）全部失去了隐式的 `this->` 上下文，被当作全局自由函数中的符号进行查找，因而批量报出未定义。
 
+---
+
+## 30. 技能与充能组件落地：手敲代码常见拼写脱节与类型签名匹配
+
+### 30.1 成员函数签名的字符级严谨性
+- **现象**：头文件误将 `Cooldown` 打成了 `Colldown`（`ll` 误代 `oo`），导致编译器报出 `Class ULSSkillComponent 没有 float() const 类型的成员 'GetSkillCooldownRatio'`。
+- **解析**：C++ 编译器在链接类成员函数实现时执行绝对字符串匹配。即使只差一个字母，编译器也会判定该实现为“未声明的全新成员”，从而拒绝将其绑定到类作用域。
+
+### 30.2 命名对称性与倒装陷阱
+- **现象**：头文件中声明为 `DamageToEnergyConversionRate`，而实现中使用了 `EnergyDamageConversionRate`，导致“未解析符号”。
+- **心智模型**：在大型工程中，变量命名应遵循固定的修饰顺序（例如 `[源领域]To[目标领域]ConversionRate` 或 `[物理量][修饰词]`），保持头文件与实现文件的命名完全对称，即可彻底避免此类手滑。
+
+
 
 
 

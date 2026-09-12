@@ -128,6 +128,12 @@ void ULSMovementComponent::StopSlide()
 	
 	bIsSliding = false;
 	
+	// 滑铲结束站起来
+	if (CharacterOwner)
+	{
+		CharacterOwner->UnCrouch();
+	}
+	
 	//恢复摩擦力和减速度
 	GroundFriction = DefaultGroundFriction;
 	BrakingDecelerationWalking = DefaultBrakingDeceleration;

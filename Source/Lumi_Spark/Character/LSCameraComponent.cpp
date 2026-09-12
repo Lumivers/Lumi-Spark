@@ -2,6 +2,7 @@
 #include "GameFramework/Character.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "LSMovementComponent.h"
 
 ULSCameraComponent::ULSCameraComponent()
 {
@@ -118,6 +119,23 @@ void ULSCameraComponent::ExitADS()
 
 void ULSCameraComponent::UpdateCameraInterpolation(float DeltaTime)
 {
+	FVector FinalSocketOffset = TargetSocketOffset;
+	float FinalFov = TargetFov;
+	
+	//检测滑铲状态
+	if (ACharacter* Char = Cast<ACharacter>(GetOwner()))
+	{
+		if (ULSMovementComponent* MoveComp = Cast<ULSMovementComponent>(Char->GetCharacterMovement()))
+		{
+			if (MoveComp->IsSliding())
+			{
+				//滑铲时摄像机降低高度
+				FinalSocketOffset.Z -= 45.0f;
+				FinalFov += 6.0f; //略微拉远视野
+			}
+		}
+	}
+	
 	if (SpringArm)
 	{
 		// 1. 平滑伸缩弹簧臂（第一人称 0 <-> 第三人称 300）
