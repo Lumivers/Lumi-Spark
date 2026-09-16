@@ -4,6 +4,8 @@
 #include "Weapon/LSWeaponComponent.h"
 #include "Core/LSEventBus.h"
 #include "GameFramework/PlayerController.h"
+#include "Core/LSPlayerController.h"
+#include "UI/LSUHDWidget.h"
 
 ULSTeamSwitchComponent::ULSTeamSwitchComponent()
 {
@@ -156,6 +158,16 @@ void ULSTeamSwitchComponent::PerformSwitch(ALSCharacterBase* OutChar, ALSCharact
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
 	{
 		EventBus->OnCharacterSwitched.Broadcast((ActiveIndex == 0) ? 1 : 0, ActiveIndex);
+	}
+
+	// 通知 playerController拥有的HUD重新绑定新角色
+	if (ALSPlayerController* LSPc = Cast<ALSPlayerController>(PC))
+	{
+		if (ULSHUDWidget* HUDWidget = Cast<ULSHUDWidget>(LSPc->HUDWidgetInstance))
+		{
+			HUDWidget->BindToCharacter(InChar);
+			HUDWidget->OnActiveCharacterSwitched(InChar, ActiveIndex);
+		}
 	}
 }
 

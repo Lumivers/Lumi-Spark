@@ -88,6 +88,9 @@ public:
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
 	TObjectPtr<UInputAction> IA_Interact;     // F 键：场景交互
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
+	TSubclassOf<class ALSGrenadeBase> DefaultGrenadeClass;
 	
 	//5.灵敏度参数
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Sensitivity")

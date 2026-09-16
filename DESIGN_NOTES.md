@@ -29,6 +29,10 @@
 25. [草系生态实体与绽放连锁引擎（ALSDendroCore & Bloom Ecology）](#25-草系生态实体与绽放连锁引擎alsdendrocore--bloom-ecology)
 26. [战斗伤害飘字与打击反馈管线（Combat Damage Floating Numbers & Feedback Pipeline）](#26-战斗伤害飘字与打击反馈管线combat-damage-floating-numbers--feedback-pipeline)
 27. [双角色即时切换与动量继承中枢（LSTeamSwitchComponent & Seamless Possession）](#27-双角色即时切换与动量继承中枢lsteamswitchcomponent--seamless-possession)
+28. [编译故障排查：头文件错位引发的“UHT雪崩效应”与 C++ 访问控制](#28-编译故障排查头文件错位引发的uht雪崩效应与-c-访问控制)
+29. [进阶故障排查：IWYU 模块拆分、重载决议误报与成员上下文脱落](#29-进阶故障排查iwyu-模块拆分重载决议误报与成员上下文脱落)
+30. [技能与充能组件落地：手敲代码常见拼写脱节与类型签名匹配](#30-技能与充能组件落地手敲代码常见拼写脱节与类型签名匹配)
+31. [双角色体系深度咬合：技能中枢装配、武器后台隐藏、HUD动态重绑与IWYU实战](#31-双角色体系深度咬合技能中枢装配武器后台隐藏hud动态重绑与iwyu实战)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -790,6 +794,82 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
 ### 30.2 命名对称性与倒装陷阱
 - **现象**：头文件中声明为 `DamageToEnergyConversionRate`，而实现中使用了 `EnergyDamageConversionRate`，导致“未解析符号”。
 - **心智模型**：在大型工程中，变量命名应遵循固定的修饰顺序（例如 `[源领域]To[目标领域]ConversionRate` 或 `[物理量][修饰词]`），保持头文件与实现文件的命名完全对称，即可彻底避免此类手滑。
+
+---
+
+## 31. 双角色体系深度咬合：技能中枢装配、武器后台隐藏、HUD动态重绑与IWYU实战
+
+### 31.1 双角色技能装配与后台生命周期管理 (ALSCharacterBase & ULSSkillComponent)
+
+#### 1. 架构定位与设计哲学
+- **源码文件**：`Source/Lumi_Spark/Character/LSCharacterBase.{h,cpp}`
+- **技术选型**：在 `ALSCharacterBase` 的构造函数中通过 `CreateDefaultSubobject<ULSSkillComponent>(TEXT("LSSkillComp"))` 装配为默认子对象。
+- **为什么组件挂载在 Character 而非 Controller**：
+  - 在《原神》和双人轮切射击架构中，每名角色的战斗属性完全异构（角色 A 是 8s CD 的突击技能，角色 B 是 15s CD 的群控技能；两人的大招能量上限、当前充能进度各不相同）。
+  - 若挂在 Controller 上，切人时 Controller 必须先备份旧角色的数值再反序列化新角色的数值，时序极易混乱；
+  - 挂在 Character 上，每个 Pawn 成为自包含的战斗实体，Controller 仅作为纯粹的输入派发网关，符合 UE 的“Pawn 是躯体、Controller 是意志”的设计哲学。
+
+#### 2. 后台休眠态的“活性保留”与“后台吃球充能”
+- 在 `EnterBackgroundMode()` 中，角色进入休眠模式：
+  1. 隐藏全身 Mesh 与专属第一人称手臂；
+  2. 关闭胶囊体碰撞（`ECollisionEnabled::NoCollision`），防止退场角色在后台变成“隐形空气墙”挡路或挡子弹；
+  3. 停止移动组件并打断开火换弹。
+- **关键设计细节**：**绝不关闭 `SkillComponent` 的 Tick 与事件监听！**
+  - **E 战技独立冷却**：角色退场后，其 `SkillComponent` 自身的 Tick 依然在后台独立流逝，切回前台时技能已自然冷却完毕；
+  - **Q 爆发全队吃球充能**：`SkillComponent` 监听的是全局事件总线 `ULSEventBus` 的 `OnDamageDealt` 与反应事件。因此在场角色造成的直伤和反应，后台待命角色同样能被动累积大招能量，完美复刻原神后台吃球充能机制。
+
+#### 3. 悬浮“幽灵武器”的防穿帮处理
+- 角色调用 `SetActorHiddenInGame(true)` 时，附加在骨骼插槽上的武器 Actor（`ALSWeaponBase`）由于是独立的 Actor，默认不会自动随角色隐身，容易发生“人退场了但一把枪悬浮在半空”的恶性 Bug。
+- 在 `EnterBackgroundMode` 中显式提取 `WeaponComponent->GetCurrentWeapon()->SetActorHiddenInGame(true)`；并在登场 `ExitBackgroundMode` 时重新显形，保障第一人称与第三人称视角的绝对严密。
+
+---
+
+### 31.2 控制器输入网关与手雷投掷视差消除 (ALSPlayerController)
+
+#### 1. 架构定位
+- **源码文件**：`Source/Lumi_Spark/Core/LSPlayerController.{h,cpp}`
+- **职责**：将 Enhanced Input 的动作事件（`IA_Skill`、`IA_Burst`、`IA_ThrowGrenade`）桥接到主控 Pawn 的业务逻辑。
+
+#### 2. 校验网关与即时反馈
+- Controller 在调用 Pawn 施法前，先执行 `CanCastSkill()` / `CanCastBurst()` 进行前置合法性检查；
+- 若冷却未好或能量不足，直接在 Controller 层拦截并向玩家输出即时提示或音效，避免非法状态下潜到底层业务。
+
+#### 3. 第一人称手雷起点视差消除
+- 若从角色的胶囊体中心（`GetActorLocation`）生成手雷，第一人称下玩家会感觉手雷是从腰部甚至背后钻出来的，且极易与自身胶囊体发生初始穿模碰撞。
+- **解决方案**：调用 `GetPlayerViewPoint(CameraLoc, CameraRot)` 抓取摄像机精准视口坐标，将生成点定位在准星前方 80cm 处（`CameraLoc + CameraRot.Vector() * 80.0f`），投掷初速度方向严格对齐摄像机视线朝向，还原 3A 射击极致的投掷手感。
+
+---
+
+### 31.3 战斗 HUD 动态重绑与主动推流机制 (ULSHUDWidget)
+
+#### 1. 架构定位
+- **源码文件**：`Source/Lumi_Spark/UI/LSUHDWidget.{h,cpp}`
+- **职责**：作为 UMG 的 C++ 数据中枢，监听出战角色的生命值、武器弹药、技能 CD 与大招能量，驱动蓝图表现。
+
+#### 2. 动态重绑范式 (Dynamic Rebinding)
+- 当玩家按 Tab 切换角色时，出战实体发生变更。HUD 必须实现 `BindToCharacter(ALSCharacterBase* NewCharacter)`：
+  1. **严格解绑旧角色**：调用 `RemoveDynamic` 解除旧角色的 `OnHealthChanged`、`OnSkillCooldownChanged`、`OnEnergyChanged`，彻底杜绝悬挂委托与后台角色误触发 UI 刷新的幽灵回调；
+  2. **绑定新出战角色**：重新订阅新角色身上的组件委托。
+
+#### 3. 初次绑定的“主动推流”策略
+- **常见陷阱**：仅绑定委托，但未主动刷新一次初始值。若新角色在后台早已转好 CD（CD 为 0），委托将不再触发，导致切人后 UI 界面仍然滞留在旧角色的 CD 扇形遮罩状态。
+- **解决方案**：在 `BindToCharacter` 绑定成功的一瞬间，主动调用组件的 Getter（`GetSkillCooldownRemaining()`、`GetCurrentEnergy()`）并直接调用 `OnSkillCooldownUpdated` / `OnBurstEnergyUpdated` 向蓝图派发一次全量初始数据，实现切人瞬帧 UI 100% 对齐。
+
+---
+
+### 31.4 工业级 C++ 实战避坑指南 (Troubleshooting)
+
+在大型虚幻工程由多组件咬合推进时，需特别注意以下几类高频隐蔽错误：
+
+1. **头文件包含完整性 (IWYU - Include What You Use)**：
+   - 头文件中即使使用了 `class ULSSkillComponent;`、`class ALSPlayerController;` 前向声明，**在 `.cpp` 实现文件中凡是调用了该类的任何方法、访问其成员、或作为模板参数传递给 `CreateDefaultSubobject<T>` / `Cast<T>` 时，必须显式引入该类的完整 `.h` 头文件**。否则编译器会直接报 `C2027: 使用了未定义类型` 或找不到 `StaticClass()`。
+2. **`UFUNCTION()` 回调必须提供实现体**：
+   - 在 `.h` 中声明了 `UFUNCTION()` 回调函数（如 `HandleHealthChanged`），必须在对应的 `.cpp` 中编写函数体定义。若漏写实现体，编译器在语法阶段可能不报错，但在链接阶段会报出致命的 `LNK2019: 无法解析的外部符号`。
+3. **类成员大小写与 API 命名严谨性**：
+   - 组件名称与方法名不可凭借记忆手打：如 `GetProjectileMovement()`（非 `GetProjectileMovementComponent()`）；指针变量如 `ProjComp` 在同一作用域下不能混用 `Projcomp`。C++ 大小写绝对敏感。
+4. **代码替换与重构时的“吃行”风险**：
+   - 在重构类的成员变量或回调列表时，切忌将已有且在其他逻辑中被引用的回调函数（如原有的 `HandleAmmoChanged`）误删或覆盖，否则会导致其他已有代码的委托绑定失效并报错。
+
 
 
 

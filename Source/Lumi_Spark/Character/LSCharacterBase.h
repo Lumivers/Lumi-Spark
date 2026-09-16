@@ -17,6 +17,7 @@ class ULSElementComponent;
 class UInputMappingContext;
 class UInputAction;
 class ULSWeaponComponent;
+class ULSSkillComponent;
 struct FInputActionValue;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSHealthChanged, float, CurrentHealth, float, MaxHealth);
@@ -51,6 +52,9 @@ public:
 
 	// 元素属性
 	FORCEINLINE ULSElementComponent* GetElementComponent() const { return ElementComponent; }
+
+	//获取技能与大招充能组件
+	FORCEINLINE ULSSkillComponent* GetSkillComponent() const { return SkillComponent; }
 
 	//生命值委托
 	UPROPERTY(BlueprintAssignable, Category = "Health|Events")
@@ -93,6 +97,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health")
 	float MaxHealth = 1000.0f;
+
+	// 技能与大招充能组件
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Skill", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ULSSkillComponent> SkillComponent;
 
 	UFUNCTION()
 	void OnRep_CurrentHealth();

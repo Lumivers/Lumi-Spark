@@ -7,6 +7,8 @@
 
 class ALSWeaponBase;
 class ULSWeaponComponent;
+class ALSCharacterBase;
+class ULSSkillComponent;
 
 /**
  * 战斗 HUD 界面 C++ 中枢基类
@@ -28,6 +30,10 @@ public:
 	//获取当前手持武器
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "HUD|Weapon")
 	ALSWeaponBase* GetCurrentWeapon() const { return CurrentBoundWeapon; }
+
+	//将HUD绑定至指定的在场角色
+	UFUNCTION(BlueprintCallable, Category = "HUD")
+	void BindToCharacter(ALSCharacterBase* NewCharacter);
 	
 protected:
 	//蓝图实现的表现层事件
@@ -50,6 +56,24 @@ protected:
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HUD|Audio")
 	TObjectPtr<USoundBase> HitHeadshotSound;
+
+	//暴露给蓝图的UMG表现层事件
+	
+	//生命值变动通知
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Health")
+	void OnHealthUpdated(float CurrentHealth, float MaxHealth);
+
+	//E技能冷却剩余时间通知
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Skill")
+	void OnSkillCooldownUpdated(float CurrentCooldown, float MaxCooldown, float Ratio);
+
+	//Q技能能量变动通知
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Skill")
+	void OnBurstEnergyUpdated(float CurrentEnergy, float MaxEnergy, float Ratio);
+
+	//出战角色切换通知
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Team")
+	void OnActiveCharacterSwitched(ALSCharacterBase* NewCharacter, int32 SlotIndex);
 	
 private:
 	//缓存指针
@@ -58,11 +82,13 @@ private:
 	
 	UPROPERTY(Transient)
 	TObjectPtr<ALSWeaponBase> CurrentBoundWeapon = nullptr;
-	
-	//内部绑定回调
-	UFUNCTION()
-	void HandleAmmoChanged(int32 CurrentAmmo, int32 MagazineSize, int32 ReserveAmmo);
-	
+
+	UPROPERTY(Transient)
+	TObjectPtr<ALSCharacterBase> BoundCharacter = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULSSkillComponent> BoundSkillComp = nullptr;
+
 	UFUNCTION()
 	void HandleWeaponChanged(ALSWeaponBase* NewWeapon);
 	
@@ -70,4 +96,16 @@ private:
 	void HandleDamageDealt(const FLSDamageContext& DamageContext);
 	
 	void BindToWeapon(ALSWeaponBase* Weapon);
+
+	UFUNCTION()
+    void HandleHealthChanged(float CurrentHealth, float MaxHealth);
+
+    UFUNCTION()
+    void HandleSkillCooldownChanged(float CurrentCooldown, float MaxCooldown);
+
+    UFUNCTION()
+    void HandleEnergyChanged(float CurrentEnergy, float MaxEnergy);
+
+	UFUNCTION()
+	void HandleAmmoChanged(int32 CurrentAmmo, int32 MagazineSize, int32 ReserveAmmo);
 };

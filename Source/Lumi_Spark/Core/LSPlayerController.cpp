@@ -8,6 +8,9 @@
 #include "Weapon/LSWeaponComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "Character/LSTeamSwitchComponent.h"
+#include "Character/LSSkillComponent.h"
+#include "Weapon/LSGrenadeBase.h"
+#include "GameFramework/ProjectileMovementComponent.h"
 
 ALSPlayerController::ALSPlayerController()
 {
@@ -264,22 +267,76 @@ void ALSPlayerController::HandleReload()
 
 void ALSPlayerController::HandleSkill()
 {
-	// 预留：通知 SkillComponent 释放 E 战技
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSSkillComponent* SkillComp = Char->GetSkillComponent())
+		{
+			if (SkillComp->CanCastSkill())
+			{
+				SkillComp->CastSkill();
+			}
+			else
+			{
+				//屏幕屏幕调试提示或触发 CD 未就绪音效
+                GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Yellow, FString::Printf(TEXT("⏳ E 战技冷却中，剩余: %.1fs"), SkillComp->GetSkillCooldownRemaining()));
+			}
+		}
+	}
 }
 
 void ALSPlayerController::HandleBurst()
 {
-	// 预留：通知 SkillComponent 释放 Q 爆发大招
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+    {
+        if (ULSSkillComponent* SkillComp = Char->GetSkillComponent())
+        {
+            if (SkillComp->CanCastBurst())
+            {
+                SkillComp->CastBurst();
+            }
+            else
+            {
+                GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Yellow, FString::Printf(TEXT("⚡ Q 能量不足: %.0f / %.0f"), SkillComp->GetCurrentEnergy(), SkillComp->GetMaxEnergy()));
+            }
+        }
+    }
 }
 
 void ALSPlayerController::HandleThrowGrenadeStarted()
 {
-	// 预留：显示元素手雷抛物线轨迹预览 (Niagara Spline)
+	
 }
 
 void ALSPlayerController::HandleThrowGrenadeCompleted()
 {
-	// 预留：按物理抛物线掷出水/火/冰/雷元素手雷
+	ALSCharacterBase* Char = GetPawn<ALSCharacterBase>();
+	if (!Char || !Char->HasAuthority()) return;
+
+	//从摄像机视口正中央向前投掷
+	FVector CameraLoc;
+	FRotator CameraRot;
+	GetPlayerViewPoint(CameraLoc, CameraRot);
+
+	// 投掷起点向前微调，防止手雷生成在自身胶囊体内引发碰撞穿模
+	const FVector SpawnLoc = CameraLoc + (CameraRot.Vector() * 80.0f);
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = Char;
+	SpawnParams.Instigator = Char;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// 生成配置的基础手雷
+	if (DefaultGrenadeClass)
+	{
+    	if (ALSGrenadeBase* Grenade = GetWorld()->SpawnActor<ALSGrenadeBase>(DefaultGrenadeClass, SpawnLoc, CameraRot, SpawnParams))
+    	{
+        	// 给手雷一个朝向准星仰角的初速度向量
+        	if (UProjectileMovementComponent* ProjComp = Grenade->GetProjectileMovement())
+        	{
+            	ProjComp->Velocity = CameraRot.Vector() * ProjComp->InitialSpeed;
+        	}
+    	}
+	}
 }
 
 void ALSPlayerController::HandleSwitchCharacter()

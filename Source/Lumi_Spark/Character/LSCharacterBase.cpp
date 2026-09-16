@@ -11,6 +11,7 @@
 #include "Element/LSElementComponent.h"
 #include "Core/LSEventBus.h"
 #include "Net/UnrealNetwork.h"
+#include "Character/LSSkillComponent.h"
 
 // 构造函数：用自定义的ULSMovementComponent 替换默认的CharacterMovementComponent
 ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -48,6 +49,9 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) 
 
 	//挂载元素附着中枢
 	ElementComponent = CreateDefaultSubobject<ULSElementComponent>(TEXT("LSElementComp"));
+
+	// 实例化技能与大招充能组件
+	SkillComponent = CreateDefaultSubobject<ULSSkillComponent>(TEXT("LSSkillComp"));
 }
 
 // Called every frame
@@ -134,10 +138,21 @@ void ALSCharacterBase::EnterBackgroundMode()
 	// 1. 隐藏全身与第一人称手臂
 	SetActorHiddenInGame(true);
 
-	// 2. 关闭物理胶囊体碰撞（防止在后台时挡住子弹或被怪物打中）
+	// 2, 隐藏当前持有的手部/收纳武器
+	if (WeaponComponent)
+	{
+		WeaponComponent->StopFire();
+		//隐藏武器Actor
+		if (ALSWeaponBase* CurrentWeapon = WeaponComponent->GetCurrentWeapon())
+		{
+			CurrentWeapon->SetActorHiddenInGame(true);
+		}
+	}
+
+	// 3. 关闭物理胶囊体碰撞（防止在后台时挡住子弹或被怪物打中）
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	// 3. 停止移动组件
+	// 4. 停止移动组件
 	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
 	{
 		MoveComp->StopMovementImmediately();
@@ -150,16 +165,26 @@ void ALSCharacterBase::ExitBackgroundMode()
 	// 1. 重新显形
 	SetActorHiddenInGame(false);
 
-	// 2. 恢复碰撞
+	// 2, 恢复武器显型
+	if (WeaponComponent)
+	{
+		//恢复武器Actor显型
+		if (ALSWeaponBase* CurrentWeapon = WeaponComponent->GetCurrentWeapon())
+		{
+			CurrentWeapon->SetActorHiddenInGame(false);
+		}
+	}
+
+	// 3. 恢复碰撞
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 
-	// 3. 恢复移动模式为行走
+	// 4. 恢复移动模式为行走
 	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
 	{
 		MoveComp->SetMovementMode(MOVE_Walking);
 	}
 
-	// 4. 重新让摄像机对准当前手臂显隐状态
+	// 5. 重新让摄像机对准当前手臂显隐状态
 	if (CameraComponent)
 	{
 		CameraComponent->UpdateMeshVisibility();
