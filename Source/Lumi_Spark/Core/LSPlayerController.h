@@ -64,14 +64,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
 	TObjectPtr<UInputAction> IA_Reload; // R 换弹
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
-	TObjectPtr<UInputAction> IA_SwitchWeapon1;     // 1 键主武器
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Team")
+	TObjectPtr<UInputAction> IA_SwitchToSlot1; // 1 键直切角色 1
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
-	TObjectPtr<UInputAction> IA_SwitchWeapon2;     // 2 键副武器
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Team")
+	TObjectPtr<UInputAction> IA_SwitchToSlot2; // 2 键直切角色 2
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
-	TObjectPtr<UInputAction> IA_QuickSwitchWeapon; // 滚轮快速切枪
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Team")
+	TObjectPtr<UInputAction> IA_SwitchToSlot3; // 3 键直切角色 3
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Team")
+	TObjectPtr<UInputAction> IA_CycleCharacter; // 滚轮顺逆切 (Axis1D)
 	
 	//4，角色机制
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
@@ -140,9 +143,10 @@ protected:
 	void HandleSwitchCharacter();
 	void HandleInteract();
 	
-	void HandleSwitchWeapon1();
-	void HandleSwitchWeapon2();
-	void HandleQuickSwitchWeapon();
+	void HandleSwitchToSlot1();
+	void HandleSwitchToSlot2();
+	void HandleSwitchToSlot3();
+	void HandleCycleCharacter(const struct FInputActionValue& Value);
 
 private:
 	bool bIsAiming = false;

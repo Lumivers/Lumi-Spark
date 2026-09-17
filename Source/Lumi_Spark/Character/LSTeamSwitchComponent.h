@@ -24,33 +24,48 @@ public:
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	/**
-	 * 初始化双人小队
-	 * @param PrimaryCharacter 默认登场的主角色（Slot 0）
-	 * @param SecondaryClass 待命副角色类型（Slot 1），服务端将在后台静默生成该实例
+		/**
+	 * 初始化三人小队
+	 * @param PrimaryCharacter 默认出战的主角色（Slot 0）
+	 * @param StandbyClasses 待命副角色类型数组（Slot 1, Slot 2），服务端在后台静默生成并使其休眠
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Team")
-	void SetupTeam(ALSCharacterBase* PrimaryCharacter, TSubclassOf<ALSCharacterBase> SecondaryClass);
+	void SetupTeam(ALSCharacterBase* PrimaryCharacter, const TArray<TSubclassOf<ALSCharacterBase>>& StandbyClasses);
 
-	/** 当前是否满足切换条件（CD结束、目标角色存活等） */
+	/** 全局基础切人条件校验（冷却中、小队有效性） */
 	UFUNCTION(BlueprintPure, Category = "Team")
 	bool CanSwitch() const;
 
-	/** 切换到另一名角色（0 <-> 1 对调） */
-	UFUNCTION(BlueprintCallable, Category = "Team")
-	bool ToggleCharacter();
+	/** 校验能否切至指定槽位角色（检查目标存活、非当前角色） */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	bool CanSwitchToIndex(int32 TargetIndex) const;
 
-	/** 显式切换到指定索引角色 */
+	/**
+	 * 顺逆轮换切人（Tab 顺切、滚轮顺逆切）
+	 * @param bForward true 向后轮换（0->1->2->0），false 向前轮换（0->2->1->0）
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Team")
+	bool CycleNextCharacter(bool bForward = true);
+
+	/** 显式切换到指定索引角色（1 / 2 / 3 键直切） */
 	UFUNCTION(BlueprintCallable, Category = "Team")
 	bool SwitchTo(int32 TargetIndex);
+
+	/** 快速切至下一个角色（兼容旧接口） */
+	UFUNCTION(BlueprintCallable, Category = "Team")
+	bool ToggleCharacter();
 
 	/** 获取当前在场活跃角色 */
 	UFUNCTION(BlueprintPure, Category = "Team")
 	ALSCharacterBase* GetActiveCharacter() const;
 
-	/** 获取当前待命后台角色 */
+	/** 获取当前待命后台角色（兼容旧双人小队蓝图调用） */
 	UFUNCTION(BlueprintPure, Category = "Team")
 	ALSCharacterBase* GetInactiveCharacter() const;
+
+	/** 获取指定槽位的角色实例（0 ~ 2） */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	ALSCharacterBase* GetCharacterAtIndex(int32 Index) const;
 
 	/** 获取当前切换冷却剩余时间 */
 	UFUNCTION(BlueprintPure, Category = "Team")

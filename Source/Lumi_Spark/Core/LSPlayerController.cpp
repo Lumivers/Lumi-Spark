@@ -88,9 +88,10 @@ void ALSPlayerController::SetupInputComponent()
 		if (IA_SwitchCharacter) EnhancedInputComponent->BindAction(IA_SwitchCharacter, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchCharacter);
 		if (IA_Interact) EnhancedInputComponent->BindAction(IA_Interact, ETriggerEvent::Started, this, &ALSPlayerController::HandleInteract);
 		
-		if (IA_SwitchWeapon1) EnhancedInputComponent->BindAction(IA_SwitchWeapon1, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchWeapon1);
-		if (IA_SwitchWeapon2) EnhancedInputComponent->BindAction(IA_SwitchWeapon2, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchWeapon2);
-		if (IA_QuickSwitchWeapon) EnhancedInputComponent->BindAction(IA_QuickSwitchWeapon, ETriggerEvent::Started, this, &ALSPlayerController::HandleQuickSwitchWeapon);
+		if (IA_SwitchToSlot1) EnhancedInputComponent->BindAction(IA_SwitchToSlot1, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchToSlot1);
+		if (IA_SwitchToSlot2) EnhancedInputComponent->BindAction(IA_SwitchToSlot2, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchToSlot2);
+		if (IA_SwitchToSlot3) EnhancedInputComponent->BindAction(IA_SwitchToSlot3, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchToSlot3);
+		if (IA_CycleCharacter) EnhancedInputComponent->BindAction(IA_CycleCharacter, ETriggerEvent::Triggered, this, &ALSPlayerController::HandleCycleCharacter);
 	}
 }
 
@@ -343,7 +344,7 @@ void ALSPlayerController::HandleSwitchCharacter()
 {
 	if (TeamSwitchComponent)
 	{
-		TeamSwitchComponent->ToggleCharacter();
+		TeamSwitchComponent->CycleNextCharacter(true);
 	}
 }
 
@@ -352,21 +353,26 @@ void ALSPlayerController::HandleInteract()
 	// 预留：拾取掉落物 / 交互
 }
 
-void ALSPlayerController::HandleSwitchWeapon1()
+void ALSPlayerController::HandleSwitchToSlot1()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Cyan, TEXT("🔄 [Input] 按了 1 键切主武器！"));
-	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
-		if (ULSWeaponComponent* Comp = Char->GetWeaponComponent()) Comp->EquipWeapon(ELSWeaponSlot::MainWeapon);
-}
-void ALSPlayerController::HandleSwitchWeapon2()
-{
-	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Cyan, TEXT("🔄 [Input] 按了 2 键切副武器！"));
-	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
-		if (ULSWeaponComponent* Comp = Char->GetWeaponComponent()) Comp->EquipWeapon(ELSWeaponSlot::SubWeapon);
+	if (TeamSwitchComponent) TeamSwitchComponent->SwitchTo(0);
 }
 
-void ALSPlayerController::HandleQuickSwitchWeapon()
+void ALSPlayerController::HandleSwitchToSlot2()
 {
-	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
-		if (ULSWeaponComponent* Comp = Char->GetWeaponComponent()) Comp->QuickSwitchWeapon();
+	if (TeamSwitchComponent) TeamSwitchComponent->SwitchTo(1);
+}
+
+void ALSPlayerController::HandleSwitchToSlot3()
+{
+	if (TeamSwitchComponent) TeamSwitchComponent->SwitchTo(2);
+}
+
+void ALSPlayerController::HandleCycleCharacter(const FInputActionValue& Value)
+{
+	if (!TeamSwitchComponent) return;
+	const float AxisVal = Value.Get<float>();
+	if (FMath::IsNearlyZero(AxisVal)) return;
+	// 滚轮向上 (>0) 顺切，滚轮向下 (<0) 逆切
+	TeamSwitchComponent->CycleNextCharacter(AxisVal > 0.0f);
 }

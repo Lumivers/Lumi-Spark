@@ -37,28 +37,31 @@ void ULSTeamSwitchComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	}
 }
 
-void ULSTeamSwitchComponent::SetupTeam(ALSCharacterBase* PrimaryCharacter, TSubclassOf<ALSCharacterBase> SecondaryClass)
+void ULSTeamSwitchComponent::SetupTeam(ALSCharacterBase* PrimaryCharacter, const TArray<TSubclassOf<ALSCharacterBase>>& StandbyClasses)
 {
 	if (!PrimaryCharacter || !GetWorld()) return;
 
-	TeamMembers[0] = PrimaryCharacter;
+	TeamMembers.Empty();
+	TeamMembers.Add(PrimaryCharacter);
 	ActiveIndex = 0;
 
-	// 服务端权威生成副角色（Slot 1），并立刻送入后台休眠
-	if (GetOwner() && GetOwner()->HasAuthority() && SecondaryClass)
+	if (GetOwner() && GetOwner()->HasAuthority())
 	{
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		SpawnParams.Owner = GetOwner();
 
-		// 生成在主角色附近但隐藏并关闭碰撞
-		FVector SpawnLoc = PrimaryCharacter->GetActorLocation();
-		FRotator SpawnRot = PrimaryCharacter->GetActorRotation();
+		const FVector SpawnLoc = PrimaryCharacter->GetActorLocation();
+		const FRotator SpawnRot = PrimaryCharacter->GetActorRotation();
 
-		if (ALSCharacterBase* SecondaryChar = GetWorld()->SpawnActor<ALSCharacterBase>(SecondaryClass, SpawnLoc, SpawnRot, SpawnParams))
+		for (TSubclassOf<ALSCharacterBase> StandbyClass : StandbyClasses)
 		{
-			TeamMembers[1] = SecondaryChar;
-			SecondaryChar->EnterBackgroundMode(); // 立即隐身并进入后台休眠
+			if (!StandbyClass) continue;
+			if (ALSCharacterBase* StandbyChar = GetWorld()->SpawnActor<ALSCharacterBase>(StandbyClass, SpawnLoc, SpawnRot, SpawnParams))
+			{
+				TeamMembers.Add(StandbyChar);
+				StandbyChar->EnterBackgroundMode(); // 立即进入后台休眠
+			}
 		}
 	}
 }
@@ -86,18 +89,15 @@ bool ULSTeamSwitchComponent::CanSwitch() const
 
 bool ULSTeamSwitchComponent::ToggleCharacter()
 {
-	const int32 TargetIndex = (ActiveIndex == 0) ? 1 : 0;
-	return SwitchTo(TargetIndex);
+	return CycleNextCharacter(true);
 }
 
 bool ULSTeamSwitchComponent::SwitchTo(int32 TargetIndex)
 {
-	if (TargetIndex == ActiveIndex) return false;
-	if (!CanSwitch()) return false;
+	if (!CanSwitchToIndex(TargetIndex)) return false;
 
 	ALSCharacterBase* OutChar = TeamMembers[ActiveIndex];
 	ALSCharacterBase* InChar = TeamMembers[TargetIndex];
-
 	if (!OutChar || !InChar) return false;
 
 	PerformSwitch(OutChar, InChar, TargetIndex);
@@ -180,4 +180,40 @@ ALSCharacterBase* ULSTeamSwitchComponent::GetInactiveCharacter() const
 {
 	const int32 InactiveIdx = (ActiveIndex == 0) ? 1 : 0;
 	return TeamMembers.IsValidIndex(InactiveIdx) ? TeamMembers[InactiveIdx].Get() : nullptr;
+}
+
+bool ULSTeamSwitchComponent::CanSwitchToIndex(int32 TargetIndex) const
+{
+	if (CooldownTimer > 0.0f) return false;
+	if (!TeamMembers.IsValidIndex(TargetIndex)) return false;
+	if (TargetIndex == ActiveIndex) return false;
+
+	ALSCharacterBase* TargetChar = TeamMembers[TargetIndex];
+	if (!TargetChar || TargetChar->IsDead()) return false;
+
+	return true;
+}
+
+bool ULSTeamSwitchComponent::CycleNextCharacter(bool bForward)
+{
+	if (TeamMembers.Num() < 2 || CooldownTimer > 0.0f) return false;
+
+	const int32 Total = TeamMembers.Num();
+	const int32 Step = bForward ? 1 : -1;
+
+	// 环形寻址寻找下一个存活队友
+	for (int32 i = 1; i < Total; ++i)
+	{
+		int32 CandidateIndex = (ActiveIndex + i * Step + Total * 10) % Total;
+		if (CanSwitchToIndex(CandidateIndex))
+		{
+			return SwitchTo(CandidateIndex);
+		}
+	}
+	return false;
+}
+
+ALSCharacterBase* ULSTeamSwitchComponent::GetCharacterAtIndex(int32 Index) const
+{
+	return TeamMembers.IsValidIndex(Index) ? TeamMembers[Index] : nullptr;
 }

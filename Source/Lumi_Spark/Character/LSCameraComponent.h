@@ -27,7 +27,7 @@ public:
 	
 	// ═══ 当前视角模式 ═══
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Mode")
-	ELSCameraMode CurrentMode = ELSCameraMode::FirstPerson;
+	ELSCameraMode CurrentMode = ELSCameraMode::ThirdPerson;
 	
 	// ═══ 视角参数配置 ═══
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|FPS")
@@ -80,11 +80,11 @@ public:
 	void UpdateMeshVisibility();
 	
 private:
-	ELSCameraMode PreADSMode = ELSCameraMode::FirstPerson;
-	float TargetArmLength = 0.0f;
-	FVector TargetSocketOffset = FVector::ZeroVector;
+	ELSCameraMode PreADSMode = ELSCameraMode::ThirdPerson;
+	float TargetArmLength = 300.0f;
+	FVector TargetSocketOffset = FVector(0.0f, 50.0f, 15.0f);
 	bool bIsInADS = false;
-	float TargetFov = 90.f;
+	float TargetFov = 80.f;
 	
 	// 逐帧更新摄像机平滑插值与防穿墙检测
 	void UpdateCameraInterpolation(float DeltaTime);

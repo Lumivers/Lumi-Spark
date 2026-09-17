@@ -3,6 +3,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "LSMovementComponent.h"
+#include "Character/LSCharacterBase.h"
 
 ULSCameraComponent::ULSCameraComponent()
 {
@@ -158,16 +159,20 @@ void ULSCameraComponent::UpdateMeshVisibility()
 	if (!OwnerCharacter || !OwnerCharacter->GetMesh()) return;
 
 	USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh();
+	ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(OwnerCharacter);
+	USkeletalMeshComponent* ArmsMesh = LSChar ? LSChar->GetArmsMesh() : nullptr;
 
 	if (CurrentMode == ELSCameraMode::FirstPerson)
 	{
 		// 第一人称：隐藏全身，投射地面阴影
 		Mesh->SetOwnerNoSee(true);
 		Mesh->bCastHiddenShadow = true;
+		if (ArmsMesh) ArmsMesh->SetVisibility(true);
 	}
 	else
 	{
 		// 第三人称：显示全身
 		Mesh->SetOwnerNoSee(false);
+		if (ArmsMesh) ArmsMesh->SetVisibility(false);
 	}
 }

@@ -20,27 +20,12 @@ public:
 	
 	//获取当前手持武器
 	FORCEINLINE ALSWeaponBase* GetCurrentWeapon() const { return CurrentWeapon; }
-	FORCEINLINE ELSWeaponSlot GetCurrentSlot() const { return CurrentSlot; }
 	
 	//插槽名称配置
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Socket")
 	FName HandSocketName = FName("hand_r");
 	
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Socket")
-	FName HolsterSocketName = FName("WeaponHolsterSocket");
-	
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	
-	//1，指定槽位切枪
-	UFUNCTION(BlueprintCallable, Category = "Weapon|Switch")
-	void EquipWeapon(ELSWeaponSlot NewSlot);
-	
-	// 服务端权威切枪RPC
-	UFUNCTION(Server, Reliable)
-	void Server_EquipWeapon(ELSWeaponSlot NewSlot);
-	
-	UFUNCTION(BlueprintCallable, Category = "Weapon|Switch")
-	void QuickSwitchWeapon(); //快速切换主副武器
 	
 	UPROPERTY(BlueprintAssignable, Category = "Weapon|Events")
 	FOnLSWeaponChanged OnWeaponChanged;
@@ -50,25 +35,13 @@ public:
 	void Reload();
 	
 	//蓝图中配置的默认主副武器类
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon|Classes")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon|Classes", meta = (DisplayName = "Default Weapon Class"))
 	TSubclassOf<ALSWeaponBase> DefaultPrimaryClass;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon|Classes")
-	TSubclassOf<ALSWeaponBase> DefaultSecondaryClass;
-	
 protected:
-	//运行时实例化的主副武器Actor指针
-	UPROPERTY(Replicated)
-	TObjectPtr<ALSWeaponBase> PrimaryWeapon = nullptr;
-	
-	UPROPERTY(Replicated)
-	TObjectPtr<ALSWeaponBase> SecondaryWeapon = nullptr;
-	
+	//运行时实例化的主武器Actor指针
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentWeapon)
 	TObjectPtr<ALSWeaponBase> CurrentWeapon = nullptr;
-	
-	UPROPERTY(Replicated)
-	ELSWeaponSlot CurrentSlot = ELSWeaponSlot::MainWeapon;
 	
 	UFUNCTION()
 	void OnRep_CurrentWeapon(ALSWeaponBase* OldWeapon);

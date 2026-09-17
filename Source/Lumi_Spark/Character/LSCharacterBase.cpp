@@ -23,9 +23,10 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) 
 	USpringArmComponent* SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	SpringArm->SetupAttachment(GetCapsuleComponent());
 	SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 65.f)); //角色眼部高度
-	SpringArm->TargetArmLength = 0.f; //默认第一人称，长度0
+	SpringArm->TargetArmLength = 300.f; //默认第一人称，长度0
+	SpringArm->SocketOffset = FVector(0.f, 50.f, 15.f); //右肩偏移
 	SpringArm->bUsePawnControlRotation = true; //弹簧臂跟随控制器旋转
-	SpringArm->bDoCollisionTest = false; //禁用弹簧臂碰撞检测，避免摄像机被遮挡
+	SpringArm->bDoCollisionTest = true; //禁用弹簧臂碰撞检测，避免摄像机被遮挡
 	
 	//1. 创建摄像机组件并附加到根碰撞胶囊体
 	CameraComponent = CreateDefaultSubobject<ULSCameraComponent>(TEXT("LSCameraComponent"));
