@@ -1,9 +1,9 @@
-# Lumi-Spark: UE5 元素 FPS 游戏设计文档
+# Lumi-Spark 设计文档
 
-> **定位：** 原神核心玩法（元素反应、4人队伍切换、技能CD体系）× FPS 射击战斗  
+> **一句话：** 把原神的元素反应和队伍切换搬进 FPS，再加上绝区零式的搜打撤循环  
 > **引擎：** Unreal Engine 5.4+  
-> **目标平台：** Windows PC（优先）  
-> **开发模式：** 纯 PvE，后续再考虑 PvP  
+> **平台：** Windows PC 优先  
+> **阶段：** 先做 PvE 单机，PvP 以后再说  
 
 ---
 
@@ -15,12 +15,12 @@
 4. [武器系统](#4-武器系统)
 5. [核心战斗系统](#5-核心战斗系统)
 6. [元素反应系统](#6-元素反应系统)
-7. [队伍切换系统](#7-队伍切换系统)
+7. [三人小队即时切换系统](#7-三人小队即时切换系统)
 8. [资源与状态系统](#8-资源与状态系统)
 9. [敌人 AI 系统](#9-敌人-ai-系统)
 10. [UI / HUD 系统](#10-ui--hud-系统)
 11. [场景与关卡管理](#11-场景与关卡管理)
-12. [背包与装备系统](#12-背包与装备系统)
+12. [驱动核心、局外研发与搜打撤装备系统](#12-驱动核心局外研发与搜打撤装备系统)
 13. [性能优化方案](#13-性能优化方案)
 14. [网络架构预留（PvP 扩展）](#14-网络架构预留pvp-扩展)
 15. [项目结构与文件清单](#15-项目结构与文件清单)
@@ -33,35 +33,50 @@
 
 ### 1.1 核心概念
 
-**Lumi-Spark** 是一款将原神的元素反应战斗体系与 FPS 射击玩法深度融合的 PvE 游戏。
+Lumi-Spark 是一款 PvE 向的 FPS，核心卖点是把原神的元素反应体系搬进第一人称射击，再套上绝区零那种搜打撤的循环。
 
-- **攻击方式：** 枪械射击与元素投掷结合，枪支自带元素属性（火步枪、冰狙击、雷冲锋等），射击与投掷直接施加元素附着。
-- **2枪 + 1投掷物配装架构：**
-  - **主武器（Slot 1）：** 核心输出枪械（突击步枪 / 狙击枪 / 散弹枪等）。
-  - **副武器（Slot 2）：** 战术辅助/近身枪械（冲锋枪 / 手枪 / 辅助削抗枪等）。
-  - **元素投掷物（Slot 3 / G键）：** **水、火、冰、雷四大元素手雷**，落地产生大范围元素附着领域与伤害，是制造大范围群体元素反应（如大范围冻结、群体蒸发、超载清场）的战术核心。
-- **双角色切换机制：** **2 人双角色小队（Dual-Character）** 即时切换（Tab 键一键对调）。两位角色拥有独立的武器配装（即全队共 4 把枪 + 2 种元素投掷物）、独立天赋与 E/Q 技能组。
-- **视角系统：** 以**第一人称沉浸式射击**为主，支持第三人称（TPS）与过肩瞄准（ADS）自由切换。
-- **战斗节奏：** 快节奏射击 + 抛物线丢雷挂元素 + 原神技能/大招 CD 体系 + 极速切枪/切人反应 Combo。
-- **世界结构：** 枢纽大厅（Hub）+ 关卡入口，纯 PvE 副本制。
+- **三人小队，切人即切枪：**
+  - 3 人小队即时轮切，每个角色绑定 1 把专属元素武器
+  - 按 Tab 顺切 / 滚轮顺逆切 / 1-2-3 直切，一键完成换角色 + 换武器 + 换技能
+  - 切人耗时约 0.2s，奔跑/滑铲速度无缝继承，准星方向不变
+- **全队共享 6 槽驱动核心：**
+  - 换人不换装，三个角色共享一套驱动核心（类似原神圣遗物但全队通用）
+- **搜打撤循环：**
+  - 局内有地脉侵蚀计量表做时间压力
+  - 局外有地脉研发终端（Meta-Tree）：带出来的废料能永久点亮天赋树
+  - 商店卖 T-1 紫装兜底，高危遗迹出 T4 金色驱动盘和 T5 大红蓝图
 
 ### 1.2 核心玩法循环
 
-```
-配置双人队伍（各带2枪+1元素雷） → 进入关卡 → 投掷水/火/冰/雷手雷挂范围元素 → 切枪射击打出群体反应 → 技能爆发 + 适时切人连携 → 击败敌人/Boss → 结算奖励强化
+```text
+配队（3 人各带枪，共享 6 槽驱动核心） 
+     │
+     ▼
+进入地脉遗迹（PCG 随机地图）
+     │
+     ├── 潜行背刺精英怪（道具处决削大半管血）
+     ├── 三人轮切打元素反应 combo（超绽放、蒸发等）
+     ├── 扛住地脉侵蚀上涨，局内三选一获取祝福（智能加权当前队伍流派）
+     └── 遗迹深处开箱拿金色驱动盘 / 大红蓝图，塞进安全箱
+     │
+     ▼
+撤离传送门
+     │
+     ├── 成功：武器和抗侵蚀器有日常微磨损（花矿石修），未鉴定物品回城开盲盒，废料点天赋树
+     └── 失败：枪械耐久大跌，普通背包物品掉落（可跑尸捡回），安全箱里的东西 100% 保底带回
 ```
 
-### 1.3 与原神的关键差异
+### 1.3 与原神及传统射击的关键差异
 
-| 维度 | 原神 | Lumi-Spark |
-|------|------|---------------|
-| 攻击方式 | 近战挥砍 / 弓箭 | **枪械射击 + 抛物线元素投掷物** |
-| 队伍规模 | 4 人即时切换 | **2 人双角色小队**（降低第一人称频繁换人眩晕感） |
-| 单人装备槽位 | 仅限 1 把固定武器 | **2 把枪械（主+副） + 1 元素投掷物（水/火/冰/雷）** |
-| 元素范围附着 | 依赖特定角色 E/Q 技能 | **水/火/冰/雷元素手雷随时投掷制造元素领域** |
-| 元素反应触发 | 频繁切 4 个人释放技能 | **自身快速切枪/丢雷**挂元素 + **双角色技能连携** |
-| 视角 | 固定第三人称 | **第一人称为主**，支持 TPS 与过肩瞄准 |
-| 打击感来源 | 顿帧 + 受击动画 | 后坐力 + 命中反馈(HitMarker) + 抛物线爆炸击退 |
+| 维度 | 原神 / 传统搜打撤 | 我们怎么做 |
+| :--- | :--- | :--- |
+| 队伍与切换 | 原神 4 人动作轮切 / 传统射击单人 | 3 人小队，专为 FPS 调过，频繁切人不会晕 |
+| 武器配装 | 传统射击主副双枪 | 切人即切枪，一次操作搞定武器+技能+元素的切换 |
+| 圣遗物/驱动盘 | 原神每人一套（换装坐牢） | 全队共享 6 槽驱动核心，砍掉了小生命小攻击废词条 |
+| 战斗机制 | 掩体对射 | 滑铲射击 + 元素反应 + 异体刃背刺处决 |
+| 局外养成 | 靠抽卡刷本 | Meta-Tree 天赋树，挖矿废料也能永久扩建 |
+| 死亡惩罚 | 塔科夫全丢 | 绝区零式梯度保护：安全箱保底 + 跑尸捡回 + 修枪 |
+
 
 ---
 
@@ -95,10 +110,10 @@
 └──────────────────────────────────────────────────────────┘
 ```
 
-**分层原则：**
-- **Foundation Layer** — 不依赖任何游戏逻辑的基础设施（对象池、数据资产、事件总线、GameplayTags）
-- **Gameplay Layer** — 核心玩法模块，模块间通过 Delegate + Interface 解耦
-- **Application Layer** — 上层业务（UI 绑定、关卡管理、音频调度）
+**分层：**
+- Foundation — 基础设施，不碰游戏逻辑（对象池、数据资产、事件总线、GameplayTags）
+- Gameplay — 核心玩法模块，模块间用 Delegate + Interface 解耦
+- Application — 上层业务（UI、关卡管理、音频）
 
 ### 2.2 项目目录结构
 
@@ -280,7 +295,7 @@ Lumi-Spark/
 
 ### 2.3 Gameplay Tags 命名规范
 
-GameplayTags 是整个项目的状态标签统一管理方案，所有模块通过 Tags 而非硬编码枚举来标识状态，便于扩展和跨模块查询。
+GameplayTags 统一管理所有状态标签，模块之间通过 Tags 标识状态而非硬编码枚举，方便扩展和跨模块查询。
 
 ```cpp
 // ═══════════ 角色状态 ═══════════
@@ -367,7 +382,7 @@ Stat.EnergyRecharge       // 元素充能效率
 
 ### 2.4 事件总线（模块解耦核心）
 
-所有模块之间的通信通过全局事件总线解耦，避免直接引用和循环依赖：
+模块之间通过全局事件总线通信，避免直接引用和循环依赖：
 
 ```cpp
 // ESEventBus.h — 基于 UE5 的 UGameInstanceSubsystem 实现
@@ -435,11 +450,11 @@ UESEventBus::Get(this)->OnEnemyKilled.AddDynamic(this, &UQuestManager::OnEnemyKi
 
 ## 3. 角色 3C 系统（Camera / Character / Control）
 
-3C 系统是 FPS 游戏的根基。本项目的核心挑战在于：**同时支持 FPS / TPS / 过肩瞄准三种视角**，并在切人时保持视角连贯。
+3C 是 FPS 的根基。这个项目的难点在于要同时支持 FPS / TPS / 过肩瞄准三种视角，而且切人的时候视角要连贯。
 
 ### 3.1 摄像机系统（Camera）
 
-三模式摄像机是本项目最核心的 3C 差异化设计。三种模式共用一个 `UESCameraComponent`，通过插值平滑切换：
+三种视角共用一个 `UESCameraComponent`，通过插值平滑切换：
 
 ```cpp
 // ESCameraComponent.h
@@ -997,7 +1012,7 @@ protected:
 
 ### 4.2 后坐力系统
 
-后坐力是 FPS 手感的核心。采用**可学习的后坐力模式**（类 CS2），每把枪有固定的后坐力曲线，玩家可以练习压枪：
+后坐力是 FPS 手感的核心。采用可学习的固定后坐力模式（类似 CS2），每把枪有自己的后坐力曲线，熟练度靠练：
 
 ```cpp
 // RecoilComponent.h
@@ -1450,25 +1465,25 @@ void UESWeaponComponent::FinishWeaponSwitch(AESWeaponBase* NewWeapon, int32 Targ
 
 ---
 
-### 4.8 元素投掷物系统（水 / 火 / 冰 / 雷 元素手雷）
+### 4.8 元素投掷物（元素手雷）
 
-元素投掷物（Throwable）是单兵或小队作战中**大范围施加元素附着与控场**的核心手段。玩家按住 `G`（或 `3` 键）实时预览抛物线轨迹，松开后投掷。
+元素手雷用来大范围施加元素附着和控场。按住 G（或 3 键）实时预览抛物线轨迹，松开投掷。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    四大元素投掷物设计                       │
+│                     四种元素手雷                             │
 ├─────────────────────────────────────────────────────────────┤
-│ 🔥 烈焰爆轰雷 (Pyro Grenade)   │ 落地瞬间剧烈火爆，强火附着 (2.0U)，   │
-│                                │ 留下 3s 燃烧火海，持续造成火伤与附着  │
-├────────────────────────────────┤────────────────────────────┤
-│ 💧 潮汐洪流雷 (Hydro Grenade)  │ 爆裂大范围水雾，强水附着 (2.0U)，     │
-│                                │ 形成 4s 水雾领域，持续潮湿大范围敌人  │
-├────────────────────────────────┤────────────────────────────┤
-│ 🧊 霜华极寒雷 (Cryo Grenade)   │ 冰晶爆碎，强冰附着 (2.0U)，造成 50%   │
-│                                │ 大范围减速，与水雷/水枪配合瞬间群冻   │
-├────────────────────────────────┤────────────────────────────┤
-│ ⚡ 脉冲雷暴雷 (Electro Grenade)│ 释放电磁脉冲波，强雷附着 (2.0U)，     │
-│                                │ 向周围 4 个目标发射连锁电弧持续破盾   │
+│ 🔥 火焰手雷 (Pyro)     │ 落地爆炸，强火附着 (2.0U)，      │
+│                        │ 留 3s 火海持续造成火伤             │
+├────────────────────────┤────────────────────────────────────┤
+│ 💧 水流手雷 (Hydro)    │ 爆裂产生大范围水雾，强水附着       │
+│                        │ (2.0U)，形成 4s 水雾区域           │
+├────────────────────────┤────────────────────────────────────┤
+│ 🧊 冰霜手雷 (Cryo)     │ 冰晶爆碎，强冰附着 (2.0U)，      │
+│                        │ 50% 大范围减速，配合水系可以群冻   │
+├────────────────────────┤────────────────────────────────────┤
+│ ⚡ 雷电手雷 (Electro)   │ 电磁脉冲，强雷附着 (2.0U)，      │
+│                        │ 连锁电弧打 4 个目标持续破盾        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -1618,7 +1633,7 @@ void AESThrowableBase::ApplyExplosionDamageAndElement()
 
 #### 4.8.2 投掷管理组件与抛物线预测（UESThrowableComponent）
 
-挂载于玩家角色上，负责**手雷数量/冷却管理、按住 G 绘制精准绿色/红色落点抛物线、松开投掷**：
+挂在玩家角色上，管手雷数量/CD、按住 G 画抛物线、松开投掷：
 
 ```cpp
 // ESThrowableComponent.h
@@ -1838,7 +1853,7 @@ float UDamageCalculator::CalculateFinalDamage(const FDamageContext& Ctx)
 
 ### 5.2 命中反馈系统
 
-FPS 的打击感不来自顿帧（那是动作游戏的），而来自**视觉 + 听觉 + 触觉反馈的组合**：
+FPS 的打击感靠的是视觉+听觉+触觉反馈的组合（不像动作游戏靠顿帧）：
 
 ```cpp
 // HitFeedbackComponent.h
@@ -2077,7 +2092,7 @@ public:
 
 ### 6.1 元素附着组件（含 ICD 机制）
 
-FPS 的射速远高于近战挥砍，因此 ICD（内部冷却）机制需要重新平衡——否则冲锋枪每秒 15 发子弹会瞬间触发大量反应：
+FPS 射速比近战快得多，ICD（内部冷却）得重新调，不然冲锋枪每秒 15 发会瞬间触发一堆反应：
 
 ```cpp
 // ElementComponent.h
@@ -2301,51 +2316,49 @@ FPS 模式下元素反应有一些独特的交互设计：
 
 ---
 
-## 7. 双角色小队切换系统（Dual-Character Switch）
+## 7. 三人小队即时切换系统
 
-### 7.1 为什么采用「双角色 + 自由切枪」而不是「4人切人」？
+### 7.1 为什么是「三人 + 切人即切枪」？
 
-在第三人称动作游戏（如原神）中，4 人轮流切人体验良好是因为有华丽的入场动作、大招特写和全身动画反馈。但在**第一人称 FPS** 中：
-- 频繁 4 人快速切换会导致视野和手臂模型高频闪烁，极易产生眩晕与操作割裂感；
-- 射击游戏的节奏要求高频瞄准射击，切枪比切人更平滑、更符合 FPS 直觉。
+早期原型试过"单人双枪 + 双角色切换"，但在第一人称高烈度交火里，玩家既要滚轮切枪又要按 Tab 切人，手指打架，双人组合也只能支持线性反应链。
 
-**设计定案：**
-1. **基础输出与元素反应：** 主要依靠**单角色自由切枪（1/2/3键快速换火枪/冰枪/雷枪）**在战斗中极速完成。
-2. **战术切换与机制搭配：** 采用 **双角色小队（主战 + 副战 / 输出 + 辅助）**，按下 `Tab` 或 `C` 键即时换人。换人伴随专属角色语音、手臂 Mesh 切换、以及调用另一套独特的 E/Q 技能与独立武器配装。
+最终方案：
+1. **切人即切枪**：取消单人主副双枪，每个角色固定 1 把专属武器。Tab 顺切 / 滚轮顺逆切 / 1-2-3 直切，一个键搞定角色+武器+技能的切换。
+2. **三人 = 三元素组合**：三个角色刚好支撑原神最核心的多段复合反应。比如水枪挂水 → 切草狙催生草原核 → 切雷枪引爆超绽放；或者风系聚怪 → 水系范围挂湿 → 火系蒸发。绝区零、APEX、崩铁都验证过 3 人是黄金团队人数。
 
-### 7.2 切人组件（Dual Character Switcher）
+### 7.2 切人组件（ULSTeamSwitchComponent）
 
 ```cpp
-// TeamSwitchComponent.h — 双角色小队管理
+// LSTeamSwitchComponent.h — 王牌三人小队管理
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class UTeamSwitchComponent : public UActorComponent
+class LUMI_SPARK_API ULSTeamSwitchComponent : public UActorComponent
 {
     GENERATED_BODY()
 public:
-    // ═══ 双角色小队（最多 2 人）═══
-    UPROPERTY(BlueprintReadOnly, Category="DualTeam")
-    TArray<AESCharacterBase*> TeamMembers;     // 固定大小 2
+    // ═══ 三人小队（固定 3 人）═══
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<ALSCharacterBase>> TeamMembers; // [0] [1] [2]
 
-    UPROPERTY(BlueprintReadOnly, Category="DualTeam")
-    int32 ActiveIndex = 0;                     // 0: 主角色, 1: 副角色
-
-    UPROPERTY(BlueprintReadOnly, Category="DualTeam")
-    AESCharacterBase* ActiveCharacter = nullptr;
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Team")
+    int32 ActiveIndex = 0;                     // 0 ~ 2 活跃槽位索引
 
     // ═══ 切人参数 ═══
-    UPROPERTY(EditDefaultsOnly, Category="Switch")
-    float SwitchDuration = 0.2f;               // 切人极速过渡时间（0.2s 干净利落）
+    UPROPERTY(EditDefaultsOnly, Category="Team|Config")
+    float SwitchCooldown = 1.0f;               // 换人 CD
 
-    UPROPERTY(EditDefaultsOnly, Category="Switch")
-    float SwitchCooldown = 2.0f;               // 双人切换内置 CD
+    UPROPERTY(EditDefaultsOnly, Category="Team|Config")
+    bool bInheritVelocity = true;              // 继承速度（跑着切人不减速）
 
-    UPROPERTY(EditDefaultsOnly, Category="Switch")
-    bool bInheritVelocity = true;              // 继承当前速度向量（奔跑中切人保持冲刺）
-
-    UPROPERTY(EditDefaultsOnly, Category="Switch")
-    bool bInheritAimDirection = true;          // 继承视角方向（准星完全不晃）
+    UPROPERTY(EditDefaultsOnly, Category="Team|Config")
+    bool bInheritAimDirection = true;          // 继承视角（准星不跳）
 
     // ═══ 核心方法 ═══
+    UFUNCTION(BlueprintCallable, Category = "Team")
+    bool SwitchTo(int32 TargetIndex);          // 直切（1/2/3 键）
+
+    UFUNCTION(BlueprintCallable, Category = "Team")
+    bool CycleNextCharacter(bool bForward = true); // 滚轮顺逆切 / Tab 顺切
+```
     UFUNCTION(BlueprintCallable)
     bool ToggleCharacter();                    // Tab 键一键对调角色
 
@@ -2377,7 +2390,7 @@ private:
 };
 ```
 
-### 7.3 第一人称切人流程（FPS 适配核心）
+### 7.3 切人流程（FPS 适配）
 
 ```
 玩家按下 Tab 键
@@ -2418,7 +2431,7 @@ PerformSwitch(OldChar, NewChar)
           └── OnTeamSwitch.Broadcast(OldChar, NewChar, NewIndex)
 ```
 
-**FPS 切人手感代码保障（准星零跳动 + 动量继承）：**
+**切人代码（准星不跳 + 动量继承）：**
 
 ```cpp
 void UTeamSwitchComponent::PerformSwitch(AESCharacterBase* OutChar, AESCharacterBase* InChar)
@@ -2734,7 +2747,7 @@ public:
 
 ### 9.1 AI 架构概览
 
-敌人 AI 使用 UE5 的 **行为树 (Behavior Tree) + AI Perception + EQS (Environment Query System)** 三件套。不同类型敌人共享同一个 AI Controller 基类，通过不同的行为树资产实现差异化行为。
+敌人 AI 用 UE5 的行为树 + AI Perception + EQS 三件套。不同类型敌人共享同一个 AI Controller 基类，通过不同行为树实现差异。
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -2915,7 +2928,7 @@ struct FBossPhase
 
 ### 10.1 HUD 架构
 
-**核心规则：所有 UI 通过 Delegate 驱动更新，严禁在 Tick 中拉取数据。**
+所有 UI 通过 Delegate 驱动更新，不在 Tick 里拉数据。
 
 ```
 ┌─────────────────────────────── FPS HUD ──────────────────────────────┐
@@ -3109,48 +3122,107 @@ public:
 
 ---
 
-## 12. 背包与装备系统
+## 12. 驱动核心、局外研发与搜打撤装备系统
 
-### 12.1 背包组件
+### 12.1 全队共享 6 槽驱动核心
 
-```cpp
-// InventoryComponent.h
-UCLASS()
-class UInventoryComponent : public UActorComponent
-{
-    GENERATED_BODY()
-public:
-    UPROPERTY() TArray<FInventorySlot> Slots;
-    UPROPERTY(EditAnywhere) int32 MaxSlots = 200;
+原神的圣遗物每人一套，换装坐牢。这里改成全队共享一套驱动核心（6 个盘位），换人不换装。
 
-    UFUNCTION(BlueprintCallable) bool AddItem(FGameplayTag ItemID, int32 Count = 1);
-    UFUNCTION(BlueprintCallable) bool RemoveItem(FGameplayTag ItemID, int32 Count = 1);
-    UFUNCTION(BlueprintCallable) int32 GetItemCount(FGameplayTag ItemID) const;
-    UFUNCTION(BlueprintCallable) TArray<FInventorySlot> GetItemsByType(EItemType Type) const;
-
-    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInventoryChanged,
-        FGameplayTag, ItemID, int32, NewCount);
-    UPROPERTY(BlueprintAssignable) FOnInventoryChanged OnInventoryChanged;
-};
-```
-
-### 12.2 装备系统
-
-每个角色有固定装备槽位：1 武器 + 5 圣遗物（花/羽/沙/杯/冠）。
+设计要点：
+- 三个角色共享同一套核心的数值加成
+- 驱动盘没有耐久，不会损坏，放心追词条
+- 砍掉了小生命、小攻击这类废词条，加入了基础护盾和反应增伤
 
 ```cpp
+// LSDriveCoreTypes.h — 驱动盘槽位定义与独有主词条规则
 USTRUCT(BlueprintType)
-struct FCharacterEquipment
+struct FLSDriveCoreLoadout
 {
     GENERATED_BODY()
-    UPROPERTY() FGameplayTag WeaponID;
-    UPROPERTY() FGameplayTag ArtifactFlower;     // 生之花
-    UPROPERTY() FGameplayTag ArtifactPlume;      // 死之羽
-    UPROPERTY() FGameplayTag ArtifactSands;      // 时之沙
-    UPROPERTY() FGameplayTag ArtifactGoblet;     // 空之杯
-    UPROPERTY() FGameplayTag ArtifactCirclet;    // 理之冠
+
+    // ═══ 1~3 号位：生存与基础攻防基石 ═══
+    // 1 号位：Max HP % 或 基础能量护盾值 (Shield +500)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DriveCore|Slot1")
+    FLSDriveDisc Slot1_Foundation;
+
+    // 2 号位：百分比攻击力 (ATK %) 或 穿透率 (Penetration %)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DriveCore|Slot2")
+    FLSDriveDisc Slot2_Power;
+
+    // 3 号位：百分比防御力 (DEF %) 或 元素全抗性 (Res %)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DriveCore|Slot3")
+    FLSDriveDisc Slot3_Armor;
+
+    // ═══ 4~6 号位：流派质变与致命爆发位（拥有专属主词条池） ═══
+    // 4 号位【致命爆发】：暴击率 (Crit Rate %) / 暴击伤害 (Crit DMG %) / 元素精通 (EM)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DriveCore|Slot4")
+    FLSDriveDisc Slot4_Critical;
+
+    // 5 号位【元素特化】：单元素伤害加成% (火/水/雷/冰/草/物理) / 全元素伤害加成% / 元素反应加成% / 护盾强效%
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DriveCore|Slot5")
+    FLSDriveDisc Slot5_Elemental;
+
+    // 6 号位【战术循环】：元素充能效率 (Energy Recharge %) / 异常积蓄率 (缩短ICD内置冷却) / 百分比大攻击力
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DriveCore|Slot6")
+    FLSDriveDisc Slot6_Efficiency;
 };
 ```
+
+- **套装搭配规则**：支持 **【4 件套 + 2 件套】** 质变，或 **【2 + 2 + 2 件套】** 极简自由散搭。
+
+---
+
+### 12.2 局外养成：地脉研发终端（Meta-Tree）
+
+搜打撤最大的问题是"没摸到大金等于白打"，Meta-Tree 就是为了解决这个负反馈。每局带出来的废料（碎矿、合金零件、破损核心）都能永久点亮天赋树节点，保证每局都在变强：
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                 地脉战术研发终端 (Meta-Tree)                 │
+├───────────────────┬───────────────────┬─────────────────────┤
+│  【战术装备分支】  │  【生存与抗侵蚀】  │   【战术搜刮与避险】 │
+├───────────────────┼───────────────────┼─────────────────────┤
+│ • 异体刃·充能 +1  │ • 基础能量护盾+200 │ • 局内战利品背包扩容 │
+│   (单局可用次数+1)│   (进局自带护盾)  │   (16格 -> 24格)    │
+│ • 异体刃·破甲强化 │ • 侵蚀耐受度 +25% │ • 安全箱空间扩容     │
+│   (背刺削血50%->75%)│ (侵蚀度上涨变慢)│   (2x2扩建为2x3!)   │
+│ • 快速处决        │ • 缓释解毒模块    │ • 死亡搜寻标记       │
+│   (背刺后隐身2秒) │   (自带1支净化针) │   (跑尸掉落物保留率+)│
+└───────────────────┴───────────────────┴─────────────────────┘
+```
+
+---
+
+### 12.3 搜打撤局内背包与惩罚机制
+
+**出战背包构成：**
+- 抗侵蚀过滤器：抵御地脉辐射，滤芯随时间和受击消耗
+- 异体刃：潜行到怪背后按 F 处决，削 75% 血量并破元素护盾
+- 安全箱（2x2，可升级到 2x3）：不管生死，放进去的东西 100% 带出
+- 普通战利品格：装未鉴定驱动盘、矿石、手雷补给之类的
+
+**撤离惩罚梯度：**
+- 正常撤离：武器和过滤器扣 10%~15% 耐久（花矿石修），背包里的未鉴定物品回城开盲盒
+- 常规遗迹失败：枪械耐久归零要大修；安全箱保留；普通背包掉落在阵亡点，下一局可以跑尸捡回来
+- 高危遗迹失败：除安全箱外全丢，但掉率翻倍
+
+---
+
+### 12.4 经济系统
+
+```text
+               ┌── 商店（军火商）──► 兜底线：卖 T-1 紫装和基础背包
+               │                     连输破产也能买套紫装重新上
+[双轨经济] ┤
+               └── 遗迹（局内搜刮）──► 顶装线：T 金色驱动盘 / 大红蓝图
+                                        36 格大背包、原型图纸、属性杯，商店不卖
+```
+
+**大红物品（最稀有的红色掉落）：**
+  - 军工 36 格大背包蓝图
+  - 安全箱扩充密钥
+  - 原初重构晶片（锁词条 / 定向洗词条）
+  - 传说级原型枪（整枪带出，摸到得拼命护送到撤离点）
 
 ---
 
