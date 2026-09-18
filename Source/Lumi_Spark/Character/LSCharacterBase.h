@@ -14,11 +14,7 @@ class ULSMovementComponent;
 class USkeletalMeshComponent;
 class ULSWeaponComponent;
 class ULSElementComponent;
-class UInputMappingContext;
-class UInputAction;
-class ULSWeaponComponent;
 class ULSSkillComponent;
-struct FInputActionValue;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSHealthChanged, float, CurrentHealth, float, MaxHealth);
 

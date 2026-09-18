@@ -8,6 +8,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "weapon/LSWeaponComponent.h"
+#include "Weapon/LSWeaponBase.h"
 #include "Element/LSElementComponent.h"
 #include "Core/LSEventBus.h"
 #include "Net/UnrealNetwork.h"

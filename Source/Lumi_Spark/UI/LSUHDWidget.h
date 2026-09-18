@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -34,6 +34,10 @@ public:
 	//将HUD绑定至指定的在场角色
 	UFUNCTION(BlueprintCallable, Category = "HUD")
 	void BindToCharacter(ALSCharacterBase* NewCharacter);
+
+	//出战角色切换通知（供小队切换逻辑通知UI派发展示）
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Team")
+	void OnActiveCharacterSwitched(ALSCharacterBase* NewCharacter, int32 SlotIndex);
 	
 protected:
 	//蓝图实现的表现层事件
@@ -70,10 +74,6 @@ protected:
 	//Q技能能量变动通知
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Skill")
 	void OnBurstEnergyUpdated(float CurrentEnergy, float MaxEnergy, float Ratio);
-
-	//出战角色切换通知
-	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Team")
-	void OnActiveCharacterSwitched(ALSCharacterBase* NewCharacter, int32 SlotIndex);
 	
 private:
 	//缓存指针

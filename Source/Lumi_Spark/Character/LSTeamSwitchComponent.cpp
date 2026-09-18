@@ -71,20 +71,23 @@ bool ULSTeamSwitchComponent::CanSwitch() const
 	// 1. 冷却中无法切换
 	if (CooldownTimer > 0.0f) return false;
 
-	// 2. 小队成员不齐或未初始化
-	if (!TeamMembers.IsValidIndex(0) || !TeamMembers.IsValidIndex(1)) return false;
-	if (!TeamMembers[0] || !TeamMembers[1]) return false;
+	// 2. 小队成员不足
+	if (TeamMembers.Num() < 2) return false;
 
-	// 3. 待命角色若已死亡不可切出
-	const int32 TargetIndex = (ActiveIndex == 0) ? 1 : 0;
-	ALSCharacterBase* TargetChar = TeamMembers[TargetIndex];
-	if (!TargetChar || TargetChar->IsDead()) return false;
-
-	// 4. 当前在场角色若处于死亡状态不可普通对调
-	ALSCharacterBase* CurrentChar = TeamMembers[ActiveIndex];
+	// 3. 当前在场角色若处于死亡状态不可普通对调
+	ALSCharacterBase* CurrentChar = GetActiveCharacter();
 	if (CurrentChar && CurrentChar->IsDead()) return false;
 
-	return true;
+	// 4. 检查是否存在至少一个合法的存活待命队友
+	for (int32 i = 0; i < TeamMembers.Num(); ++i)
+	{
+		if (i != ActiveIndex && CanSwitchToIndex(i))
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 bool ULSTeamSwitchComponent::ToggleCharacter()
@@ -148,6 +151,7 @@ void ULSTeamSwitchComponent::PerformSwitch(ALSCharacterBase* OutChar, ALSCharact
 	PC->SetControlRotation(SavedControlRot);
 
 	// ─── 5. 状态同步与事件广播 ───
+	const int32 OldIndex = ActiveIndex;
 	ActiveIndex = NewIndex;
 	CooldownTimer = SwitchCooldown;
 	SetComponentTickEnabled(true); // 开启 Tick 走 CD 衰减
@@ -157,7 +161,7 @@ void ULSTeamSwitchComponent::PerformSwitch(ALSCharacterBase* OutChar, ALSCharact
 
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
 	{
-		EventBus->OnCharacterSwitched.Broadcast((ActiveIndex == 0) ? 1 : 0, ActiveIndex);
+		EventBus->OnCharacterSwitched.Broadcast(OldIndex, ActiveIndex);
 	}
 
 	// 通知 playerController拥有的HUD重新绑定新角色
@@ -178,8 +182,14 @@ ALSCharacterBase* ULSTeamSwitchComponent::GetActiveCharacter() const
 
 ALSCharacterBase* ULSTeamSwitchComponent::GetInactiveCharacter() const
 {
-	const int32 InactiveIdx = (ActiveIndex == 0) ? 1 : 0;
-	return TeamMembers.IsValidIndex(InactiveIdx) ? TeamMembers[InactiveIdx].Get() : nullptr;
+	for (int32 i = 0; i < TeamMembers.Num(); ++i)
+	{
+		if (i != ActiveIndex && TeamMembers.IsValidIndex(i))
+		{
+			return TeamMembers[i].Get();
+		}
+	}
+	return nullptr;
 }
 
 bool ULSTeamSwitchComponent::CanSwitchToIndex(int32 TargetIndex) const

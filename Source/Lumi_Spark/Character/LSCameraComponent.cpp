@@ -143,11 +143,11 @@ void ULSCameraComponent::UpdateCameraInterpolation(float DeltaTime)
 		SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, TargetArmLength, DeltaTime, TransitionSpeed);
 
 		// 2. 平滑过渡右肩偏移
-		SpringArm->SocketOffset = FMath::VInterpTo(SpringArm->SocketOffset, TargetSocketOffset, DeltaTime, TransitionSpeed);
+		SpringArm->SocketOffset = FMath::VInterpTo(SpringArm->SocketOffset, FinalSocketOffset, DeltaTime, TransitionSpeed);
 	}
 
 	// 3. 平滑过渡 FOV
-	FieldOfView = FMath::FInterpTo(FieldOfView, TargetFov, DeltaTime, TransitionSpeed);
+	FieldOfView = FMath::FInterpTo(FieldOfView, FinalFov, DeltaTime, TransitionSpeed);
 	
 	// 摄像机始终固定在弹簧臂末端
 	SetRelativeLocation(FVector::ZeroVector);
@@ -160,7 +160,7 @@ void ULSCameraComponent::UpdateMeshVisibility()
 
 	USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh();
 	ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(OwnerCharacter);
-	USkeletalMeshComponent* ArmsMesh = LSChar ? LSChar->GetArmsMesh() : nullptr;
+	USkeletalMeshComponent* ArmsMesh = LSChar ? LSChar->GetFPArmsMesh() : nullptr;
 
 	if (CurrentMode == ELSCameraMode::FirstPerson)
 	{
