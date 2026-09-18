@@ -239,7 +239,7 @@ void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
 	
 	// 2. 弱点 / 爆头检测（骨骼名为 head 或专用弱点碰撞体）
 	bool bIsHeadshot = false;
-	if (Hit.BoneName.ToString().Contains(TEXT("head"), ESearchCase::IgnoreCase))
+	if (Hit.BoneName.ToString().Contains(TEXT("head"), ESearchCase::IgnoreCase) || (Hit.Component.IsValid() && Hit.Component->ComponentHasTag(TEXT("head"))))
 	{
 		FinalDamage *= HeadshotMultiplier;
 		bIsHeadshot = true;

@@ -11,7 +11,7 @@
 | **阶段 1：3C 核心框架与基础层** | `LSCameraComponent`, `LSMovementComponent`, `LSCharacterBase`, `LSPlayerController`, `LSTypes`, `LSEventBus`, `GameMode` | **已完成实机验证** | **100% ✅** |
 | **阶段 2：武器与投掷物系统 + 网络化** | `LSWeaponBase`, `LSWeaponComponent`, `LSRecoilComponent`, `ALSGrenadeBase`(6元素手雷), `LSDamageCalculator`, Server RPC/属性复制, `LSHUDWidget` | **C++ 核心已交付** | **100% ✅** |
 | **阶段 3：高等元素论与反应引擎** | `LSElementComponent`(1U/2U/4U/ICD衰减), 16 种元素反应状态机, `ALSDendroCore`草原核生态, `ULSDamagePopWidget`飘字 | **已完成闭环交付** | **100% ✅** |
-| **阶段 4：双角色即时切换与技能** | `LSTeamSwitchComponent`, `LSSkillComponent`, `LSPlayerState`, 独立 CD 体系 | **🔥 当前推进中** | **35%** |
+| **阶段 4：三人小队即时切换与技能** | `LSTeamSwitchComponent`, `LSSkillComponent`, `ALSTargetDummy`, 独立 CD 体系, 阵亡顺切 | **已完成闭环交付** | **100% ✅** |
 | **阶段 5：2~4人联机合作网络架构** | Listen Server, 动态怪物数值缩放, 复合破盾, 倒地互救 (核心射击/手雷网络已前置并入阶段2) | **部分前置完成** | 35% |
 | **阶段 6：地脉遗迹随机地图生成 (PCG)** | 模块化房间拼装 (Dungeon Generator), 地脉紊乱词条, 宝箱与撤离点分布 | **方案规划中** | 0% |
 | **阶段 7：敌人 AI、UI 与完整闭环** | 行为树、仇恨表、Boss 机制、伤害飘字、准星 HitMarker、结算面板 | **待开始** | 0% |
@@ -66,18 +66,27 @@
 
 ---
 
-## 🔥 阶段 4：双角色即时切换与技能体系 (Phase 4 - 当前推进中)
+## 🎯 阶段 4 详细交付清单 (Phase 4 Checklist - 100% 完成 ✅)
 
-- [x] **双角色小队管理与即时切换中枢 (`ULSTeamSwitchComponent`)**：
-  - 纳管主副两名常驻角色槽位，Tab 键 0.2 秒极速无缝对调。
+- [x] **三人小队即时轮换中枢 (`ULSTeamSwitchComponent`)**：
+  - 顺切、逆切与数字键 1/2/3 直切，环形安全寻址与存活状态过滤。
   - 核心手感保障：视角朝向（ControlRotation）像素级绝对锁死，移动速度向量（Velocity）无缝继承。
-  - 角色后台休眠状态机：退场角色隐身、脱敏物理胶囊体碰撞、打断当前开火换弹。
-  - 控制器 Possession 交接：PlayerController 权威换绑 Pawn 并维持第一人称相机状态。
-  - 按需使能 Tick 机制：仅切人冷却（1.5s）倒计时短暂使能，归零自动挂起，零空跑开销。
-- [ ] **副角色生成配置与小队多武器持久化**：
-  - 角色配装与双枪槽位独立保持，换人自动刷新 HUD 武器图标与弹药。
-- [ ] **E/Q 技能与后台独立 CD 走表 (`ULSSkillComponent`)**：
-  - 战术 E 技能与元素爆发 Q 充能系统，后台角色 CD 独立流逝。
+  - 角色后台休眠状态机：退场角色隐身、脱敏物理胶囊体碰撞、显式隐藏武器 Actor（消除悬浮枪穿帮）。
+  - 控制器 Possession 交接：PlayerController 权威换绑 Pawn 并维持第一/第三人称相机状态。
+  - 按需使能 Tick 机制：仅切人冷却（1.0s）倒计时短暂使能，归零自动挂起休眠，零空跑开销。
+- [x] **小队自动拉起与在场阵亡顺切 (`LSPlayerController` & `LSCharacterBase`)**：
+  - 控制器 `OnPossess` 时服务端权威静默拉起 `StandbyCharacterClasses` 待命队友进场休眠，开局立即可切。
+  - 前台在场角色阵亡自动检测小队存活人员并紧急顺切救场；全员覆灭时锁定输入并广播。
+- [x] **E/Q 战术技能与后台独立 CD/充能 (`ULSSkillComponent`)**：
+  - 战术 E 技能独立走表与冷却查询、元素爆发 Q 大招充能槽。
+  - 后台待命角色保留组件 Tick 与总线监听：实现后台静默流逝 CD 与全队吃球/反应充能。
+- [x] **战斗 HUD 动态重绑中枢 (`ULSHUDWidget`)**：
+  - 切人时解绑旧角色委托并订阅新角色生命、弹药、技能 CD 与大招能量。
+  - 引入绑定瞬间“主动推流”策略，消除后台冷却归零后的 UI 表现滞后。
+- [x] **实机打靶木桩实体 (`ALSTargetDummy`)**：
+  - 躯干胶囊体 + 头部爆头弱点球（Head Tag）双层碰撞。
+  - 挂载 `ULSElementComponent`，支持 16 种元素反应打靶、草种子引爆与 3D 彩色伤害跳字全链路验证。
+  - 自动回血重置与无限血量 DPS 测速模式。
 
 ---
 
@@ -139,5 +148,6 @@
 ## 📅 下一步行动指引 (Next Action)
 
 **当前最佳节奏**：
-1. **先进入 UE 编辑器**，按照我们梳理的 5 个步骤完成第一阶段的实机验证（体验第一/第三人称切换、开镜、冲刺、滑铲、闪避）。
-2. 实机手感调优完成后，正式启动 **阶段 2：武器与抛物线元素手雷系统** 的 C++ 编写！
+1. **阶段 1 ~ 4 已全部达成 100% C++ 闭环**（3C、武器射击、16 种元素反应、三人小队、E/Q 技能与打靶木桩）。
+2. **编辑器实机测试（15 分钟极速验证）**：在 `BP_LSPlayerController` 中配置待命角色，场景中拖入 `BP_LSTargetDummy`，体验“滑铲射击 + 1/2/3秒切三人 + 元素反应飞弹打桩”的完整爽感！
+3. **后续里程碑启动**：正式启动 **阶段 7：敌人 AI 与行为树系统**（近战杂兵、远程射手与精英复合破盾盾兵）或 **阶段 6：地脉遗迹 PCG 随机房间生成**！

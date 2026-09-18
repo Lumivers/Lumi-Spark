@@ -1,4 +1,4 @@
-﻿#include "LSPlayerController.h"
+#include "LSPlayerController.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
@@ -11,6 +11,7 @@
 #include "Character/LSSkillComponent.h"
 #include "Weapon/LSGrenadeBase.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "UI/LSUHDWidget.h"
 
 ALSPlayerController::ALSPlayerController()
 {
@@ -32,6 +33,30 @@ void ALSPlayerController::BeginPlay()
 		if (HUDWidgetInstance)
 		{
 			HUDWidgetInstance->AddToViewport();
+			if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+			{
+				if (ULSHUDWidget* HUD = Cast<ULSHUDWidget>(HUDWidgetInstance))
+				{
+					HUD->BindToCharacter(Char);
+				}
+			}
+		}
+	}
+}
+
+void ALSPlayerController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+
+	// 仅在服务端权威且小队未初始化时，静默拉起小队待命副角色
+	if (HasAuthority() && TeamSwitchComponent)
+	{
+		if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(InPawn))
+		{
+			if (TeamSwitchComponent->GetActiveCharacter() == nullptr)
+			{
+				TeamSwitchComponent->SetupTeam(LSChar, StandbyCharacterClasses);
+			}
 		}
 	}
 }

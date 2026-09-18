@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
@@ -105,6 +105,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Team", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULSTeamSwitchComponent> TeamSwitchComponent;
 
+	// 待命副角色类型配置（Slot 1, Slot 2），在 OnPossess 时由服务端权威静默拉起
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Team|Classes")
+	TArray<TSubclassOf<class ALSCharacterBase>> StandbyCharacterClasses;
+
 	FORCEINLINE ULSTeamSwitchComponent* GetTeamSwitchComponent() const { return TeamSwitchComponent; }
 	
 	//6，模式切换接口
@@ -116,6 +120,7 @@ public:
 	
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnPossess(APawn* InPawn) override;
 	virtual void SetupInputComponent() override;
 	
 	//输入回调函数

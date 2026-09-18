@@ -34,6 +34,7 @@
 30. [技能与充能组件落地：手敲代码常见拼写脱节与类型签名匹配](#30-技能与充能组件落地手敲代码常见拼写脱节与类型签名匹配)
 31. [双角色体系深度咬合：技能中枢装配、武器后台隐藏、HUD动态重绑与IWYU实战](#31-双角色体系深度咬合技能中枢装配武器后台隐藏hud动态重绑与iwyu实战)
 32. [三人小队重构与切人即切枪体系：单武器瘦身、顺逆轮切与默认TPS视角适配](#32-三人小队重构与切人即切枪体系单武器瘦身顺逆轮切与默认tps视角适配)
+33. [三人小队生命周期闭环、在场阵亡顺切与打靶场木桩实体设计](#33-三人小队生命周期闭环在场阵亡顺切与打靶场木桩实体设计)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -898,6 +899,44 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
 ### 32.5 常见陷阱提醒
 - **蓝图资产断引用**：在 C++ 中删除了 `IA_SwitchWeapon1/2` 后，需在 UE 编辑器中创建并配置新的 `IA_SwitchToSlot1/2/3` 和 `IA_CycleCharacter` 到 `BP_LSPlayerController`。
 - **UnPossess / Possess 临界帧空指针保护**：切人交接瞬间角色的 `Controller` 会短暂置空，其他组件在访问 `GetController()` 时必须做严格判空。
+
+---
+
+## 33. 三人小队生命周期闭环、在场阵亡顺切与打靶场木桩实体设计
+
+### 33.1 为什么要写这段代码（架构角色与交互痛点）
+- **小队生成悬空闭环**：三人轮换切人算法若只驻留在组件中，没有被外部生命周期拉起，游戏开局将无法直接换人。通过在 `ALSPlayerController::OnPossess` 中自动调用 `SetupTeam`，让小队在玩家进入关卡的第 0 帧完成静默拉起，真正做到开箱即用。
+- **阵亡顺切救援体验**：在原神及多人射击模式中，当前操控的角色血量归零绝不能直接造成全队死锁，而是应在判定阵亡瞬间，立即检索小队存活人员并顺延切入下一名存活队友，无存活队友才判负。
+- **战斗全链路验证载体缺失**：在此前阶段，项目已具备武器 Hitscan 衰减、程序化后坐力、6 种元素手雷、16 种元素反应、草原核超绽放飞弹与 3D 伤害跳字，但关卡中缺乏一个可以承载元素附着、能挨打且能复位的活靶子。`ALSTargetDummy` 填补了从底层算法到视口打靶反馈的关键验证空白。
+
+### 33.2 为什么这么设计（类职责划分与方案对比）
+- **小队生成权收拢至 Controller 的 `OnPossess`**：
+  - *为什么不放在 GameMode*：GameMode 只存在于服务端，且关注关卡全局规则（得分、撤离、波次），不适合持有玩家客户端维度的角色队列。
+  - *为什么不放在 Character 内部*：Character 是纯粹的受控肉体（Pawn），让一个 Character 去生成自己的待命队友会造成职责污染与循环依赖。
+  - *选择 Controller*：Controller 代表玩家意志。在 `OnPossess` 时根据配置的 `StandbyCharacterClasses` 权威 Spawn 待命角色并使其休眠，符合 UE 经典的“Controller 纳管多 Pawn 轮替”模型。
+- **弱点判定机制扩展（BoneName 与 ComponentTag 并行）**：
+  - 骨骼网格体拥有 `head` 骨骼名，但非骨骼实体（如程序化生成的靶子、机关箱、建筑弱点、机甲部位）通常是由 `USphereComponent` 或 `UStaticMeshComponent` 拼合而成。
+  - 在 `LSWeaponBase::ProcessHit` 中增加 `(Hit.Component.IsValid() && Hit.Component->ComponentHasTag(TEXT("head")))` 判断，使得无论是骨骼动画角色还是纯几何碰撞盒，只要贴上 `head` 标签即可享受爆头加成。
+- **木桩纯事件驱动与零空跑开销**：
+  - `ALSTargetDummy` 的构造函数中明确设置 `PrimaryActorTick.bCanEverTick = false`。
+  - 生命值扣除走引擎标准的 `TakeDamage`，血量归零后的自动复位由 `FTimerManager` 单次定时器处理，即便在大规模靶场中摆放上百个木桩，平时的 CPU 开销也恒为 0。
+
+### 33.3 UE 框架契合度
+- **服务端权威生成与网络安全**：小队待命角色的生成必须由 `HasAuthority()` 保护。服务端生成后，引擎的 Actor 复制（Replication）与 RepNotify 会自动把它们的状态同步至客户端，坚决杜绝客户端擅自 Spawn 造成的网络幽灵实体。
+- **事件总线无感知订阅 (`ULSEventBus`)**：木桩在血量归零时直接向总线派发 `EventBus->OnEnemyKilled.Broadcast(this, DamageCauser)`。木桩类无需包含任何 UI 或任务计数的头文件，依靠总线与 `ULSDamagePopWidget` 自动咬合喷射彩色伤害跳字。
+
+### 33.4 游戏开发特有的注意事项
+- **Possession 重入陷阱（Re-entrancy Trap）**：
+  - 玩家在游戏中按 1/2/3 切换角色时，Controller 会不断调用 `Possess(InPawn)`。
+  - 若在 `OnPossess` 中无条件执行 `SetupTeam`，每次换人都会导致副角色被重新 Spawn 一遍。
+  - **避坑实践**：在 `OnPossess` 中增加前置防护 `if (TeamSwitchComponent->GetActiveCharacter() == nullptr)`，仅在初次接管肉体时执行一次初始化。
+- **双层碰撞盒与层级穿透**：
+  - 木桩的根胶囊体 `CapsuleComp`（身体）与头部弱点球 `HeadWeakspotComp`（头部）均设置为 `Pawn` 碰撞通道以阻挡 Hitscan 射线（`ECC_Visibility`）；
+  - 同时显式调用 `MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision)`，防止外层显示网格体的复杂碰撞阻挡内层的弱点碰撞盒，避免“打了头却被判定在身体 Mesh 上”的穿模 Bug。
+
+### 33.5 常见陷阱提醒
+- **`SetNumZeroed` 遗留空指针陷阱**：在旧版双人小队逻辑中，`BeginPlay` 曾调用 `TeamMembers.SetNumZeroed(2)`，这会在小队中预留两个 `nullptr`。在三人动态小队重构后，若该行未被清理，会导致 `CanSwitch()` 在遍历时误判或切出空指针。重构后必须确保 `TeamMembers` 初始保持干净。
+
 
 
 

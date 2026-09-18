@@ -1,6 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "LSCharacterBase.h"
 #include "LSCameraComponent.h"
 #include "LSMovementComponent.h"
@@ -13,6 +10,8 @@
 #include "Core/LSEventBus.h"
 #include "Net/UnrealNetwork.h"
 #include "Character/LSSkillComponent.h"
+#include "Character/LSTeamSwitchComponent.h"
+#include "Core/LSPlayerController.h"
 
 // 构造函数：用自定义的ULSMovementComponent 替换默认的CharacterMovementComponent
 ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -112,13 +111,37 @@ void ALSCharacterBase::Die(AActor* Killer)
 	// 关闭碰撞，防止死后继续挡子弹
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	
-	// 禁用输入
-	if (AController* PC = GetController())
+	// 检查小队是否有存活队友可以换入
+	if (ALSPlayerController* PC = Cast<ALSPlayerController>(GetController()))
 	{
-		PC->SetIgnoreMoveInput(true);
-		PC->SetIgnoreLookInput(true);
+		if (ULSTeamSwitchComponent* TeamComp = PC->GetTeamSwitchComponent())
+		{
+			bool bSwitched = false;
+			for (int32 i = 0; i < 3; ++i)
+			{
+				if (TeamComp->CanSwitchToIndex(i))
+				{
+					TeamComp->SwitchTo(i);
+					bSwitched = true;
+					break;
+				}
+			}
+			
+			if (!bSwitched)
+			{
+				// 没有存活队友可切换，触发游戏失败逻辑（可在蓝图中绑定事件）
+				PC->SetIgnoreMoveInput(true);
+				PC->SetIgnoreLookInput(true);
+				GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("☠️ 【全队覆灭】小队所有角色均已阵亡！"));
+			}
+		}
 	}
-
+	else if (AController* GenericPC = GetController())
+	{
+		GenericPC->SetIgnoreMoveInput(true);
+		GenericPC->SetIgnoreLookInput(true);
+	}
+	
 	// 通过总线向全关卡广播死亡事件（驱动结算、任务计数）
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
 	{

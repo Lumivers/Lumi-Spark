@@ -16,7 +16,6 @@ ULSTeamSwitchComponent::ULSTeamSwitchComponent()
 void ULSTeamSwitchComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	TeamMembers.SetNumZeroed(2);
 }
 
 void ULSTeamSwitchComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -62,6 +61,16 @@ void ULSTeamSwitchComponent::SetupTeam(ALSCharacterBase* PrimaryCharacter, const
 				TeamMembers.Add(StandbyChar);
 				StandbyChar->EnterBackgroundMode(); // 立即进入后台休眠
 			}
+		}
+	}
+	
+	// 初次装配完成，通知 HUD 绑定当前主出战角色并推流
+	if (ALSPlayerController* PC = Cast<ALSPlayerController>(GetOwner()))
+	{
+		if (ULSHUDWidget* HUDWidget = Cast<ULSHUDWidget>(PC->HUDWidgetInstance))
+		{
+			HUDWidget->BindToCharacter(PrimaryCharacter);
+			HUDWidget->OnActiveCharacterSwitched(PrimaryCharacter, 0);
 		}
 	}
 }
