@@ -133,6 +133,34 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
 	TObjectPtr<UParticleSystem> MuzzleFlashEmitter;
 	
+	// 1. 击中表面火花/碎屑粒子（打墙冒火星）
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	TObjectPtr<UParticleSystem> ImpactEmitter;
+	
+	// 2. 击中表面物理受击音效（打在墙壁/金属上的撞击声）
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	TObjectPtr<USoundBase> ImpactSound;
+	
+	// 3. 击中表面弹孔贴花材质（留在墙壁上的焦黑弹坑）
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	TObjectPtr<UMaterialInterface> ImpactDecalMaterial;
+	
+	// 弹孔贴花尺寸
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	FVector DecalSize = FVector(8.0f, 8.0f, 8.0f);
+	
+	// 弹孔贴花留存时间（秒）
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	float DecalLifeSpan = 15.0f;
+	
+	// 4. 子弹曳光烟道粒子（Beam Tracer）
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	TObjectPtr<UParticleSystem> TracerEmitter;
+	
+	// 曳光粒子目标点向量参数名（Cascade 粒子默认通常是 "Target"）
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	FName TracerTargetParamName = FName("Target");
+	
 	//武器基础身份
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Identity")
 	FText WeaponDisplayName = FText::FromString(TEXT("基础步枪"));
@@ -236,11 +264,15 @@ protected:
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_Fire(const FVector_NetQuantize& MuzzleLoc, const FVector_NetQuantize& TraceEnd, bool bIsADS);
 	
-	// 2，远端客户端广播
+	// 2，远端客户端广播开火视听表现
 	UFUNCTION(NetMulticast, Unreliable)
-	void Multicast_FireEffects();
+	void Multicast_FireEffects(const FVector_NetQuantize& MuzzleLoc, const FVector_NetQuantize& TraceEnd);
 	
-	//3，服务端向开火客户端回传打击确认（触发本地 HUD 准星 HitMarker 闪红与音效）
+	//多播广播击中表面物理表现
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_ImpactEffects(const FHitResult& Hit);
+	
+	// 3，服务端向开火客户端回传打击确认（触发本地 HUD 准星 HitMarker 闪红与音效）
 	UFUNCTION(Client, Reliable)
 	void Client_HitConfirm(bool bIsHeadshot, float FinalDamage);
 	
@@ -265,4 +297,10 @@ protected:
 	
 	UFUNCTION()
 	void OnRep_CurrentReserveAmmo();
+	
+	// 本地播放击中表面物理表现（火花、音效、贴花）
+	void PlayImpactEffects(const FHitResult& Hit);
+	
+	// 本地/远端播放子弹曳光弹道烟道
+	void PlayTracerEffect(const FVector& StartLoc, const FVector& EndLoc);
 };

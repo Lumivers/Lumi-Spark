@@ -14,6 +14,8 @@
 #include "Element/LSElementComponent.h"
 #include "Combat/LSDamageCalculator.h"
 #include "Engine/DamageEvents.h"
+#include "Components/DecalComponent.h"
+#include "Character/LSCameraComponent.h"
 
 ALSWeaponBase::ALSWeaponBase()
 {
@@ -97,7 +99,6 @@ void ALSWeaponBase::StopFire()
 
 void ALSWeaponBase::FireOnce()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Green, TEXT("🔥 枪械正在发射 Hitscan 射线！"));
 	if (!CanFire())
 	{
 		StopFire();
@@ -109,14 +110,17 @@ void ALSWeaponBase::FireOnce()
 	}
 	
 	//1，计算是否开镜与双段射线端点
-	bool bIsADS = false;
-	if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
-	{
-		// 判断角色身上是否有 State.ADS 状态或通过 Tag 查询
-	}
-	
 	FVector MuzzleLocation;
 	FVector TraceEnd;
+	bool bIsADS = false;
+	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
+	{
+		if (ULSCameraComponent* Cam = OwnerChar->GetCameraComponent())
+		{
+			bIsADS = Cam->IsADS();
+		}
+	}
+	
 	if (!CalculateTraceEndpoints(MuzzleLocation, TraceEnd, bIsADS))
 	{
 		return;
@@ -124,6 +128,14 @@ void ALSWeaponBase::FireOnce()
 	
 	// 2，本地先行表现
 	PlayLocalFireEffects(bIsADS);
+	PlayTracerEffect(MuzzleLocation, TraceEnd);
+	
+	// 客户端本地先行预测扣弹
+	if (!HasAuthority())
+	{
+		CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
+		OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
+	}
 	
 	// 3，向服务端发送开火请求（服务端权威处理弹药扣除、射线检测、伤害计算）
 	Server_Fire(MuzzleLocation, TraceEnd, bIsADS);
@@ -184,8 +196,11 @@ void ALSWeaponBase::Server_Fire_Implementation(const FVector_NetQuantize& Muzzle
 	// 1，服务端权威扣除弹药
 	CurrentAmmo--;
 	
+	// 广播通知本地HUD刷新弹药数字
+	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
+	
 	//2，广播给其他远端观察者播放火光与枪声
-	Multicast_FireEffects();
+	Multicast_FireEffects(MuzzleLoc, TraceEnd);
 	
 	//3，执行服务端射线检测
 	FHitResult HitResult;
@@ -201,11 +216,14 @@ void ALSWeaponBase::Server_Fire_Implementation(const FVector_NetQuantize& Muzzle
 	{
 		// 4，处理命中目标（伤害计算、弱点爆头、元素附着与总线广播）
 		ProcessHit(HitResult);
+		
+		// 5，广播击中表面物理表现给所有客户端
+		Multicast_ImpactEffects(HitResult);
 	}
 }
 
 // 远端客户端播放开火视听表现
-void ALSWeaponBase::Multicast_FireEffects_Implementation()
+void ALSWeaponBase::Multicast_FireEffects_Implementation(const FVector_NetQuantize& MuzzleLoc, const FVector_NetQuantize& TraceEnd)
 {
 	//如果是本地玩家自己开火，则不重复播放
 	if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
@@ -225,6 +243,15 @@ void ALSWeaponBase::Multicast_FireEffects_Implementation()
 	{
 		UGameplayStatics::SpawnEmitterAttached(MuzzleFlashEmitter, WeaponMesh, MuzzleSocketName, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget);
 	}
+	
+	// 播放子弹曳光和枪口粒子
+	PlayTracerEffect(MuzzleLoc, TraceEnd);
+}
+
+void ALSWeaponBase::Multicast_ImpactEffects_Implementation(const FHitResult& Hit)
+{
+	//播放击中表面物理表现（火花、音效、贴花）
+	PlayImpactEffects(Hit);
 }
 
 void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
@@ -457,4 +484,49 @@ void ALSWeaponBase::OnRep_CurrentAmmo()
 void ALSWeaponBase::OnRep_CurrentReserveAmmo()
 {
 	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
+}
+
+void ALSWeaponBase::PlayImpactEffects(const FHitResult& Hit)
+{
+	if (!GetWorld()) return;
+	
+	// 1. 在击中表面法线方向生成撞击火花/碎屑粒子
+	if (ImpactEmitter)
+	{
+		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ImpactEmitter, Hit.ImpactPoint, Hit.ImpactNormal.Rotation());
+	}
+	
+	// 2. 播放撞击音效
+	if (ImpactSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(GetWorld(), ImpactSound, Hit.ImpactPoint);
+	}
+	
+	// 3. 在击中表面附着弹孔贴花（支持附着在移动物体上）
+	if (ImpactDecalMaterial && Hit.GetComponent())
+	{
+		// 贴花投影方向沿法线反向切入
+		const FRotator DecalRotation = Hit.ImpactNormal.Rotation() + FRotator(-90.0f, 0.0f, 0.0f);
+		UGameplayStatics::SpawnDecalAttached(
+			ImpactDecalMaterial,
+			DecalSize,
+			Hit.GetComponent(),
+			Hit.BoneName,
+			Hit.ImpactPoint,
+			DecalRotation,
+			EAttachLocation::KeepWorldPosition,
+			DecalLifeSpan
+		);
+	}
+}
+
+void ALSWeaponBase::PlayTracerEffect(const FVector& StartLoc, const FVector& EndLoc)
+{
+	if (!TracerEmitter || !GetWorld()) return;
+	
+	// 生成曳光光束粒子，并设置 Target 向量为射线终点
+	if (UParticleSystemComponent* TracerComp = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), TracerEmitter, StartLoc))
+	{
+		TracerComp->SetVectorParameter(TracerTargetParamName, EndLoc);
+	}
 }

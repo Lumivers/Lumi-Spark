@@ -27,12 +27,25 @@ void ALSPlayerController::BeginPlay()
 	//默认进入纯游戏战斗输入模式
 	SwitchToGameInputMode();
 	
-	if (IsLocalController() && HUDWidgetClass)
+	if (IsLocalController())
 	{
-		HUDWidgetInstance = CreateWidget<UUserWidget>(this, HUDWidgetClass);
+		// 如果蓝图没配，C++ 自动去把刚才做好的 WBP_LSUHD 加载出来！
+		if (!HUDWidgetClass)
+		{
+			HUDWidgetClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UI/WBP_LSUHD.WBP_LSUHD_C"));
+		}
+		if (HUDWidgetClass && !HUDWidgetInstance)
+		{
+			HUDWidgetInstance = CreateWidget<UUserWidget>(this, HUDWidgetClass);
+			if (HUDWidgetInstance)
+			{
+				HUDWidgetInstance->AddToViewport();
+				UE_LOG(LogTemp, Warning, TEXT("[LumiSpark] HUD 成功加载并添加到视口！"));
+			}
+		}
+		// 绑定当前在场角色
 		if (HUDWidgetInstance)
 		{
-			HUDWidgetInstance->AddToViewport();
 			if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 			{
 				if (ULSHUDWidget* HUD = Cast<ULSHUDWidget>(HUDWidgetInstance))
@@ -48,6 +61,18 @@ void ALSPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 
+	// 【防止异步延迟】：如果角色是在 Controller 之后才生成附着的，这里再次确保绑定
+	if (IsLocalController() && HUDWidgetInstance)
+	{
+		if (ULSHUDWidget* HUD = Cast<ULSHUDWidget>(HUDWidgetInstance))
+		{
+			if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(InPawn))
+			{
+				HUD->BindToCharacter(LSChar);
+			}
+		}
+	}
+	
 	// 仅在服务端权威且小队未初始化时，静默拉起小队待命副角色
 	if (HasAuthority() && TeamSwitchComponent)
 	{
