@@ -18,6 +18,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnLSElementReactionTriggered, AAc
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSCharacterSwitched, int32, OldCharacterIndex, int32, NewCharacterIndex);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLSCharacterDied, AActor*, DeadCharacter);
 
+//4，多人联机与破盾事件委托
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLSPlayerDowned, AActor*, DownedPlayer);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSPlayerRevived, AActor*, RevivedPlayer, AActor*, Reviver);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnLSRaidWiped);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSShieldBroken, AActor*, Target, FGameplayTag, ShieldElement);
+
 UCLASS()
 class LUMI_SPARK_API ULSEventBus : public UGameInstanceSubsystem
 {
@@ -47,4 +53,17 @@ public:
 	
 	UPROPERTY(BlueprintAssignable, Category = "Events|Team")
 	FOnLSCharacterDied OnCharacterDied;
+	
+	//多人联机与破盾事件流
+	UPROPERTY(BlueprintAssignable, Category = "Events|Coop")
+	FOnLSPlayerDowned OnPlayerDowned;
+	
+	UPROPERTY(BlueprintAssignable, Category = "Events|Coop")
+	FOnLSPlayerRevived OnPlayerRevived;
+	
+	UPROPERTY(BlueprintAssignable, Category = "Events|Coop")
+	FOnLSRaidWiped OnRaidWiped;
+	
+	UPROPERTY(BlueprintAssignable, Category = "Events|Coop")
+	FOnLSShieldBroken OnShieldBroken;
 };

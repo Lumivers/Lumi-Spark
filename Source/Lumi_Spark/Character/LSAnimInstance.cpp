@@ -3,6 +3,7 @@
 #include "LSMovementComponent.h"
 #include "LSCameraComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Animation/AnimInstance.h"
 
 void ULSAnimInstance::NativeInitializeAnimation()
 {
