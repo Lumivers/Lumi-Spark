@@ -12,6 +12,7 @@
 #include "Character/LSSkillComponent.h"
 #include "Character/LSTeamSwitchComponent.h"
 #include "Core/LSPlayerController.h"
+#include "Core/Lumi_SparkGameMode.h"
 
 // 构造函数：用自定义的ULSMovementComponent 替换默认的CharacterMovementComponent
 ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -67,6 +68,7 @@ void ALSCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ALSCharacterBase, CurrentHealth);
+	DOREPLIFETIME(ALSCharacterBase, bIsDowned);
 }
 
 void ALSCharacterBase::BeginPlay()
@@ -100,7 +102,37 @@ float ALSCharacterBase::TakeDamage(float DamageAmount, struct FDamageEvent const
 	// 3. 判定死亡
 	if (CurrentHealth <= 0.0f)
 	{
-		Die(DamageCauser);
+		if (bIsDowned)
+		{
+			// 倒地状态下再次受到致命重创 -> 彻底死亡！
+			Die(DamageCauser);
+		}
+		else
+		{
+			// 检查三人小队是否有存活备用角色可以顺切救场
+			bool bCanSwitchStandby = false;
+			if (ALSPlayerController* PC = Cast<ALSPlayerController>(GetController()))
+			{
+				if (ULSTeamSwitchComponent* TeamComp = PC->GetTeamSwitchComponent())
+				{
+					for (int32 i = 0; i < 3; ++i)
+					{
+						if (TeamComp->CanSwitchToIndex(i))
+						{
+							TeamComp->SwitchTo(i);
+							bCanSwitchStandby = true;
+							break;
+						}
+					}
+				}
+			}
+			
+			// 如果小队没有备用角色了（或联机中单人耗尽） -> 进入倒地匍匐状态等待队友救援！
+			if (!bCanSwitchStandby)
+			{
+				EnterDownedState(DamageCauser);
+			}
+		}
 	}
 
 	return ActualDamage;
@@ -214,4 +246,126 @@ void ALSCharacterBase::ExitBackgroundMode()
 	{
 		CameraComponent->UpdateMeshVisibility();
 	}
+}
+
+// 倒地与救援生命周期实现
+
+void ALSCharacterBase::EnterDownedState(AActor* Killer)
+{
+	if (!HasAuthority() || bIsDowned) return;
+
+	bIsDowned = true;
+	Tags.AddUnique(TEXT("State.Downed"));
+
+	// 1. 停火并打断开镜
+	if (WeaponComponent)
+	{
+		WeaponComponent->StopFire();
+	}
+
+	// 2. 降低移动速度为匍匐低速
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->MaxWalkSpeed = DownedWalkSpeed;
+	}
+
+	// 3. 启动 45 秒流血倒计时
+	BleedoutRemainingTimer = DownedBleedoutMaxTime;
+	GetWorld()->GetTimerManager().SetTimer(BleedoutTimerHandle, this, &ALSCharacterBase::HandleBleedoutTick, 1.0f, true);
+
+	// 4. 广播倒地事件并检查团灭
+	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
+	{
+		EventBus->OnPlayerDowned.Broadcast(this);
+	}
+
+	if (ALumi_SparkGameMode* GM = GetWorld()->GetAuthGameMode<ALumi_SparkGameMode>())
+	{
+		GM->CheckRaidWipeCondition();
+	}
+
+	GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Orange, FString::Printf(TEXT("⚠️ %s 已倒地！按住 [F] 键拉起队友 (剩余 %0.fs)"), *GetName(), DownedBleedoutMaxTime));
+}
+
+void ALSCharacterBase::HandleBleedoutTick()
+{
+	if (!HasAuthority() || !bIsDowned) return;
+
+	BleedoutRemainingTimer -= 1.0f;
+	if (BleedoutRemainingTimer <= 0.0f)
+	{
+		// 流血超时 -> 彻底死亡
+		GetWorld()->GetTimerManager().ClearTimer(BleedoutTimerHandle);
+		Die(nullptr);
+	}
+}
+
+void ALSCharacterBase::Revive(AActor* Reviver, float RestoredHealthPercent)
+{
+	if (!HasAuthority() || !bIsDowned) return;
+
+	bIsDowned = false;
+	Tags.Remove(TEXT("State.Downed"));
+	GetWorld()->GetTimerManager().ClearTimer(BleedoutTimerHandle);
+
+	// 恢复生命值
+	CurrentHealth = MaxHealth * FMath::Clamp(RestoredHealthPercent, 0.1f, 1.0f);
+	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+
+	// 恢复正常移速
+	if (ULSMovementComponent* MoveComp = GetLSMovementComponent())
+	{
+		MoveComp->MaxWalkSpeed = MoveComp->WalkSpeed;
+	}
+
+	// 广播复活事件
+	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
+	{
+		EventBus->OnPlayerRevived.Broadcast(this, Reviver);
+	}
+
+	GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Green, FString::Printf(TEXT("💚 %s 已被救起！"), *GetName()));
+}
+
+void ALSCharacterBase::OnRep_IsDowned()
+{
+	if (bIsDowned)
+	{
+		Tags.AddUnique(TEXT("State.Downed"));
+		if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+		{
+			MoveComp->MaxWalkSpeed = DownedWalkSpeed;
+		}
+	}
+	else
+	{
+		Tags.Remove(TEXT("State.Downed"));
+		if (ULSMovementComponent* MoveComp = GetLSMovementComponent())
+		{
+			MoveComp->MaxWalkSpeed = MoveComp->WalkSpeed;
+		}
+	}
+}
+
+// ─── ILSInteractableInterface 实现 ───
+
+bool ALSCharacterBase::CanInteract(AActor* Interactor) const
+{
+	// 仅当自己处于倒地状态、未死、且交互者不是自己时可被救助
+	return bIsDowned && !IsDead() && (Interactor != this);
+}
+
+FText ALSCharacterBase::GetInteractPrompt(AActor* Interactor) const
+{
+	return FText::FromString(TEXT("长按 [F] 救助队友"));
+}
+
+float ALSCharacterBase::GetInteractDuration(AActor* Interactor) const
+{
+	return 3.0f; // 救助需要按住 3 秒
+}
+
+void ALSCharacterBase::OnInteractComplete(AActor* Interactor)
+{
+	Revive(Interactor, 0.5f); // 救助完成，拉起恢复 50% 生命
 }

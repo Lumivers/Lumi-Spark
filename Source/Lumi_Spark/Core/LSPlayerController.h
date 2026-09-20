@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Core/LSInteractableInterface.h"
 #include "LSPlayerController.generated.h"
 
 //前向声明
@@ -18,6 +19,7 @@ class LUMI_SPARK_API ALSPlayerController : public APlayerController
 	
 public:
 	ALSPlayerController();
+	virtual void Tick(float DeltaSeconds) override;
 	
 	//1，Input Mapping Context（输入映射上下文）配置
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Context")
@@ -118,7 +120,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SwitchToUIInputMode();
 	
+	//服务端权威交互完成RPC
+	UFUNCTION(Server, Reliable)
+	void Server_CompleteInteract(AActor* TargetActor);
+	
 protected:
+	//当前交互目标（由 ILSInteractableInterface 接口提供）
+	TWeakObjectPtr<AActor> CurrentInteractTarget;
+	
+	//当前长按进度计时器与总时长
+	float InteractTimer = 0.0f;
+	float CurrentInteractDuration = 0.0f;
+	
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void SetupInputComponent() override;
@@ -146,7 +159,8 @@ protected:
 	void HandleThrowGrenadeStarted();
 	void HandleThrowGrenadeCompleted();
 	void HandleSwitchCharacter();
-	void HandleInteract();
+	void HandleInteractStarted();
+	void HandleInteractCompleted();
 	
 	void HandleSwitchToSlot1();
 	void HandleSwitchToSlot2();

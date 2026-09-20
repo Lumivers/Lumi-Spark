@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "LSMovementComponent.h"
 #include "Core/LSTypes.h"
+#include "Core/LSInteractableInterface.h"
 #include "LSCharacterBase.generated.h"
 
 //前向声明
@@ -19,7 +20,7 @@ class ULSSkillComponent;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSHealthChanged, float, CurrentHealth, float, MaxHealth);
 
 UCLASS()
-class LUMI_SPARK_API ALSCharacterBase : public ACharacter
+class LUMI_SPARK_API ALSCharacterBase : public ACharacter, public ILSInteractableInterface
 {
 	GENERATED_BODY()
 
@@ -33,6 +34,12 @@ public:
 
 	// 引擎伤害重写入口
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
+	
+	// ILSInteractableInterface 接口实现
+	virtual bool CanInteract(AActor* Interactor) const override;
+	virtual FText GetInteractPrompt(AActor* Interactor) const override;
+	virtual float GetInteractDuration(AActor* Interactor) const override;
+	virtual void OnInteractComplete(AActor* Interactor) override;
 	
 	//获取摄像机组件
 	FORCEINLINE ULSCameraComponent* GetCameraComponent() const { return CameraComponent; }
@@ -65,6 +72,21 @@ public:
 
 	UFUNCTION(BlueprintCallable, BluePrintPure, Category = "Health")
 	bool IsDead() const { return CurrentHealth <= 0.0f; }
+	
+	// 倒地与救援生命周期
+	UFUNCTION(BlueprintCallable, Category = "Health|Downed")
+	bool IsDowned() const { return bIsDowned; }
+	
+	UFUNCTION(BlueprintCallable, Category = "Health|Downed")
+	float GetBleedoutRatio() const { return DownedBleedoutMaxTime > 0.0f ? (BleedoutRemainingTimer / DownedBleedoutMaxTime) : 0.0f; }
+	
+	// 受击与倒地处理
+	UFUNCTION(BlueprintCallable, Category = "Health|Downed")
+	virtual void EnterDownedState(AActor* Killer);
+	
+	// 倒地被救援
+	UFUNCTION(BlueprintCallable, Category = "Health|Downed")
+	virtual void Revive(AActor* Reviver, float RestoredHealthPercent = 0.5f);
 
 protected:
     // 摄像机组件
@@ -100,6 +122,29 @@ protected:
 
 	UFUNCTION()
 	void OnRep_CurrentHealth();
+	
+	//倒地状态网络属性同步
+	UPROPERTY(ReplicatedUsing = OnRep_IsDowned, VisibleInstanceOnly, BlueprintReadOnly, Category = "Health|Downed")
+	bool bIsDowned = false;
+	
+	//倒地最大流血存活时长（秒）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health|Downed")
+	float DownedBleedoutMaxTime = 45.0f;
+	
+	//倒地匍匐移动速度
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health|Downed")
+	float DownedWalkSpeed = 150.0f;
+	
+	//剩余流血时间
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Health|Downed")
+	float BleedoutRemainingTimer = 0.0f;
+	
+	FTimerHandle BleedoutTimerHandle;
+	
+	UFUNCTION()
+	void OnRep_IsDowned();
+	
+	void HandleBleedoutTick();
 
 	// 死亡处理流程
 	virtual void Die(AActor* Killer);

@@ -136,7 +136,11 @@ void ALSPlayerController::SetupInputComponent()
 			EnhancedInputComponent->BindAction(IA_ThrowGrenade, ETriggerEvent::Completed, this, &ALSPlayerController::HandleThrowGrenadeCompleted);
 		}
 		if (IA_SwitchCharacter) EnhancedInputComponent->BindAction(IA_SwitchCharacter, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchCharacter);
-		if (IA_Interact) EnhancedInputComponent->BindAction(IA_Interact, ETriggerEvent::Started, this, &ALSPlayerController::HandleInteract);
+		if (IA_Interact)
+		{
+			EnhancedInputComponent->BindAction(IA_Interact, ETriggerEvent::Started, this, &ALSPlayerController::HandleInteractStarted);
+			EnhancedInputComponent->BindAction(IA_Interact, ETriggerEvent::Completed, this, &ALSPlayerController::HandleInteractCompleted);
+		}
 		
 		if (IA_SwitchToSlot1) EnhancedInputComponent->BindAction(IA_SwitchToSlot1, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchToSlot1);
 		if (IA_SwitchToSlot2) EnhancedInputComponent->BindAction(IA_SwitchToSlot2, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchToSlot2);
@@ -398,11 +402,6 @@ void ALSPlayerController::HandleSwitchCharacter()
 	}
 }
 
-void ALSPlayerController::HandleInteract()
-{
-	// 预留：拾取掉落物 / 交互
-}
-
 void ALSPlayerController::HandleSwitchToSlot1()
 {
 	if (TeamSwitchComponent) TeamSwitchComponent->SwitchTo(0);
@@ -425,4 +424,109 @@ void ALSPlayerController::HandleCycleCharacter(const FInputActionValue& Value)
 	if (FMath::IsNearlyZero(AxisVal)) return;
 	// 滚轮向上 (>0) 顺切，滚轮向下 (<0) 逆切
 	TeamSwitchComponent->CycleNextCharacter(AxisVal > 0.0f);
+}
+
+void ALSPlayerController::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	// 长按交互进度推进
+	if (CurrentInteractTarget.IsValid())
+	{
+		AActor* Target = CurrentInteractTarget.Get();
+		APawn* ControlledPawn = GetPawn();
+
+		// 检查距离（超过 3 米自动中断）
+		if (!ControlledPawn || FVector::Dist(ControlledPawn->GetActorLocation(), Target->GetActorLocation()) > 300.0f)
+		{
+			HandleInteractCompleted();
+			return;
+		}
+
+		InteractTimer += DeltaSeconds;
+
+		// 驱动接口进度更新
+		if (ILSInteractableInterface* Interface = Cast<ILSInteractableInterface>(Target))
+		{
+			const float Alpha = FMath::Clamp(InteractTimer / CurrentInteractDuration, 0.0f, 1.0f);
+			Interface->OnInteractProgress(ControlledPawn, Alpha);
+
+			// 长按时间达标 -> 完成交互！
+			if (InteractTimer >= CurrentInteractDuration)
+			{
+				Server_CompleteInteract(Target);
+				Interface->OnInteractComplete(ControlledPawn);
+				CurrentInteractTarget = nullptr;
+				InteractTimer = 0.0f;
+			}
+		}
+	}
+}
+
+void ALSPlayerController::HandleInteractStarted()
+{
+	APawn* ControlledPawn = GetPawn();
+	if (!ControlledPawn) return;
+
+	// 从摄像机视线向前 2.5 米做球体检测抓取可交互对象
+	FVector CameraLoc;
+	FRotator CameraRot;
+	GetPlayerViewPoint(CameraLoc, CameraRot);
+
+	const FVector TraceEnd = CameraLoc + CameraRot.Vector() * 250.0f;
+	FHitResult Hit;
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(ControlledPawn);
+
+	if (GetWorld()->SweepSingleByChannel(Hit, CameraLoc, TraceEnd, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(40.0f), QueryParams))
+	{
+		if (Hit.GetActor() && Hit.GetActor()->Implements<ULSInteractableInterface>())
+		{
+			ILSInteractableInterface* Interface = Cast<ILSInteractableInterface>(Hit.GetActor());
+			if (Interface && Interface->CanInteract(ControlledPawn))
+			{
+				const float Duration = Interface->GetInteractDuration(ControlledPawn);
+				if (Duration <= 0.0f)
+				{
+					// 单击瞬时交互
+					Server_CompleteInteract(Hit.GetActor());
+					Interface->OnInteractComplete(ControlledPawn);
+				}
+				else
+				{
+					// 长按蓄力交互（倒地救人）
+					CurrentInteractTarget = Hit.GetActor();
+					CurrentInteractDuration = Duration;
+					InteractTimer = 0.0f;
+					Interface->OnInteractStart(ControlledPawn);
+				}
+			}
+		}
+	}
+}
+
+void ALSPlayerController::HandleInteractCompleted()
+{
+	if (CurrentInteractTarget.IsValid())
+	{
+		if (ILSInteractableInterface* Interface = Cast<ILSInteractableInterface>(CurrentInteractTarget.Get()))
+		{
+			Interface->OnInteractCanceled(GetPawn());
+		}
+		CurrentInteractTarget = nullptr;
+		InteractTimer = 0.0f;
+	}
+}
+
+void ALSPlayerController::Server_CompleteInteract_Implementation(AActor* TargetActor)
+{
+	if (!TargetActor || !GetPawn()) return;
+
+	if (ILSInteractableInterface* Interface = Cast<ILSInteractableInterface>(TargetActor))
+	{
+		if (Interface->CanInteract(GetPawn()))
+		{
+			Interface->OnInteractComplete(GetPawn());
+		}
+	}
 }

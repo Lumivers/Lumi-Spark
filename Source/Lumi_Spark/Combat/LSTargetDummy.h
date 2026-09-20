@@ -8,6 +8,7 @@ class UCapsuleComponent;
 class USphereComponent;
 class UStaticMeshComponent;
 class ULSElementComponent;
+class ULSShieldComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSTargetDummyHealthChanged, float, CurrentHealth, float, MaxHealth);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnLSTargetDummyReset);
@@ -35,12 +36,12 @@ public:
 	FORCEINLINE USphereComponent* GetHeadWeakspotComponent() const { return HeadWeakspotComp; }
 	FORCEINLINE UStaticMeshComponent* GetMeshComponent() const { return MeshComp; }
 	FORCEINLINE ULSElementComponent* GetElementComponent() const { return ElementComp; }
+	FORCEINLINE ULSShieldComponent* GetShieldComponent() const { return ShieldComp; }
 
 	// 手动/自动重置木桩状态
 	UFUNCTION(BlueprintCallable, Category = "TargetDummy")
 	void ResetDummy();
 
-public:
 	UPROPERTY(BlueprintAssignable, Category = "TargetDummy|Events")
 	FOnLSTargetDummyHealthChanged OnHealthChanged;
 
@@ -79,6 +80,10 @@ protected:
 	// 被打空血量后自动回血重置的延迟时间（秒）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TargetDummy|Stats")
 	float AutoResetDelay = 2.0f;
+	
+	// 护盾组件（可选挂载，支持多层护盾与元素克制）
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "TargetDummy|Components")
+	TObjectPtr<ULSShieldComponent> ShieldComp;
 
 private:
 	FTimerHandle ResetTimerHandle;
