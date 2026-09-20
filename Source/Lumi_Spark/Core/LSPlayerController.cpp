@@ -451,6 +451,12 @@ void ALSPlayerController::Tick(float DeltaSeconds)
 			const float Alpha = FMath::Clamp(InteractTimer / CurrentInteractDuration, 0.0f, 1.0f);
 			Interface->OnInteractProgress(ControlledPawn, Alpha);
 
+			//同步推流给HUD进度条控件
+			if (ULSHUDWidget* HUD = Cast<ULSHUDWidget>(HUDWidgetInstance))
+			{
+				HUD->OnInteractProgressUpdated(Alpha);
+			}
+			
 			// 长按时间达标 -> 完成交互！
 			if (InteractTimer >= CurrentInteractDuration)
 			{
@@ -458,6 +464,12 @@ void ALSPlayerController::Tick(float DeltaSeconds)
 				Interface->OnInteractComplete(ControlledPawn);
 				CurrentInteractTarget = nullptr;
 				InteractTimer = 0.0f;
+				
+				//完成后重置HUD进度条
+				if (ULSHUDWidget* HUD = Cast<ULSHUDWidget>(HUDWidgetInstance))
+				{
+					HUD->OnInteractProgressUpdated(0.0f);
+				}
 			}
 		}
 	}
@@ -514,6 +526,10 @@ void ALSPlayerController::HandleInteractCompleted()
 			Interface->OnInteractCanceled(GetPawn());
 		}
 		CurrentInteractTarget = nullptr;
+		if (ULSHUDWidget* HUD = Cast<ULSHUDWidget>(HUDWidgetInstance))
+		{
+			HUD->OnInteractProgressUpdated(0.0f);
+		}
 		InteractTimer = 0.0f;
 	}
 }

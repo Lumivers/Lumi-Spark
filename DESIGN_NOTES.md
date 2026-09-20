@@ -38,6 +38,9 @@
 34. [多人联机权威架构、在线人数与怪物动态数值缩放中枢（LSGameState & GameMode）](#34-多人联机权威架构在线人数与怪物动态数值缩放中枢lsgamestate--gamemode)
 35. [通用长按交互接口与倒地互救/物资开箱设计范式（ILSInteractableInterface）](#35-通用长按交互接口与倒地互救物资开箱设计范式ilsinteractableinterface)
 36. [复合多层元素破盾系统、元素相克消耗与破盾瘫痪机制（ULSShieldComponent）](#36-复合多层元素破盾系统元素相克消耗与破盾瘫痪机制ulsshieldcomponent)
+37. [多目标动态仇恨积分表与救援行为仇恨激增模型（ULSThreatComponent）](#37-多目标动态仇恨积分表与救援行为仇恨激增模型ulsthreatcomponent)
+38. [角色倒地匍匐、45s流血倒计时与按住[F]拉起互救管线（LSCharacterBase & LSPlayerController）](#38-角色倒地匍匐45s流血倒计时与按住f拉起互救管线lscharacterbase--lsplayercontroller)
+39. [战斗 HUD 交互推流、C++访问权限与打靶木桩复合破盾装配（ULSHUDWidget & ALSTargetDummy）](#39-战斗-hud-交互推流c访问权限与打靶木桩复合破盾装配ulshudwidget--alstargetdummy)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -998,6 +1001,56 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
   - 设置 `PrimaryComponentTick.bCanEverTick = false`，仅在发生受击时被动调用 `AbsorbDamage`，即使大场景摆放上百个护盾敌人，待机 CPU 开销恒为 0。
 - **网络权威同步**：
   - 护盾扣减全在 Server 端执行，通过 `DOREPLIFETIME` 同步结构体数组 `ShieldLayers`，客户端 RepNotify 触发 UI 头顶血条更新，保证联机防作弊与强一致性。
+
+---
+
+## 37. 多目标动态仇恨积分表与救援行为仇恨激增模型（ULSThreatComponent）
+
+### 37.1 为什么要写这段代码（架构角色与交互痛点）
+- **痛点**：在 2~4 人联机 PVE 副本中，若怪物仅仅锁定物理距离最近的玩家或固定追着主机（Host）打，联机体验会变得极度机械且缺乏策略拉扯。
+- **架构定位**：`ULSThreatComponent` 为后续阶段 7 敌人 AI 提供纯粹而权威的索敌仲裁中枢。将所有伤害、元素反应和救援行为转化为量化的仇恨值（Threat Value），并实现随时间的自然衰减（5%/s）。
+
+### 37.2 为什么这么设计（数值与机制模型）
+- **元素反应 1.5x 仇恨加权**：
+  - 传统直伤与高频反应伤害不同：打出蒸发、超导、超绽放等高阶反应通常需要多名队友连携铺场，因此反应伤害享受更高的仇恨权重，使反应触发者自然成为集火焦点。
+- **救援行为仇恨激增模型（300 点/秒）**：
+  - 当倒地队友被救助时，救助者每秒产生 300 点巨额仇恨。周围的杂兵和精英怪会本能地转头扑向施救者，倒逼队伍必须分工——一人压制掩护、一人趁机拉人，极大激发了团队协同的紧张感。
+- **Tick 频率降采样优化**：
+  - 构造函数中设置 `PrimaryComponentTick.TickInterval = 0.5f`。仇恨衰减与排序仲裁无需每帧 60~120 次高频轮询，每秒 2 次的计算精度足以支撑极其拟真的仇恨平滑过渡，为大规模战斗节省了 95% 以上的 CPU 算力。
+
+---
+
+## 38. 角色倒地匍匐、45s流血倒计时与按住[F]拉起互救管线（LSCharacterBase & LSPlayerController）
+
+### 38.1 为什么要写这段代码（三人小队与多人倒地的融合）
+- **单人顺切与多人倒地的无缝衔接**：
+  - Lumi-Spark 独创了“三人小队即时轮换（切人即切枪）”体系。
+  - 当在场角色生命归 0 时：
+    - 若小队还有存活备用队友，自动触发**顺切救场**（Stage 4）；
+    - 若小队最后一人倒下（或联机中全队耗尽），才正式触发 **`State.Downed` 倒地匍匐状态**，绝不直接将玩家踢出游戏，给予队友 45 秒救援窗口。
+
+### 38.2 为什么这么设计（状态机与网络权威）
+- **移动脱敏与开火锁死**：
+  - 倒地瞬间：移速限制为 150 cm/s，调用 `WeaponComponent->StopFire()` 强制停火并禁止开镜/切人。
+  - 通过 `bIsDowned` 属性复制（`DOREPLIFETIME`）与 `OnRep_IsDowned`，在客户端与模拟代理端同步速度限制与动作状态。
+- **Server RPC 权威闭环**：
+  - 救援者发起长按 [F] 时，Controller 在客户端推进平滑的本地进度动画；
+  - 进度达到 100% 后，由客户端向服务端发起 `Server_CompleteInteract(TargetActor)` RPC；
+  - 服务端校验合法性后执行 `Target->Revive(Interactor, 0.5f)`，权威恢复生命值并派发 `OnPlayerRevived`，杜绝客户端擅自复活作弊。
+
+---
+
+## 39. 战斗 HUD 交互推流、C++访问权限与打靶木桩复合破盾装配（ULSHUDWidget & ALSTargetDummy）
+
+### 39.1 战斗 HUD 交互推流与 C++ 访问修饰符陷阱
+- **`BlueprintImplementableEvent` 的 Caller 权限**：
+  - 蓝图事件虽然在蓝图图表里实现，但如果是由外部控制器（`ALSPlayerController`）持指针主动推流（`HUD->OnInteractProgressUpdated(Alpha)`），该事件在 C++ 头文件中**必须声明在 `public:` 作用域下**，否则会触发 C++ 编译器“成员无法访问”报错。
+
+### 39.2 打靶木桩复合多层盾实机咬合（ALSTargetDummy）
+- **开箱即用的验证载体**：
+  - `ALSTargetDummy` 默认挂载 `ULSShieldComponent`，并装配 **外层 2000 冰盾 + 核心 2000 雷盾**；
+  - 伤害扣除优先由 `ShieldComp->AbsorbDamage` 拦截；火枪射击触发 2.0x 暴击级破冰，草雷触发 2.0x 破雷核，两层盾破完后木桩进入 4 秒瘫痪大硬直；打空后自动延迟 2 秒全量重置，为多人联机合作的破盾手感提供了完美的视口闭环。
+
 
 
 

@@ -39,6 +39,22 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Team")
 	void OnActiveCharacterSwitched(ALSCharacterBase* NewCharacter, int32 SlotIndex);
 	
+	//交互提示浮窗显隐与文字
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Interaction")
+	void OnInteractPromptUpdated(bool bIsVisible, const FText& PromptText);
+	
+	//长按交互进度条更新
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Interaction")
+	void OnInteractProgressUpdated(float ProgressRatio);
+	
+	//玩家自身倒地状态通知
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Coop")
+	void OnLocalPlayerDownedChanged(bool bIsDowned, float BleedoutRatio);
+	
+	//全队覆灭通知
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Coop")
+	void OnRaidWipedTriggered();
+	
 protected:
 	//蓝图实现的表现层事件
 	
@@ -74,6 +90,9 @@ protected:
 	//Q技能能量变动通知
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Skill")
 	void OnBurstEnergyUpdated(float CurrentEnergy, float MaxEnergy, float Ratio);
+	
+	UFUNCTION()
+	void HandleGlobalRaidWiped();
 	
 private:
 	//缓存指针

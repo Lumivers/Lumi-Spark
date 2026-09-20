@@ -26,6 +26,12 @@ void ULSHUDWidget::NativeConstruct()
 	{
 		EventBus->OnDamageDealt.AddDynamic(this, &ULSHUDWidget::HandleDamageDealt);
 	}
+	
+	//订阅全局团灭事件
+	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
+	{
+		EventBus->OnRaidWiped.AddDynamic(this, &ULSHUDWidget::HandleGlobalRaidWiped);
+	}
 }
 
 void ULSHUDWidget::NativeDestruct()
@@ -43,6 +49,7 @@ void ULSHUDWidget::NativeDestruct()
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
 	{
 		EventBus->OnDamageDealt.RemoveDynamic(this, &ULSHUDWidget::HandleDamageDealt);
+		EventBus->OnRaidWiped.RemoveDynamic(this, &ULSHUDWidget::HandleGlobalRaidWiped);
 	}
 	
 	Super::NativeDestruct();
@@ -161,4 +168,9 @@ void ULSHUDWidget::HandleEnergyChanged(float CurrentEnergy, float MaxEnergy)
 {
     const float Ratio = (MaxEnergy > 0.0f) ? (CurrentEnergy / MaxEnergy) : 0.0f;
     OnBurstEnergyUpdated(CurrentEnergy, MaxEnergy, Ratio);
+}
+
+void ULSHUDWidget::HandleGlobalRaidWiped()
+{
+    OnRaidWipedTriggered();
 }
