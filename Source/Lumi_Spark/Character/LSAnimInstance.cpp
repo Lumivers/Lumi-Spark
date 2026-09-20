@@ -4,6 +4,7 @@
 #include "LSCameraComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Animation/AnimInstance.h"
+#include "KismetAnimationLibrary.h"
 
 void ULSAnimInstance::NativeInitializeAnimation()
 {
@@ -42,7 +43,7 @@ void ULSAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	GroundSpeed = HorizontalVelocity.Size();
 
 	const FRotator ActorRotation = Character->GetActorRotation();
-	Direction = CalculateDirection(Velocity, ActorRotation);
+	Direction = UKismetAnimationLibrary::CalculateDirection(Velocity, ActorRotation);
 
 	// 2. 加速度与移动判定
 	const FVector Acceleration = MovementComponent->GetCurrentAcceleration();

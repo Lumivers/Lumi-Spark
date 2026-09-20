@@ -35,6 +35,9 @@
 31. [双角色体系深度咬合：技能中枢装配、武器后台隐藏、HUD动态重绑与IWYU实战](#31-双角色体系深度咬合技能中枢装配武器后台隐藏hud动态重绑与iwyu实战)
 32. [三人小队重构与切人即切枪体系：单武器瘦身、顺逆轮切与默认TPS视角适配](#32-三人小队重构与切人即切枪体系单武器瘦身顺逆轮切与默认tps视角适配)
 33. [三人小队生命周期闭环、在场阵亡顺切与打靶场木桩实体设计](#33-三人小队生命周期闭环在场阵亡顺切与打靶场木桩实体设计)
+34. [多人联机权威架构、在线人数与怪物动态数值缩放中枢（LSGameState & GameMode）](#34-多人联机权威架构在线人数与怪物动态数值缩放中枢lsgamestate--gamemode)
+35. [通用长按交互接口与倒地互救/物资开箱设计范式（ILSInteractableInterface）](#35-通用长按交互接口与倒地互救物资开箱设计范式ilsinteractableinterface)
+36. [复合多层元素破盾系统、元素相克消耗与破盾瘫痪机制（ULSShieldComponent）](#36-复合多层元素破盾系统元素相克消耗与破盾瘫痪机制ulsshieldcomponent)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -936,6 +939,66 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
 
 ### 33.5 常见陷阱提醒
 - **`SetNumZeroed` 遗留空指针陷阱**：在旧版双人小队逻辑中，`BeginPlay` 曾调用 `TeamMembers.SetNumZeroed(2)`，这会在小队中预留两个 `nullptr`。在三人动态小队重构后，若该行未被清理，会导致 `CanSwitch()` 在遍历时误判或切出空指针。重构后必须确保 `TeamMembers` 初始保持干净。
+
+---
+
+## 34. 多人联机权威架构、在线人数与怪物动态数值缩放中枢（LSGameState & GameMode）
+
+### 34.1 为什么要写这段代码（架构角色与交互痛点）
+- **动态难度失衡痛点**：在 2~4 人 PVE 合作射击游戏中，若副本中怪物的血量和护盾数值恒定，1 人单刷体验极度刮痧坐牢，而 4 人组队则火力严重溢出秒杀全场。
+- **架构角色划分**：
+  - `ALSGameState` 充当全房间**权威数据黑板**，将在线玩家人数（`ConnectedPlayerCount`）和团灭状态（`bIsRaidWiped`）多端同步，提供动态缩放乘率（1人 100%、2人 160%、3人 230%、4人 300%）。
+  - `ALumi_SparkGameMode` 充当**服务端裁判中枢**，在 `PostLogin` / `Logout` 中权威仲裁玩家计数，并在全员倒地时裁决 `Raid Wipe`。
+
+### 34.2 为什么这么设计（类职责划分与方案对比）
+- **GameState 与 GameMode 的绝对职责分离**：
+  - *常见误区*：直接在 GameMode 里写 `GetDynamicHealthMultiplier()`。由于 GameMode 仅存在于 Server 端（客户端完全取不到），会导致客户端如果想获取当前难度或驱动 UI 渲染时直接发生空指针崩溃。
+  - *正确做法*：GameMode 负责**服务端权威写**（在 `PostLogin` / `Logout` 中设置），`GameState` 负责**属性复制与多端读**，客户端与服务端均可随时安全访问。
+- **纯静态辅助查询接口（`GetCurrentHealthMultiplier`）**：
+  - 怪物或木桩在生成时，仅需单行调用 `ALSGameState::GetCurrentHealthMultiplier(this)`，零耦合拿到缩放倍数，消除到处显式 Cast GameState 的冗余代码。
+
+### 34.3 UE 框架契合度
+- `AGameModeBase::PostLogin` 是虚幻官方认证的“新加入玩家 Controller 已完成就绪”的黄金回调点；通过 `FConstPlayerControllerIterator` 遍历全场活跃 Controller，精准统计全场行动能力，杜绝掉线造成的僵死状态。
+
+### 34.4 游戏开发特有的注意事项
+- **网络带宽优化**：`ConnectedPlayerCount` 和 `bIsRaidWiped` 属于极低频离散状态量，仅在玩家登入/登出和终局判定时同步一次，网络带宽几乎为 0。
+- **下限防御保护**：`FMath::Max(1, GetNumPlayers() - 1)` 杜绝离场时因浮点或统计滞后导致玩家数归零或变为负数的数值 Bug。
+
+---
+
+## 35. 通用长按交互接口与倒地互救/物资开箱设计范式（ILSInteractableInterface）
+
+### 35.1 为什么要写这段代码（架构角色与交互痛点）
+- **按键与逻辑竞争痛点**：射击游戏中的交互（Interaction）场景极其繁杂——倒地队友需长按 3 秒拉起、地脉宝箱需长按 1.5 秒开箱、机关门需单击瞬时触发。若由 Controller 对每个物体写 `CastToChest`、`CastToPlayer`，会导致控制器逻辑高度膨胀，且多目标重叠时无法统一管理。
+- **架构契约**：引入 `ILSInteractableInterface`，将交互能力抽象为标准化接口。任何 Actor 只要实现此接口，便能自动接入玩家的按 [F] 键长按/瞬时交互管线。
+
+### 35.2 为什么这么设计（类职责划分与方案对比）
+- **接口单一头文件规范（Header-Only Interface）**：
+  - 纯虚函数与具备内联默认实现的接口（如 `GetInteractDuration` 默认返回 0.0f）仅需单个 `.h` 头文件，UHT 自动生成 `.generated.h`，无需繁琐的 `.cpp` 编译单元。
+- **蓄力时长统一分流模型（Instant vs Hold Duration）**：
+  - 通过 `GetInteractDuration()` 返回浮点数区分瞬时操作（0.0s）与持续长按（如 3.0s），控制器层只需一套通用的进度计算逻辑即可覆盖游戏中所有交互实体。
+
+---
+
+## 36. 复合多层元素破盾系统、元素相克消耗与破盾瘫痪机制（ULSShieldComponent）
+
+### 36.1 为什么要写这段代码（架构角色与交互痛点）
+- **连携机制缺失痛点**：传统射击游戏只需单把高伤武器扫射；而原神式元素战斗的精髓在于“跨角色/跨玩家的元素属性克制与破盾连携”。
+- **架构角色**：`ULSShieldComponent` 模拟精英怪与 Boss 的多层元素护甲（如外层冰甲、核心雷核），通过高等元素克制矩阵（火克冰 2.0x、草克雷 2.0x、同属性 0x 免疫）驱动破盾，并在破盾后施加瘫痪大硬直（`TAG_State_Stunned`）。
+
+### 36.2 为什么这么设计（类职责划分与方案对比）
+- **多层嵌套队列与精准反向折算溢出（Reverse Damage Conversion）**：
+  - 当外层冰盾剩余 50 点，而玩家一发火狙打出 500 伤害（火克冰 2.0x 放大后破盾当量 1000）：
+  - 代码显式执行 `const float AbsorbedRaw = Layer.CurrentShield / Multiplier; RemainingDamage -= AbsorbedRaw;`，精准扣减护盾吸收的原始伤害（25点），将未被克制放大的剩余 475 点真实伤害顺延传递至下一层内层盾或本体肉身，保证数值严密不失真。
+- **同属性绝对免疫铁律**：
+  - `AttackElement == ShieldElement` 返回倍率 `0.0f` 并直接返回剩余伤害为 0，还原经典 RPG 中“冰怪开冰盾，冰枪打上去完全打不动”的战术规则，倒逼队友协同使用克制元素。
+
+### 36.3 UE 框架契合度
+- **极值性能（0 Tick 零空跑）**：
+  - 设置 `PrimaryComponentTick.bCanEverTick = false`，仅在发生受击时被动调用 `AbsorbDamage`，即使大场景摆放上百个护盾敌人，待机 CPU 开销恒为 0。
+- **网络权威同步**：
+  - 护盾扣减全在 Server 端执行，通过 `DOREPLIFETIME` 同步结构体数组 `ShieldLayers`，客户端 RepNotify 触发 UI 头顶血条更新，保证联机防作弊与强一致性。
+
 
 
 
