@@ -16,6 +16,7 @@
 #include "Engine/DamageEvents.h"
 #include "Components/DecalComponent.h"
 #include "Character/LSCameraComponent.h"
+#include "Weapon/LSWeaponDataAsset.h"
 
 ALSWeaponBase::ALSWeaponBase()
 {
@@ -529,4 +530,57 @@ void ALSWeaponBase::PlayTracerEffect(const FVector& StartLoc, const FVector& End
 	{
 		TracerComp->SetVectorParameter(TracerTargetParamName, EndLoc);
 	}
+}
+
+void ALSWeaponBase::InitializeFromDataAsset(const ULSWeaponDataAsset* InDataAsset)
+{
+	if (!InDataAsset)
+	{
+		return;
+	}
+
+	WeaponDisplayName = InDataAsset->DisplayName;
+	WeaponTypeTag = InDataAsset->WeaponTypeTag;
+	ElementTag = InDataAsset->ElementTag;
+	ElementGauge = InDataAsset->ElementGauge;
+	FireMode = InDataAsset->FireMode;
+
+	FireRate = InDataAsset->FireRate;
+	BaseDamage = InDataAsset->BaseDamage;
+	HeadshotMultiplier = InDataAsset->HeadshotMultiplier;
+	MaxRange = InDataAsset->MaxRange;
+	DamageDropoffStart = InDataAsset->DamageDropoffStart;
+	DamageDropoffEnd = InDataAsset->DamageDropoffEnd;
+	MinDamageMultiplier = InDataAsset->MinDamageMultiplier;
+
+	MagazineSize = InDataAsset->MagazineSize;
+	MaxReserveAmmo = InDataAsset->MaxReserveAmmo;
+	ReloadTime = InDataAsset->ReloadTime;
+	CurrentAmmo = MagazineSize;
+	CurrentReserveAmmo = MaxReserveAmmo;
+
+	BaseSpread = InDataAsset->BaseSpread;
+	MaxSpread = InDataAsset->MaxSpread;
+	SpreadIncreasePerShot = InDataAsset->SpreadIncreasePerShot;
+	SpreadRecoveryRate = InDataAsset->SpreadRecoveryRate;
+	ADSSpreadMultiplier = InDataAsset->ADSSpreadMultiplier;
+	CurrentSpread = BaseSpread;
+
+	// 后坐力序列与倍率灌注
+	if (RecoilComponent)
+	{
+		RecoilComponent->RecoilPattern = InDataAsset->RecoilPattern;
+	}
+
+	// 软引用同步/异步加载装配（若已加载则直接应用骨骼网格体）
+	if (InDataAsset->WeaponMeshAsset.IsValid())
+	{
+		if (WeaponMesh)
+		{
+			WeaponMesh->SetSkeletalMesh(InDataAsset->WeaponMeshAsset.Get());
+		}
+	}
+
+	// 广播一次弹药更新，确保 HUD 同步
+	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
 }

@@ -14,6 +14,15 @@ enum class ELSWeaponSlot : uint8
 	Throwable UMETA(DisplayName = "元素投掷物 (slot 3)")
 };
 
+//射击模式枚举
+UENUM(Blueprintable)
+enum class ELSFireMode : uint8
+{
+	SemiAuto UMETA(DisplayName = "半自动（单发）"),
+	FullAuto UMETA(DisplayName = "全自动（连发）"),
+	Burst UMETA(DisplayName = "三连发（点射）")
+};
+
 //元素附着量级
 UENUM(Blueprintable)
 enum class ELSElementGauge : uint8

@@ -9,15 +9,7 @@
 
 class USkeletalMeshComponent;
 class ULSRecoilComponent;
-
-//射击模式枚举
-UENUM(Blueprintable)
-enum class ELSFireMode : uint8
-{
-	SemiAuto UMETA(DisplayName = "半自动（单发）"),
-	FullAuto UMETA(DisplayName = "全自动（连发）"),
-	Burst UMETA(DisplayName = "三连发（点射）")
-};
+class ULSWeaponDataAsset;
 
 //武器通用委托
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLSAmmoChanged, int32, CurrentAmmo, int32, MagazineSize, int32, ReserveAmmo);
@@ -61,6 +53,10 @@ public:
 	//能否换弹判定
 	UFUNCTION(Blueprintable, Category = "Weapon|Ammo")
 	virtual bool CanReload() const;
+
+	//获取武器数据资产
+	UFUNCTION(BlueprintCallable, Category = "Weapon|Init")
+	virtual void InitializeFromDataAsset(const ULSWeaponDataAsset* InDataAsset);
 	
 	//组件获取
 	FORCEINLINE USkeletalMeshComponent* GetWeaponMesh() const { return WeaponMesh; }
