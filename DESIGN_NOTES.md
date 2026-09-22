@@ -42,6 +42,7 @@
 38. [角色倒地匍匐、45s流血倒计时与按住[F]拉起互救管线（LSCharacterBase & LSPlayerController）](#38-角色倒地匍匐45s流血倒计时与按住f拉起互救管线lscharacterbase--lsplayercontroller)
 39. [战斗 HUD 交互推流、C++访问权限与打靶木桩复合破盾装配（ULSHUDWidget & ALSTargetDummy）](#39-战斗-hud-交互推流c访问权限与打靶木桩复合破盾装配ulshudwidget--alstargetdummy)
 40. [数据资产体系架构、UPrimaryDataAsset 索引与枚举解耦（DataAsset Architecture & PrimaryAssetId）](#40-数据资产体系架构uprimarydataasset-索引与枚举解耦dataasset-architecture--primaryassetid)
+41. [独立资源组件解耦、单一真相源与彻底告别双重状态屎山（Health/Stamina/Energy Components & Single Source of Truth）](#41-独立资源组件解耦单一真相源与彻底告别双重状态屎山healthstaminaenergy-components--single-source-of-truth)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -1088,4 +1089,104 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
   - 在 DataAsset 中配置散布时，若策划手滑将 `MaxSpread` 填得和 `BaseSpread` 完全相同，在归一化 `(MaxSpread - BaseSpread)` 时会产生除以零浮点崩溃。在 `LSWeaponBase.h` 的 `GetSpreadRatio()` 中必须严格保持 `(MaxSpread > BaseSpread)` 条件保护。
 - **.cpp 编译单元遗漏导致的 LNK2019**：
   - `UPrimaryDataAsset` 派生类即便逻辑简单，若在头文件中声明了非内联的默认构造函数或 `GetPrimaryAssetId()`，就必须存在对应的 `.cpp` 编译单元。若缺少 `.cpp`，会导致链接器报出 `LNK2019: 无法解析的外部符号`。
+
+---
+
+## 41. 独立资源组件解耦、单一真相源与彻底告别双重状态屎山（Health/Stamina/Energy Components & Single Source of Truth）
+
+### 41.1 架构反思与痛点消除（为什么不能搞“假解耦”）
+- **双重状态源（Dual Source of Truth）的灾难**：
+  - 在早期推进组件化拆分时，极易陷入“为了所谓的向下兼容，在原宿主类中保留旧变量，再到处写转发函数同步”的伪解耦误区。
+  - 这种做法在 `ALSCharacterBase` 和 `ULSHealthComponent` 中各持有一份生命值，在 `ULSSkillComponent` 和 `ULSEnergyComponent` 中各持有一份能量值。
+  - 在多端网络同步与高频战斗下，两份属性极易因时序差产生脱节，引发**“UI 客户端显示满能量但服务端判定放不出大招”**或**“血条扣空但角色判定未阵亡”**等恶性隐蔽 Bug。网络复制带宽也随之无意义地翻倍。
+- **确立「单一真相源（Single Source of Truth）」铁律**：
+  - 解耦必须贯彻到底：资源组件作为唯一的数据权威和网络同步载体。
+  - 彻底将生命值与死亡事件归还给 `ULSHealthComponent`；
+  - 彻底将大招能量与微粒加成归还给 `ULSEnergyComponent`；
+  - 彻底将体力消耗与延迟恢复归还给 `ULSStaminaComponent`；
+  - 宿主类（Pawn）退回纯粹的骨架与容器，表现层（HUD）实行扁平化直连订阅。
+
+### 41.2 三大资源组件核心架构与职责模型
+
+```text
+              ┌─── [ULSHealthComponent]   ── 唯一纳管生命、承伤、脱战5s回血、网络权威同步
+              │
+[Character] ──┼─── [ULSStaminaComponent]  ── 唯一纳管体力、冲刺扣减、恢复延迟、按需使能Tick
+              │
+              └─── [ULSEnergyComponent]   ── 唯一纳管大招能量、同色微粒3.0x加成、后台微量回能
+```
+
+#### 1. 独立生命组件 (`ULSHealthComponent`)
+- **源码定位**：`Source/Lumi_Spark/Character/LSHealthComponent.{h,cpp}`
+- **承伤与破盾拦截管线**：
+  - 在 `TakeDamage` 中，优先查询宿主是否挂载 `ULSShieldComponent`（阶段 5 的复合多层元素护盾）。
+  - 传入 3 个完备上下文实参：`ShieldComp->AbsorbDamage(RemainingDamage, DamageElement, DamageCauser)`。
+  - 伤害首先被元素相克矩阵吸收，剩余穿透伤害再由 `CurrentHealth` 扣减，形成严密的盾血穿透自闭环。
+- **脱战 5s 自然回血与迟滞防抖**：
+  - 受到伤害重置 `TimeSinceLastDamage = 0.0f`；
+  - 仅在脱战超过 `RegenDelay (5.0s)` 且未阵亡时，权威服务端才由 `TickComponent` 驱动平滑回血；
+  - 引入 `bLowHealthWarningTriggered` 迟滞标记，仅在初次跌破 20% 时触发一次 `OnLowHealth` 告警，血量回升到阈值以上方才复位，消除临界点高频受击回血造成的 UI 红屏剧烈闪烁抖动。
+
+#### 2. 体力管理组件 (`ULSStaminaComponent`)
+- **源码定位**：`Source/Lumi_Spark/Character/LSStaminaComponent.{h,cpp}`
+- **机动消耗与恢复模型**：
+  - 体力池上限 240 点，冲刺每秒消耗 18 点，闪避单次扣减 18 点；
+  - 停止消耗后进入 `RecoveryDelay (1.5s)` 冷却，随后按 `RecoveryRate (30点/秒)` 自然回复；
+  - 体力耗尽广播 `OnStaminaExhausted`。
+- **极值性能：按需使能 Tick（On-Demand Tick）**：
+  - 构造时显式设置 `PrimaryComponentTick.bStartWithTickEnabled = false`。
+  - 玩家待机或正常慢走（满体力）时，Tick 彻底休眠，CPU 开销恒为 0；
+  - 仅在玩家发生冲刺/闪避消耗体力时，由 `ConsumeStamina` 唤醒 Tick；一旦体力自然回满，组件立即自我休眠，杜绝一切无意义的空跑轮询。
+
+#### 3. 元素大招能量组件 (`ULSEnergyComponent`)
+- **源码定位**：`Source/Lumi_Spark/Character/LSEnergyComponent.{h,cpp}`
+- **Q 技能能量池与微粒倍率矩阵**：
+  - 标称 60 点大招能量池；
+  - 在 `CollectParticle` 中接入原神经典微粒倍率公式：
+    - 同属性微粒（如火角色吃火球）：**3.0x 巨额加成**；
+    - 无属性微粒（白球）：**2.0x 标准充能**；
+    - 异属性微粒（如火角色吃水球）：**1.0x 基础保底**；
+    - 最终充能值统一乘算角色的 `EnergyRechargeRate`（元素充能效率）。
+- **后台待命被动回能**：
+  - 角色切换至后台待命时，`ULSEnergyComponent` 依然在后台由权威服务端以 `PassiveRechargeRate (0.5点/秒)` 被动微量充能，支撑多角色连携爆发。
+
+---
+
+### 41.3 核心玩法系统深度咬合与扁平化重构
+
+#### 1. `ALSCharacterBase` 彻底解耦与生命周期仲裁
+- 彻底剔除了内部散落的裸 float 血量与复制宏；
+- `TakeDamage` 先行执行闪避无敌帧拦截（`MoveComp->IsInvincible()`），未无敌方才移交 `HealthComponent->TakeDamage()`；
+- 角色自身监听 `HealthComponent->OnDeath` 广播，统一仲裁：
+  - 若已处于倒地状态，直接触发 `Die()`；
+  - 若处于正常状态，首先尝试由控制器驱动 `TeamSwitchComponent` 顺切备用队友救场；
+  - 若全员已退场（或联机中单人耗尽），权威进入 45 秒倒地匍匐（`EnterDownedState`），逻辑流转泾渭分明。
+
+#### 2. `LSMovementComponent` 真实物理受限
+- **闪避真实前置校验**：
+  - `TryDash()` 必须先调用 `StaminaComp->ConsumeStamina(DashCost)`。若体力不足直接返回 false，玩家无法盲目连续滑步闪避，大幅增强战术深度；
+- **冲刺每帧消耗与断跑**：
+  - 在 `UpdateCharacterStateBeforeMovement` 中按帧扣减 `SprintCostPerSecond * DeltaSeconds`；若体力归零，自动调用 `StopSprint()` 强制降速为慢走。
+
+#### 3. `ULSSkillComponent` 纯粹化与施法仲裁
+- 剥离所有能量数据包，退回纯粹的“E 技能冷却计时器与施法动作调度器”；
+- `CanCastBurst()` 直接向 `EnergyComponent` 查询是否满足所需能量；
+- `CastBurst()` 成功释放时单行调用 `EnergyComp->ConsumeEnergy(BurstRequiredEnergy)`。
+
+#### 4. `ULSHUDWidget` 扁平化直连订阅（零中间商）
+- 彻底废除了“组件 → 角色 → HUD”的冗长委托链路；
+- 在 `BindToCharacter(NewCharacter)` 中，HUD 直接向出战角色的 4 个专职组件发起一对一精准订阅；
+- 切人时统一解绑旧组件委托，绑定新组件后**在第 0 帧主动推流一次全量初始数据**，消除了切人瞬间 UI 滞后的视觉 Bug。
+
+---
+
+### 41.4 工业级 C++ 与 UE5 实战避坑指南 (Troubleshooting)
+
+1. **IWYU 头文件前向声明与模板实例化的脱节**：
+   - 在 `.h` 中使用了 `class ULSStaminaComponent;` 前向声明后，若在 `.cpp` 中调用模板方法 `CreateDefaultSubobject<T>` 或通过指针访问其方法（`StaminaComp->ConsumeStamina()`），编译器必须获得完整的类布局信息。若缺少对应的 `#include "Character/LSStaminaComponent.h"`，MSVC 会报出 `C2027: 使用了未定义类型` 以及 `C2737: 无法初始化 const 变量`。
+2. **委托反射名称的全局一致性**：
+   - 虚幻引擎的 `DECLARE_DYNAMIC_MULTICAST_DELEGATE` 会在底层注册唯一的反射元数据。订阅时必须严格对照总线或组件中的声明名称（例如总线中的 `OnElementReactionTriggered`，而非凭记忆写的 `OnElementalReaction`），否则会报 `C2039: 不是类成员`。
+3. **重写底层 Movement 钩子切勿“吃掉”状态转移**：
+   - 在派生重写 `UpdateCharacterStateBeforeMovement(DeltaSeconds)` 时，第一行必须保留 `UpdateMovementState()`，然后再调用父类 `Super`。若漏掉，奔跑、滑铲、瞄准的状态转移将无法每帧更新，导致动画蓝图与移动组件完全脱节。
+
 

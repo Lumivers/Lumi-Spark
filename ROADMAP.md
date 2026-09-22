@@ -14,7 +14,7 @@
 | **阶段 3：高等元素论与反应引擎** | ElementComponent, 16种反应, DendroCore, ICD, DamagePopWidget | **已完成** | **100% ✅** |
 | **阶段 4：三人小队切换与技能** | TeamSwitchComponent, SkillComponent, TargetDummy, 阵亡顺切 | **已完成** | **100% ✅** |
 | **阶段 5：2~4人联机合作架构** | GameState, 动态缩放, 破盾, 仇恨表, 倒地互救, 交互接口 | **已完成** | **100% ✅** |
-| **阶段 6：数据资产化与资源组件解耦** | DataAsset 体系, Health/Stamina/Energy 组件, 武器派生类, 投掷管理器 | 待开始 | 0% |
+| **阶段 6：数据资产化与资源组件解耦** | DataAsset 体系, Health/Stamina/Energy 组件, 武器派生类, 投掷管理器 | **进行中** | **50% ⏳** |
 | **阶段 7：敌人 AI 与行为树系统** | AIController, EnemyBase, 7类敌人, 掩体, BT 节点, Boss | 待开始 | 0% |
 | **阶段 8：驱动核心与装备系统** | 6 槽驱动核心, 驱动盘, 套装判定, 属性汇总管线 | 待开始 | 0% |
 | **阶段 9：搜打撤循环与 Meta-Tree** | 侵蚀系统, 背包, 安全箱, 跑尸, 异体刃, 撤离, 天赋树, 经济 | 待开始 | 0% |
@@ -85,14 +85,14 @@
 > **对应设计文档**：§4 武器系统、§5 战斗系统、§8 资源与状态系统
 
 ### 6.1 数据资产体系
-- [ ] **武器数据资产 (`ULSWeaponDataAsset`)**：射速/伤害/散布/后坐力曲线/弹匣/音效粒子软引用
-- [ ] **角色数据资产 (`ULSCharacterDataAsset`)**：角色基础属性、待命蓝图引用、E/Q 技能配置
-- [ ] **技能数据资产 (`ULSSkillDataAsset`)**：技能倍率/CD/能量消耗/施法蒙太奇/粒子
+- [x] **武器数据资产 (`ULSWeaponDataAsset`)**：射速/伤害/散布/后坐力曲线/弹匣/音效粒子软引用
+- [x] **角色数据资产 (`ULSCharacterDataAsset`)**：角色基础属性、待命蓝图引用、E/Q 技能配置
+- [x] **技能数据资产 (`ULSSkillDataAsset`)**：技能倍率/CD/能量消耗/施法蒙太奇/粒子
 
 ### 6.2 独立资源组件（从 Character 解耦）
-- [ ] **独立生命组件 (`ULSHealthComponent`)**：脱战 5s 延迟回血、低血 20% 告警委托 `OnLowHealth`
-- [ ] **体力组件 (`ULSStaminaComponent`)**：240 上限、冲刺 18/s、闪避 18/次、1.5s 延迟回体 30/s、耗尽停止冲刺
-- [ ] **元素能量组件 (`ULSEnergyComponent`)**：60 点 Q 能量池、同色微粒 3.0x 加成、后台被动微量充能
+- [x] **独立生命组件 (`ULSHealthComponent`)**：脱战 5s 延迟回血、低血 20% 告警委托 `OnLowHealth`
+- [x] **体力组件 (`ULSStaminaComponent`)**：240 上限、冲刺 18/s、闪避 18/次、1.5s 延迟回体 30/s、耗尽停止冲刺
+- [x] **元素能量组件 (`ULSEnergyComponent`)**：60 点 Q 能量池、同色微粒 3.0x 加成、后台被动微量充能
 
 ### 6.3 武器特化派生类（5 种）
 - [ ] **步枪 (`ALSRifle`)**：全自动/半自动模式切换、标准弹道

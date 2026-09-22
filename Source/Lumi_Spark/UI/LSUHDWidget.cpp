@@ -4,6 +4,9 @@
 #include "Core/LSEventBus.h"
 #include "Kismet/GameplayStatics.h"
 #include "Character/LSCharacterBase.h"
+#include "Character/LSHealthComponent.h"
+#include "Character/LSStaminaComponent.h"
+#include "Character/LSEnergyComponent.h"
 #include "Character/LSSkillComponent.h"
 
 void ULSHUDWidget::NativeConstruct()
@@ -13,7 +16,6 @@ void ULSHUDWidget::NativeConstruct()
 	APawn* OwningPawn = GetOwningPlayerPawn();
 	if (!OwningPawn) return;
 	
-	//1，获取武器组件并绑定事件
 	CachedWeaponComp = OwningPawn->FindComponentByClass<ULSWeaponComponent>();
 	if (CachedWeaponComp)
 	{
@@ -21,15 +23,9 @@ void ULSHUDWidget::NativeConstruct()
 		BindToWeapon(CachedWeaponComp->GetCurrentWeapon());
 	}
 	
-	//2,监听全局事件总线的命中伤害广播
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
 	{
 		EventBus->OnDamageDealt.AddDynamic(this, &ULSHUDWidget::HandleDamageDealt);
-	}
-	
-	//订阅全局团灭事件
-	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
-	{
 		EventBus->OnRaidWiped.AddDynamic(this, &ULSHUDWidget::HandleGlobalRaidWiped);
 	}
 }
@@ -40,12 +36,10 @@ void ULSHUDWidget::NativeDestruct()
 	{
 		CachedWeaponComp->OnWeaponChanged.RemoveDynamic(this, &ULSHUDWidget::HandleWeaponChanged);
 	}
-	
 	if (CurrentBoundWeapon)
 	{
 		CurrentBoundWeapon->OnAmmoChanged.RemoveDynamic(this, &ULSHUDWidget::HandleAmmoChanged);
 	}
-	
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
 	{
 		EventBus->OnDamageDealt.RemoveDynamic(this, &ULSHUDWidget::HandleDamageDealt);
@@ -57,7 +51,6 @@ void ULSHUDWidget::NativeDestruct()
 
 void ULSHUDWidget::BindToWeapon(ALSWeaponBase* Weapon)
 {
-	//解绑旧武器
 	if (CurrentBoundWeapon)
 	{
 		CurrentBoundWeapon->OnAmmoChanged.RemoveDynamic(this, &ULSHUDWidget::HandleAmmoChanged);
@@ -65,11 +58,9 @@ void ULSHUDWidget::BindToWeapon(ALSWeaponBase* Weapon)
 	
 	CurrentBoundWeapon = Weapon;
 	
-	//绑定新武器
 	if (CurrentBoundWeapon)
 	{
 		CurrentBoundWeapon->OnAmmoChanged.AddDynamic(this, &ULSHUDWidget::HandleAmmoChanged);
-		//初始刷新一次弹药UI
 		OnAmmoUpdated(CurrentBoundWeapon->GetCurrentAmmo(), CurrentBoundWeapon->GetMagazineSize(), CurrentBoundWeapon->GetCurrentReserveAmmo());
 	}
 	
@@ -88,17 +79,14 @@ void ULSHUDWidget::HandleAmmoChanged(int32 CurrentAmmo, int32 MagazineSize, int3
 
 void ULSHUDWidget::HandleDamageDealt(const FLSDamageContext& DamageContext)
 {
-	//只对本地玩家的伤害显示反馈
 	if (DamageContext.DamageCauser != GetOwningPlayerPawn()) return;
 	
-	//播放命中音效
 	USoundBase* SoundToPlay = DamageContext.bIsHeadshot ? HitHeadshotSound : HitNormalSound;
 	if (SoundToPlay)
 	{
 		UGameplayStatics::PlaySound2D(this, SoundToPlay);
 	}
 	
-	//触发蓝图动画
 	OnHitMarkerTriggered(DamageContext.bIsHeadshot);
 }
 
@@ -111,51 +99,87 @@ void ULSHUDWidget::BindToCharacter(ALSCharacterBase* NewCharacter)
 {
     if (NewCharacter == BoundCharacter && BoundCharacter != nullptr) return;
 
-    // 1. 解绑旧角色的生命与技能委托（防止切人后产生悬挂委托或重复回调）
-    if (BoundCharacter)
+    // 1. 直连解绑旧组件的委托
+    if (BoundHealthComp)
     {
-        BoundCharacter->OnHealthChanged.RemoveDynamic(this, &ULSHUDWidget::HandleHealthChanged);
+        BoundHealthComp->OnHealthChanged.RemoveDynamic(this, &ULSHUDWidget::HandleHealthChanged);
+        BoundHealthComp->OnLowHealth.RemoveDynamic(this, &ULSHUDWidget::HandleLowHealth);
+    }
+    if (BoundStaminaComp)
+    {
+        BoundStaminaComp->OnStaminaChanged.RemoveDynamic(this, &ULSHUDWidget::HandleStaminaChanged);
+    }
+    if (BoundEnergyComp)
+    {
+        BoundEnergyComp->OnEnergyChanged.RemoveDynamic(this, &ULSHUDWidget::HandleEnergyChanged);
     }
     if (BoundSkillComp)
     {
         BoundSkillComp->OnSkillCooldownChanged.RemoveDynamic(this, &ULSHUDWidget::HandleSkillCooldownChanged);
-        BoundSkillComp->OnEnergyChanged.RemoveDynamic(this, &ULSHUDWidget::HandleEnergyChanged);
     }
 
-    // 2. 绑定新角色
     BoundCharacter = NewCharacter;
     if (!BoundCharacter) return;
 
-    BoundCharacter->OnHealthChanged.AddDynamic(this, &ULSHUDWidget::HandleHealthChanged);
-
-    // 重新绑定新角色的武器组件
+    // 重新绑定武器
     if (ULSWeaponComponent* NewWeaponComp = BoundCharacter->GetWeaponComponent())
     {
-        // 绑定武器切枪与弹药委托...
         BindToWeapon(NewWeaponComp->GetCurrentWeapon());
     }
 
-    // 重新绑定新角色的技能组件
+    // 2. 直连绑定新角色的资源组件，并立即主动推流初始值！
+    BoundHealthComp = BoundCharacter->GetHealthComponent();
+    if (BoundHealthComp)
+    {
+        BoundHealthComp->OnHealthChanged.AddDynamic(this, &ULSHUDWidget::HandleHealthChanged);
+        BoundHealthComp->OnLowHealth.AddDynamic(this, &ULSHUDWidget::HandleLowHealth);
+
+        OnHealthUpdated(BoundHealthComp->GetCurrentHealth(), BoundHealthComp->GetMaxHealth());
+        OnLowHealthWarning(BoundHealthComp->GetHealthPercent() <= 0.2f);
+    }
+
+    BoundStaminaComp = BoundCharacter->GetStaminaComponent();
+    if (BoundStaminaComp)
+    {
+        BoundStaminaComp->OnStaminaChanged.AddDynamic(this, &ULSHUDWidget::HandleStaminaChanged);
+        OnStaminaUpdated(BoundStaminaComp->GetCurrentStamina(), BoundStaminaComp->GetMaxStamina(), BoundStaminaComp->GetStaminaRatio());
+    }
+
+    BoundEnergyComp = BoundCharacter->GetEnergyComponent();
+    if (BoundEnergyComp)
+    {
+        BoundEnergyComp->OnEnergyChanged.AddDynamic(this, &ULSHUDWidget::HandleEnergyChanged);
+        OnBurstEnergyUpdated(BoundEnergyComp->GetCurrentEnergy(), BoundEnergyComp->GetMaxEnergy(), BoundEnergyComp->GetEnergyRatio());
+    }
+
     BoundSkillComp = BoundCharacter->GetSkillComponent();
     if (BoundSkillComp)
     {
         BoundSkillComp->OnSkillCooldownChanged.AddDynamic(this, &ULSHUDWidget::HandleSkillCooldownChanged);
-        BoundSkillComp->OnEnergyChanged.AddDynamic(this, &ULSHUDWidget::HandleEnergyChanged);
-
-        // 3. 关键：绑定成功瞬间，主动向蓝图派发一次当前全量初始数据，消除 UI 滞后！
         OnSkillCooldownUpdated(BoundSkillComp->GetSkillCooldownRemaining(), 
                                BoundSkillComp->GetSkillCooldownRemaining(), 
                                BoundSkillComp->GetSkillCooldownRatio());
-
-        OnBurstEnergyUpdated(BoundSkillComp->GetCurrentEnergy(), 
-                             BoundSkillComp->GetMaxEnergy(), 
-                             BoundSkillComp->GetEnergyRatio());
     }
 }
 
-void ULSHUDWidget::HandleHealthChanged(float CurrentHealth, float MaxHealth)
+void ULSHUDWidget::HandleHealthChanged(float CurrentHealth, float MaxHealth, bool bIsDamage)
 {
     OnHealthUpdated(CurrentHealth, MaxHealth);
+    if (MaxHealth > 0.0f && (CurrentHealth / MaxHealth) > 0.2f)
+    {
+        OnLowHealthWarning(false);
+    }
+}
+
+void ULSHUDWidget::HandleLowHealth(float CurrentHealth, float MaxHealth)
+{
+    OnLowHealthWarning(true);
+}
+
+void ULSHUDWidget::HandleStaminaChanged(float CurrentStamina, float MaxStamina)
+{
+    const float Ratio = (MaxStamina > 0.0f) ? (CurrentStamina / MaxStamina) : 0.0f;
+    OnStaminaUpdated(CurrentStamina, MaxStamina, Ratio);
 }
 
 void ULSHUDWidget::HandleSkillCooldownChanged(float CurrentCooldown, float MaxCooldown)

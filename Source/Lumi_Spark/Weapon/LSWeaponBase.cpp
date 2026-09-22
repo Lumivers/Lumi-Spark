@@ -1,4 +1,4 @@
-﻿#include "LSWeaponBase.h"
+#include "LSWeaponBase.h"
 #include "Weapon/LSRecoilComponent.h"
 #include "Core/LSEventBus.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -569,7 +569,7 @@ void ALSWeaponBase::InitializeFromDataAsset(const ULSWeaponDataAsset* InDataAsse
 	// 后坐力序列与倍率灌注
 	if (RecoilComponent)
 	{
-		RecoilComponent->RecoilPattern = InDataAsset->RecoilPattern;
+		RecoilComponent->SetRecoilPattern(InDataAsset->RecoilPattern);
 	}
 
 	// 软引用同步/异步加载装配（若已加载则直接应用骨骼网格体）

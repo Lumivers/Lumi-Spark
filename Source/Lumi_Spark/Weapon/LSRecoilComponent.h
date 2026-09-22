@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -35,6 +35,14 @@ public:
 	//换弹或切枪时彻底重置后坐力状态
 	UFUNCTION(BlueprintCallable, Category = "Weapon|Recoil")
 	void ResetRecoil();
+	
+	// 设置后坐力弹道序列
+	UFUNCTION(BlueprintCallable, Category = "Weapon|Recoil")
+	void SetRecoilPattern(const TArray<FVector2D>& InPattern) { RecoilPattern = InPattern; }
+	
+	// 获取后坐力弹道序列
+	UFUNCTION(BlueprintPure, Category = "Weapon|Recoil")
+	const TArray<FVector2D>& GetRecoilPattern() const { return RecoilPattern; }
 	
 protected:
 	//后坐力模式配置

@@ -1,4 +1,6 @@
-﻿#include "LSMovementComponent.h"
+#include "LSMovementComponent.h"
+#include "LSCharacterBase.h"
+#include "Character/LSStaminaComponent.h"
 #include "GameFramework/Character.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -25,6 +27,21 @@ void ULSMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds
 {
 	UpdateMovementState();
 	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
+
+	if (bWantsToSprint && IsMovingOnGround())
+	{
+		if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
+		{
+			if (ULSStaminaComponent* StaminaComp = LSChar->GetStaminaComponent())
+			{
+				const float Cost = StaminaComp->GetSprintCostPerSecond() * DeltaSeconds;
+				if (!StaminaComp->ConsumeStamina(Cost))
+				{
+					StopSprint(); // 体力耗尽，强制切回慢跑
+				}
+			}
+		}
+	}
 }
 
 void ULSMovementComponent::StartSprint()
@@ -54,6 +71,19 @@ bool ULSMovementComponent::TryDash()
 {
 	//检查冷却和角色有效性
 	if (!bCanDash || !CharacterOwner || bIsDashing) return false;
+	
+	//接入体力校验
+	if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
+	{
+		if (ULSStaminaComponent* StaminaComp = LSChar->GetStaminaComponent())
+		{
+			if (!StaminaComp->ConsumeStamina(StaminaComp->GetDashCost()))
+			{
+				return false; // 体力不足，拒绝闪避
+			}
+		}
+	}
+
 	
 	//1，获取闪避方向，优先使用当前移动输入方向，若静止则character朝向为闪避方向
 	FVector DashDirection = Velocity.GetSafeNormal2D();

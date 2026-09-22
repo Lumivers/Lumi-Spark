@@ -9,13 +9,12 @@ class ALSWeaponBase;
 class ULSWeaponComponent;
 class ALSCharacterBase;
 class ULSSkillComponent;
+class ULSHealthComponent;
+class ULSStaminaComponent;
+class ULSEnergyComponent;
 
-/**
- * 战斗 HUD 界面 C++ 中枢基类
- * 监听武器弹药、切枪事件与全局命中总线，驱动蓝图 UMG 表现（动态准星、HitMarker、弹药计数）
- */
 UCLASS(Abstract)
-class LUMI_SPARK_API ULSHUDWidget  : public UUserWidget
+class LUMI_SPARK_API ULSHUDWidget : public UUserWidget
 {
 	GENERATED_BODY()
 	
@@ -23,108 +22,118 @@ public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	
-	//获取当前武器散布比率（0.0 - 1.0），供蓝图动态准星使用
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "HUD|Crossair")
 	float GetCurrentSpreadRatio() const;
 	
-	//获取当前手持武器
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "HUD|Weapon")
 	ALSWeaponBase* GetCurrentWeapon() const { return CurrentBoundWeapon; }
 
-	//将HUD绑定至指定的在场角色
+	// 切人时核心重绑入口
 	UFUNCTION(BlueprintCallable, Category = "HUD")
 	void BindToCharacter(ALSCharacterBase* NewCharacter);
 
-	//出战角色切换通知（供小队切换逻辑通知UI派发展示）
+	// ─── 暴露给 UMG 蓝图的表现层事件 ───
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Team")
 	void OnActiveCharacterSwitched(ALSCharacterBase* NewCharacter, int32 SlotIndex);
 	
-	//交互提示浮窗显隐与文字
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Interaction")
 	void OnInteractPromptUpdated(bool bIsVisible, const FText& PromptText);
 	
-	//长按交互进度条更新
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Interaction")
 	void OnInteractProgressUpdated(float ProgressRatio);
 	
-	//玩家自身倒地状态通知
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Coop")
 	void OnLocalPlayerDownedChanged(bool bIsDowned, float BleedoutRatio);
 	
-	//全队覆灭通知
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Coop")
 	void OnRaidWipedTriggered();
-	
+
+	// 生命变动
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Health")
+	void OnHealthUpdated(float CurrentHealth, float MaxHealth);
+
+	// 低血量告警 (<20%)
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Health")
+	void OnLowHealthWarning(bool bIsLowHealth);
+
+	// 体力变动 (当前, 最大, 比例)
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Stamina")
+	void OnStaminaUpdated(float CurrentStamina, float MaxStamina, float Ratio);
+
+	// 技能 CD
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Skill")
+	void OnSkillCooldownUpdated(float CurrentCooldown, float MaxCooldown, float Ratio);
+
+	// Q 大招能量
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Skill")
+	void OnBurstEnergyUpdated(float CurrentEnergy, float MaxEnergy, float Ratio);
+
 protected:
-	//蓝图实现的表现层事件
-	
-	//弹药刷新通知(驱动文本显示
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Ammo")
 	void OnAmmoUpdated(int32 CurrentAmmo, int32 MagazineSize, int32 ReserveAmmo);
 	
-	//击中反馈通知（驱动HitMarker动画淡入闪烁）
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|HitMarker")
 	void OnHitMarkerTriggered(bool bIsHeadshot);
 	
-	//切枪通知（驱动武器图标刷新）
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Weapon")
 	void OnWeaponSwitched(ALSWeaponBase* NewWeapon);
 	
-	//音效配置
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HUD|Audio")
 	TObjectPtr<USoundBase> HitNormalSound;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HUD|Audio")
 	TObjectPtr<USoundBase> HitHeadshotSound;
 
-	//暴露给蓝图的UMG表现层事件
-	
-	//生命值变动通知
-	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Health")
-	void OnHealthUpdated(float CurrentHealth, float MaxHealth);
+	// 组件直连回调
+	UFUNCTION()
+	void HandleHealthChanged(float CurrentHealth, float MaxHealth, bool bIsDamage);
 
-	//E技能冷却剩余时间通知
-	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Skill")
-	void OnSkillCooldownUpdated(float CurrentCooldown, float MaxCooldown, float Ratio);
+	UFUNCTION()
+	void HandleLowHealth(float CurrentHealth, float MaxHealth);
 
-	//Q技能能量变动通知
-	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Skill")
-	void OnBurstEnergyUpdated(float CurrentEnergy, float MaxEnergy, float Ratio);
-	
+	UFUNCTION()
+	void HandleStaminaChanged(float CurrentStamina, float MaxStamina);
+
+	UFUNCTION()
+	void HandleSkillCooldownChanged(float CurrentCooldown, float MaxCooldown);
+
+	UFUNCTION()
+	void HandleEnergyChanged(float CurrentEnergy, float MaxEnergy);
+
 	UFUNCTION()
 	void HandleGlobalRaidWiped();
-	
+
 private:
-	//缓存指针
-	UPROPERTY(Transient)
-	TObjectPtr<ULSWeaponComponent> CachedWeaponComp = nullptr;
+	void BindToWeapon(ALSWeaponBase* Weapon);
 	
-	UPROPERTY(Transient)
-	TObjectPtr<ALSWeaponBase> CurrentBoundWeapon = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<ALSCharacterBase> BoundCharacter = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<ULSSkillComponent> BoundSkillComp = nullptr;
-
 	UFUNCTION()
 	void HandleWeaponChanged(ALSWeaponBase* NewWeapon);
 	
 	UFUNCTION()
-	void HandleDamageDealt(const FLSDamageContext& DamageContext);
-	
-	void BindToWeapon(ALSWeaponBase* Weapon);
-
-	UFUNCTION()
-    void HandleHealthChanged(float CurrentHealth, float MaxHealth);
-
-    UFUNCTION()
-    void HandleSkillCooldownChanged(float CurrentCooldown, float MaxCooldown);
-
-    UFUNCTION()
-    void HandleEnergyChanged(float CurrentEnergy, float MaxEnergy);
-
-	UFUNCTION()
 	void HandleAmmoChanged(int32 CurrentAmmo, int32 MagazineSize, int32 ReserveAmmo);
+	
+	UFUNCTION()
+	void HandleDamageDealt(const FLSDamageContext& DamageContext);
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<ALSCharacterBase> BoundCharacter = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULSHealthComponent> BoundHealthComp = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULSStaminaComponent> BoundStaminaComp = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULSEnergyComponent> BoundEnergyComp = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULSSkillComponent> BoundSkillComp = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULSWeaponComponent> CachedWeaponComp = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ALSWeaponBase> CurrentBoundWeapon = nullptr;
 };

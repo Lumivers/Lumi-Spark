@@ -1,371 +1,239 @@
 #include "LSCharacterBase.h"
-#include "LSCameraComponent.h"
-#include "LSMovementComponent.h"
-#include "Components/CapsuleComponent.h"
-#include "Components/SkeletalMeshComponent.h"
-#include "GameFramework/SpringArmComponent.h"
-#include "weapon/LSWeaponComponent.h"
-#include "Weapon/LSWeaponBase.h"
-#include "Element/LSElementComponent.h"
-#include "Core/LSEventBus.h"
-#include "Net/UnrealNetwork.h"
+#include "Character/LSCameraComponent.h"
+#include "Character/LSMovementComponent.h"
 #include "Character/LSSkillComponent.h"
+#include "Character/LSHealthComponent.h"
+#include "Character/LSStaminaComponent.h"
+#include "Character/LSEnergyComponent.h"
 #include "Character/LSTeamSwitchComponent.h"
 #include "Core/LSPlayerController.h"
-#include "Core/Lumi_SparkGameMode.h"
+#include "Weapon/LSWeaponComponent.h"
+#include "Element/LSElementComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Net/UnrealNetwork.h"
+#include "TimerManager.h"
 
-// 构造函数：用自定义的ULSMovementComponent 替换默认的CharacterMovementComponent
-ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMovementComponent>(ACharacter::CharacterMovementComponentName))
+ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
- 	// 开启Tick
 	PrimaryActorTick.bCanEverTick = true;
+	bReplicates = true;
+
+	// 摄像机与手臂装配
+	CameraComponent = CreateDefaultSubobject<ULSCameraComponent>(TEXT("LSCameraComp"));
+	CameraComponent->SetupAttachment(GetCapsuleComponent());
 	
-	//1,创建弹簧臂并插在角色眼部高度（0.0.65）
-	USpringArmComponent* SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
-	SpringArm->SetupAttachment(GetCapsuleComponent());
-	SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 65.f)); //角色眼部高度
-	SpringArm->TargetArmLength = 300.f; //默认第一人称，长度0
-	SpringArm->SocketOffset = FVector(0.f, 50.f, 15.f); //右肩偏移
-	SpringArm->bUsePawnControlRotation = true; //弹簧臂跟随控制器旋转
-	SpringArm->bDoCollisionTest = true; //禁用弹簧臂碰撞检测，避免摄像机被遮挡
-	
-	//1. 创建摄像机组件并附加到根碰撞胶囊体
-	CameraComponent = CreateDefaultSubobject<ULSCameraComponent>(TEXT("LSCameraComponent"));
-	CameraComponent->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
-	CameraComponent->bUsePawnControlRotation = false; //摄像机交由弹簧臂控制旋转
-	CameraComponent->SpringArm = SpringArm; //将弹簧臂引用传递给摄像机组件，以便在切换视角时调整位置和FOV
-	
-	//2. 创建第一人称手臂Mesh组件并附加到摄像机组件
 	FPArmsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FPArmsMesh"));
 	FPArmsMesh->SetupAttachment(CameraComponent);
-	FPArmsMesh->SetOnlyOwnerSee(true); //仅本地玩家可见
-	FPArmsMesh->bCastDynamicShadow = false; //不投射动态阴影
-	FPArmsMesh->CastShadow = false; //不投射阴影
-	FPArmsMesh->SetCollisionProfileName(TEXT("NoCollision")); //不参与碰撞
-	
-	//基础角色Mesh设置（第三人称全身模型）
-	GetMesh()->SetupAttachment(GetCapsuleComponent());
-	GetMesh()->bCastHiddenShadow = true; //隐藏时仍投射阴影
-	
+	FPArmsMesh->SetOnlyOwnerSee(true);
+	FPArmsMesh->SetCastShadow(false);
+	FPArmsMesh->SetCollisionProfileName(TEXT("NoCollision"));
+
+	// 玩法业务组件
 	WeaponComponent = CreateDefaultSubobject<ULSWeaponComponent>(TEXT("LSWeaponComp"));
-
-	//挂载元素附着中枢
 	ElementComponent = CreateDefaultSubobject<ULSElementComponent>(TEXT("LSElementComp"));
-
-	// 实例化技能与大招充能组件
 	SkillComponent = CreateDefaultSubobject<ULSSkillComponent>(TEXT("LSSkillComp"));
-}
 
-// Called every frame
-void ALSCharacterBase::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-	
-	//后坐力恢复现已由 WeaponBase 上的 LSRecoilComponent 自动处理
-}
-
-void ALSCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(ALSCharacterBase, CurrentHealth);
-	DOREPLIFETIME(ALSCharacterBase, bIsDowned);
+	// 独立资源组件装配
+	HealthComponent = CreateDefaultSubobject<ULSHealthComponent>(TEXT("LSHealthComp"));
+	StaminaComponent = CreateDefaultSubobject<ULSStaminaComponent>(TEXT("LSStaminaComp"));
+	EnergyComponent = CreateDefaultSubobject<ULSEnergyComponent>(TEXT("LSEnergyComp"));
 }
 
 void ALSCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
-	CurrentHealth = MaxHealth;
+
+	// 监听生命组件的死亡事件驱动小队顺切或倒地
+	if (HealthComponent)
+	{
+		HealthComponent->OnDeath.AddDynamic(this, &ALSCharacterBase::HandleHealthComponentDeath);
+	}
+}
+
+void ALSCharacterBase::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+}
+
+void ALSCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ALSCharacterBase, bIsDowned);
+}
+
+bool ALSCharacterBase::IsDead() const
+{
+	return HealthComponent ? HealthComponent->IsDead() : false;
 }
 
 float ALSCharacterBase::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser)
 {
-	if (!HasAuthority() || CurrentHealth <= 0.0f)
+	if (!HasAuthority() || IsDead())
 	{
 		return 0.0f;
 	}
 
-	// 1. 无敌帧拦截（移动组件在闪避期间广播的 Invincible 状态）
+	// 1. 无敌帧拦截（闪避时彻底免伤，不打扰生命与护盾）
 	if (ULSMovementComponent* MoveComp = GetLSMovementComponent())
 	{
 		if (MoveComp->IsInvincible())
 		{
-			return 0.0f; // 处于闪避无敌帧，彻底免伤！
+			return 0.0f;
 		}
 	}
 
-	// 2. 权威扣除生命值
-	const float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-	CurrentHealth = FMath::Clamp(CurrentHealth - ActualDamage, 0.0f, MaxHealth);
-
-	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
-
-	// 3. 判定死亡
-	if (CurrentHealth <= 0.0f)
+	// 2. 权威扣血交由生命组件独占计算（内部联动复合护盾）
+	if (HealthComponent)
 	{
-		if (bIsDowned)
+		return HealthComponent->TakeDamage(DamageAmount, FGameplayTag(), DamageCauser, EventInstigator);
+	}
+
+	return 0.0f;
+}
+
+void ALSCharacterBase::HandleHealthComponentDeath()
+{
+	// 当血量扣尽触发死亡时：
+	if (bIsDowned)
+	{
+		// 倒地状态下受到致命重创 -> 彻底死亡！
+		Die(nullptr);
+	}
+	else
+	{
+		// 检查三人小队是否有存活备用队友顺切救场
+		bool bCanSwitchStandby = false;
+		if (ALSPlayerController* PC = Cast<ALSPlayerController>(GetController()))
 		{
-			// 倒地状态下再次受到致命重创 -> 彻底死亡！
-			Die(DamageCauser);
-		}
-		else
-		{
-			// 检查三人小队是否有存活备用角色可以顺切救场
-			bool bCanSwitchStandby = false;
-			if (ALSPlayerController* PC = Cast<ALSPlayerController>(GetController()))
+			if (ULSTeamSwitchComponent* TeamComp = PC->GetTeamSwitchComponent())
 			{
-				if (ULSTeamSwitchComponent* TeamComp = PC->GetTeamSwitchComponent())
+				for (int32 i = 0; i < 3; ++i)
 				{
-					for (int32 i = 0; i < 3; ++i)
+					if (TeamComp->CanSwitchToIndex(i))
 					{
-						if (TeamComp->CanSwitchToIndex(i))
-						{
-							TeamComp->SwitchTo(i);
-							bCanSwitchStandby = true;
-							break;
-						}
+						TeamComp->SwitchTo(i);
+						bCanSwitchStandby = true;
+						break;
 					}
 				}
 			}
-			
-			// 如果小队没有备用角色了（或联机中单人耗尽） -> 进入倒地匍匐状态等待队友救援！
-			if (!bCanSwitchStandby)
-			{
-				EnterDownedState(DamageCauser);
-			}
+		}
+
+		// 无备用队友（或联机中） -> 进入倒地匍匐状态等待救援
+		if (!bCanSwitchStandby)
+		{
+			EnterDownedState(nullptr);
 		}
 	}
-
-	return ActualDamage;
 }
 
 void ALSCharacterBase::Die(AActor* Killer)
 {
-	// 关闭碰撞，防止死后继续挡子弹
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(BleedoutTimerHandle);
+	}
+
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	
-	// 检查小队是否有存活队友可以换入
-	if (ALSPlayerController* PC = Cast<ALSPlayerController>(GetController()))
-	{
-		if (ULSTeamSwitchComponent* TeamComp = PC->GetTeamSwitchComponent())
-		{
-			bool bSwitched = false;
-			for (int32 i = 0; i < 3; ++i)
-			{
-				if (TeamComp->CanSwitchToIndex(i))
-				{
-					TeamComp->SwitchTo(i);
-					bSwitched = true;
-					break;
-				}
-			}
-			
-			if (!bSwitched)
-			{
-				// 没有存活队友可切换，触发游戏失败逻辑（可在蓝图中绑定事件）
-				PC->SetIgnoreMoveInput(true);
-				PC->SetIgnoreLookInput(true);
-				GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("☠️ 【全队覆灭】小队所有角色均已阵亡！"));
-			}
-		}
-	}
-	else if (AController* GenericPC = GetController())
-	{
-		GenericPC->SetIgnoreMoveInput(true);
-		GenericPC->SetIgnoreLookInput(true);
-	}
-	
-	// 通过总线向全关卡广播死亡事件（驱动结算、任务计数）
-	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
-	{
-		EventBus->OnCharacterDied.Broadcast(this);
-		if (Killer)
-		{
-			EventBus->OnEnemyKilled.Broadcast(this, Killer);
-		}
-	}
-}
-
-void ALSCharacterBase::OnRep_CurrentHealth()
-{
-	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
-}
-
-void ALSCharacterBase::EnterBackgroundMode()
-{
-	// 1. 隐藏全身与第一人称手臂
-	SetActorHiddenInGame(true);
-
-	// 2, 隐藏当前持有的手部/收纳武器
 	if (WeaponComponent)
 	{
 		WeaponComponent->StopFire();
-		//隐藏武器Actor
-		if (ALSWeaponBase* CurrentWeapon = WeaponComponent->GetCurrentWeapon())
-		{
-			CurrentWeapon->SetActorHiddenInGame(true);
-		}
-	}
-
-	// 3. 关闭物理胶囊体碰撞（防止在后台时挡住子弹或被怪物打中）
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-	// 4. 停止移动组件
-	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
-	{
-		MoveComp->StopMovementImmediately();
-		MoveComp->DisableMovement();
-	}
-}
-
-void ALSCharacterBase::ExitBackgroundMode()
-{
-	// 1. 重新显形
-	SetActorHiddenInGame(false);
-
-	// 2, 恢复武器显型
-	if (WeaponComponent)
-	{
-		//恢复武器Actor显型
-		if (ALSWeaponBase* CurrentWeapon = WeaponComponent->GetCurrentWeapon())
-		{
-			CurrentWeapon->SetActorHiddenInGame(false);
-		}
-	}
-
-	// 3. 恢复碰撞
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-
-	// 4. 恢复移动模式为行走
-	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
-	{
-		MoveComp->SetMovementMode(MOVE_Walking);
-	}
-
-	// 5. 重新让摄像机对准当前手臂显隐状态
-	if (CameraComponent)
-	{
-		CameraComponent->UpdateMeshVisibility();
-	}
-}
-
-// 倒地与救援生命周期实现
-
-void ALSCharacterBase::EnterDownedState(AActor* Killer)
-{
-	if (!HasAuthority() || bIsDowned) return;
-
-	bIsDowned = true;
-	Tags.AddUnique(TEXT("State.Downed"));
-
-	// 1. 停火并打断开镜
-	if (WeaponComponent)
-	{
-		WeaponComponent->StopFire();
-	}
-
-	// 2. 降低移动速度为匍匐低速
-	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
-	{
-		MoveComp->MaxWalkSpeed = DownedWalkSpeed;
-	}
-
-	// 3. 启动 45 秒流血倒计时
-	BleedoutRemainingTimer = DownedBleedoutMaxTime;
-	GetWorld()->GetTimerManager().SetTimer(BleedoutTimerHandle, this, &ALSCharacterBase::HandleBleedoutTick, 1.0f, true);
-
-	// 4. 广播倒地事件并检查团灭
-	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
-	{
-		EventBus->OnPlayerDowned.Broadcast(this);
-	}
-
-	if (ALumi_SparkGameMode* GM = GetWorld()->GetAuthGameMode<ALumi_SparkGameMode>())
-	{
-		GM->CheckRaidWipeCondition();
-	}
-
-	GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Orange, FString::Printf(TEXT("⚠️ %s 已倒地！按住 [F] 键拉起队友 (剩余 %0.fs)"), *GetName(), DownedBleedoutMaxTime));
-}
-
-void ALSCharacterBase::HandleBleedoutTick()
-{
-	if (!HasAuthority() || !bIsDowned) return;
-
-	BleedoutRemainingTimer -= 1.0f;
-	if (BleedoutRemainingTimer <= 0.0f)
-	{
-		// 流血超时 -> 彻底死亡
-		GetWorld()->GetTimerManager().ClearTimer(BleedoutTimerHandle);
-		Die(nullptr);
 	}
 }
 
 void ALSCharacterBase::Revive(AActor* Reviver, float RestoredHealthPercent)
 {
-	if (!HasAuthority() || !bIsDowned) return;
-
 	bIsDowned = false;
-	Tags.Remove(TEXT("State.Downed"));
-	GetWorld()->GetTimerManager().ClearTimer(BleedoutTimerHandle);
+	BleedoutRemainingTimer = 0.0f;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(BleedoutTimerHandle);
+	}
 
-	// 恢复生命值
-	CurrentHealth = MaxHealth * FMath::Clamp(RestoredHealthPercent, 0.1f, 1.0f);
-	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+	if (HealthComponent)
+	{
+		HealthComponent->SetDead(false);
+		HealthComponent->Heal(HealthComponent->GetMaxHealth() * RestoredHealthPercent);
+	}
 
-	// 恢复正常移速
 	if (ULSMovementComponent* MoveComp = GetLSMovementComponent())
 	{
 		MoveComp->MaxWalkSpeed = MoveComp->WalkSpeed;
 	}
+}
 
-	// 广播复活事件
-	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
+void ALSCharacterBase::EnterDownedState(AActor* Killer)
+{
+	bIsDowned = true;
+	BleedoutRemainingTimer = DownedBleedoutMaxTime;
+
+	if (WeaponComponent)
 	{
-		EventBus->OnPlayerRevived.Broadcast(this, Reviver);
+		WeaponComponent->StopFire();
 	}
 
-	GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Green, FString::Printf(TEXT("💚 %s 已被救起！"), *GetName()));
+	if (ULSMovementComponent* MoveComp = GetLSMovementComponent())
+	{
+		MoveComp->MaxWalkSpeed = DownedWalkSpeed;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(BleedoutTimerHandle, this, &ALSCharacterBase::HandleBleedoutTick, 1.0f, true);
+	}
+}
+
+void ALSCharacterBase::HandleBleedoutTick()
+{
+	BleedoutRemainingTimer -= 1.0f;
+	if (BleedoutRemainingTimer <= 0.0f)
+	{
+		Die(nullptr);
+	}
 }
 
 void ALSCharacterBase::OnRep_IsDowned()
 {
-	if (bIsDowned)
+	if (ULSMovementComponent* MoveComp = GetLSMovementComponent())
 	{
-		Tags.AddUnique(TEXT("State.Downed"));
-		if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
-		{
-			MoveComp->MaxWalkSpeed = DownedWalkSpeed;
-		}
-	}
-	else
-	{
-		Tags.Remove(TEXT("State.Downed"));
-		if (ULSMovementComponent* MoveComp = GetLSMovementComponent())
-		{
-			MoveComp->MaxWalkSpeed = MoveComp->WalkSpeed;
-		}
+		MoveComp->MaxWalkSpeed = bIsDowned ? DownedWalkSpeed : MoveComp->WalkSpeed;
 	}
 }
 
-// ─── ILSInteractableInterface 实现 ───
+void ALSCharacterBase::EnterBackgroundMode()
+{
+	SetActorHiddenInGame(true);
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	if (WeaponComponent)
+	{
+		WeaponComponent->StopFire();
+	}
+}
+
+void ALSCharacterBase::ExitBackgroundMode()
+{
+	SetActorHiddenInGame(false);
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+}
 
 bool ALSCharacterBase::CanInteract(AActor* Interactor) const
 {
-	// 仅当自己处于倒地状态、未死、且交互者不是自己时可被救助
-	return bIsDowned && !IsDead() && (Interactor != this);
+	return bIsDowned && !IsDead();
 }
 
 FText ALSCharacterBase::GetInteractPrompt(AActor* Interactor) const
 {
-	return FText::FromString(TEXT("长按 [F] 救助队友"));
+	return FText::FromString(TEXT("长按 [F] 救起队友"));
 }
 
 float ALSCharacterBase::GetInteractDuration(AActor* Interactor) const
 {
-	return 3.0f; // 救助需要按住 3 秒
+	return 3.0f;
 }
 
 void ALSCharacterBase::OnInteractComplete(AActor* Interactor)
 {
-	Revive(Interactor, 0.5f); // 救助完成，拉起恢复 50% 生命
+	Revive(Interactor, 0.5f);
 }
