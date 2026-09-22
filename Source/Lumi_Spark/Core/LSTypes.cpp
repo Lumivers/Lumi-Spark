@@ -59,4 +59,11 @@ namespace LSTags
 	UE_DEFINE_GAMEPLAY_TAG(TAG_Damage_Type_Burst,     "Damage.Type.Burst");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_Damage_Type_Reaction,  "Damage.Type.Reaction");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_Damage_Type_DoT,       "Damage.Type.DoT");
+
+	// ─── 武器类别标签 ───
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Weapon_Type_Rifle,    "Weapon.Type.Rifle");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Weapon_Type_SMG,      "Weapon.Type.SMG");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Weapon_Type_Shotgun,  "Weapon.Type.Shotgun");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Weapon_Type_Sniper,   "Weapon.Type.Sniper");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Weapon_Type_Launcher, "Weapon.Type.Launcher");
 }

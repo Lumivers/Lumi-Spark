@@ -43,6 +43,7 @@
 39. [战斗 HUD 交互推流、C++访问权限与打靶木桩复合破盾装配（ULSHUDWidget & ALSTargetDummy）](#39-战斗-hud-交互推流c访问权限与打靶木桩复合破盾装配ulshudwidget--alstargetdummy)
 40. [数据资产体系架构、UPrimaryDataAsset 索引与枚举解耦（DataAsset Architecture & PrimaryAssetId）](#40-数据资产体系架构uprimarydataasset-索引与枚举解耦dataasset-architecture--primaryassetid)
 41. [独立资源组件解耦、单一真相源与彻底告别双重状态屎山（Health/Stamina/Energy Components & Single Source of Truth）](#41-独立资源组件解耦单一真相源与彻底告别双重状态屎山healthstaminaenergy-components--single-source-of-truth)
+42. [五大特化武器子类派生、物理抛物线弹道与范围视线爆炸结算（Specialized Weapons & Projectile Architecture）](#42-五大特化武器子类派生物理抛物线弹道与范围视线爆炸结算specialized-weapons--projectile-architecture)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -1189,4 +1190,86 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
 3. **重写底层 Movement 钩子切勿“吃掉”状态转移**：
    - 在派生重写 `UpdateCharacterStateBeforeMovement(DeltaSeconds)` 时，第一行必须保留 `UpdateMovementState()`，然后再调用父类 `Super`。若漏掉，奔跑、滑铲、瞄准的状态转移将无法每帧更新，导致动画蓝图与移动组件完全脱节。
 
+---
 
+## 42. 五大特化武器子类派生、物理抛物线弹道与范围视线爆炸结算（Specialized Weapons & Projectile Architecture）
+
+### 42.1 背景与设计动机
+在《Lumi-Spark》早期阶段，`ALSWeaponBase` 承担了全部的 Hitscan 射击与弹道计算。但随着不同武器品类定位的差异化，若继续在基类内部堆叠大量 `switch(WeaponType)` 或布尔标志位（例如 `bIsShotgun`、`bIsSniper`、`bIsLauncher`），基类将迅速膨胀为数千行的不可维护“上帝类（God Class）”。
+
+因此，我们在 `Source/Lumi_Spark/Weapon/Weapons/` 子目录下建立了五大特化派生类，将不同枪械的专属机制完全多态化隔离：
+- **`ALSRifle`（突击步枪）**：全能泛用型，支持按 `[B]` 键在全自动与半自动单发之间即时切换；
+- **`ALSSMG`（微型冲锋枪）**：900 RPM 泼水射速、40 发大弹匣，配备近距优势与二次方非线性断崖衰减；
+- **`ALSShotgun`（重型霰弹枪）**：单发 8 颗独立圆锥散布弹丸（`FMath::VRandCone`），每颗独立视线命中与曳光渲染；
+- **`ALSSniperRifle`（重型狙击步枪）**：开镜（ADS）光学蓄力增伤状态机（最高 2.2x）、3.0x 弱点爆头倍率、极窄 22° FOV；
+- **`ALSLauncher` 与 `ALSLauncherProjectile`（地脉榴弹发射器）**：物理实体投射（`UProjectileMovementComponent`）、反弹 2.0s 延时引信与撞体即爆、径向防穿墙视线遮挡检测（Line of Sight Raycast）、2U 强元素附着。
+
+---
+
+### 42.2 核心特化机制深度拆解
+
+#### 1. 突击步枪 (`ALSRifle`)：全自动/半自动模式切换
+- **模式切换逻辑 (`ToggleFireMode`)**：
+  - 切换瞬间若正在开火，立即触发 `StopFire()` 清理底层循环定时器 `TimerHandle_AutoFire`，避免状态错乱；
+  - 切换 `FireMode = (FireMode == ELSFireMode::FullAuto) ? ELSFireMode::SemiAuto : ELSFireMode::FullAuto`，并向蓝图/HUD 广播 `OnFireModeSwitched` 委托。
+- **开火钩子重写 (`StartFire`)**：
+  - 若为 `SemiAuto`（半自动），玩家按住鼠标左键只触发一次 `FireOnce()`，不再启动连射定时器，强制玩家逐次点射以提高点射精度；若为 `FullAuto`，调用 `Super::StartFire()` 沿用父类定时器连射。
+
+#### 2. 微型冲锋枪 (`ALSSMG`)：非线性距离衰减曲线
+- **设计目的**：强调“贴脸近战秒杀、远距离迅速疲软”的近战冲锋手感；
+- **二次方衰减计算 (`CalculateDamageDropoff`)**：
+  ```cpp
+  float ALSSMG::CalculateDamageDropoff(float Distance) const
+  {
+      if (Distance <= DamageDropoffStart) return 1.0f;
+      if (Distance >= DamageDropoffEnd)   return MinDamageMultiplier;
+
+      // 平滑二次方快速衰减，突出近战优势
+      const float Alpha = (Distance - DamageDropoffStart) / (DamageDropoffEnd - DamageDropoffStart);
+      return FMath::Lerp(1.0f, MinDamageMultiplier, Alpha * Alpha);
+  }
+  ```
+  相比传统线性衰减，二次方插值使得子弹在超过有效射程（如 10m~25m）时伤害跌落极其剧烈，自然逼迫玩家利用滑铲贴近交火。
+
+#### 3. 重型霰弹枪 (`ALSShotgun`)：多弹丸并发与视听解耦
+- **独立圆锥射线发射**：
+  - 单次扣动扳机权威扣除 1 发大口径霰弹；
+  - 通过 `for (int32 i = 0; i < PelletCount; ++i)` 循环执行 8 次射线检测；
+  - 散布使用 `FMath::VRandCone(AimDir, FMath::DegreesToRadians(SpreadAngle * 0.5f))` 为每颗弹丸生成独立微小散射角；
+- **网络与视听表现**：
+  - 每颗弹丸独立执行 `GetWorld()->LineTraceSingleByChannel`，若命中目标，分别调用 `ProcessHit` 结算单颗弹丸伤害（16 伤 × 8 发 = 128 点基础总伤），同时调用 `Multicast_ImpactEffects` 和 `PlayTracerEffect` 渲染 8 条并发粒子弹道，打击感极其饱满。
+
+#### 4. 重型狙击步枪 (`ALSSniperRifle`)：开镜光学蓄力状态机
+- **Tick 蓄力更新**：
+  - 仅当玩家处于开镜瞄准（`bIsADS == true`）、未换弹且弹匣有弹时累加 `CurrentChargeTime`，上限为 `MaxChargeTime (1.5s)`；
+  - 动态计算当前倍率 `FMath::Lerp(1.0f, MaxChargeMultiplier, Ratio)`，满蓄可达 2.2x 伤害放大；
+  - 退出瞄准或松开开镜键时蓄力即刻归零；
+- **开火倍率锁定与防重置**：
+  - 在 `FireOnce()` 中首先锁定 `LastFiredChargeMultiplier = GetCurrentChargeMultiplier()`，随后调用 `Super::FireOnce()` 并在开火后清空蓄力；
+  - 在重写的 `ProcessHit` 中，使用 `BaseDamage * LastFiredChargeMultiplier` 作为基础伤害进行爆头（3.0x）与元素附着结算。
+
+#### 5. 地脉榴弹发射器 (`ALSLauncher` & `ALSLauncherProjectile`)：物理实体与防穿墙爆炸
+- **物理投射物生成 (`ALSLauncher::FireOnce`)**：
+  - 区别于前 4 种 Hitscan 瞬时武器，榴弹发射器在权威服务端 `SpawnActor<ALSLauncherProjectile>`；
+  - 投射物挂载 `UProjectileMovementComponent`，配置 `bShouldBounce = true`、`Bounciness = 0.25f` 与真实物理重力抛物线；
+- **双重引信机制 (`ALSLauncherProjectile`)**：
+  - 撞击硬质表面（地面/墙体）时反弹，并启动 `FuseDelay = 2.0s` 延时自爆定时器；
+  - 若直接命中 Pawn（敌人实体），直接打断定时器立即引爆（Impact Detonation）；
+- **防穿墙视线遮挡检测 (Line of Sight Raycast)**：
+  - 爆炸时先执行 `OverlapMultiByChannel` 圈定 `ExplosionRadius (450cm)` 内的 Pawn；
+  - 针对每个受害者，自爆炸中心向受害者位置发射一条视线检测射线（`LineTraceSingleByChannel(ECC_Visibility)`）；
+  - 若视线被掩体/墙壁遮挡（`bBlocked == true`），直接 `continue` 豁免伤害，彻底杜绝了隔墙炸怪的物理穿模 Bug；
+  - 成功命中的受害者根据距离进行线性衰减结算，并施加 2U 重元素附着（`Heavy`）。
+
+---
+
+### 42.3 工业级实战避坑指南 (Troubleshooting)
+
+1. **`FOverlapResult` 的 IWYU 头文件陷阱 (MSVC error C2027)**：
+   - **现象**：在 `.cpp` 中调用 `GetWorld()->OverlapMultiByChannel(Overlaps, ...)` 时一切正常，但随后在遍历 `for (const FOverlapResult& Overlap : Overlaps)` 中调用 `Overlap.GetActor()` 时，编译器突发报错：`error C2027: 使用了未定义类型“FOverlapResult”`。
+   - **原因**：在虚幻引擎的 IWYU（Include-What-You-Use）体系中，`Engine/World.h` 和 `PrimitiveComponent.h` 仅对 `struct FOverlapResult;` 进行了**前向声明（Forward Declaration）**。容器 `TArray<FOverlapResult>` 在编译时只需要知道结构体大小，但一旦访问其成员方法（如 `.GetActor()`），编译器必须获得完整的结构体定义。
+   - **修复**：在对应的 `.cpp` 顶部显式补齐 `#include "Engine/OverlapResult.h"`。
+2. **霰弹枪多弹丸网络开火频次陷阱**：
+   - 霰弹枪单次射出 8 颗弹丸，切忌向服务器发送 8 次独立 RPC（如循环调用 8 次 `Server_Fire`），这会导致网络带宽瞬间拥塞并触发丢包反作弊限制。正确做法是由 1 次开火事件发起，在服务端循环 8 次局部 LineTrace 并由 Multicast 统一部署表现。
+3. **狙击枪蓄力增伤生命周期竞争**：
+   - 必须在 `FireOnce()` 的最顶层将当前蓄力倍率备份至 `LastFiredChargeMultiplier`，然后再执行 `Super::FireOnce()` 和重置 `CurrentChargeTime = 0`。若重置顺序颠倒，伤害计算时取到的蓄力倍率将永远是初始的 1.0x。

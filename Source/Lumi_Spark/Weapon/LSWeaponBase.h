@@ -283,7 +283,7 @@ protected:
 	virtual void ProcessHit(const FHitResult& Hit);
 	
 	//计算基于距离的伤害衰减系数
-	float CalculateDamageDropoff(float Distance) const;
+	virtual float CalculateDamageDropoff(float Distance) const;
 	
 	//获取双段视察矫正后的设计起点与终点
 	bool CalculateTraceEndpoints(FVector& OutMuzzleLoc, FVector& OutTraceEnd, bool bIsADS) const;
