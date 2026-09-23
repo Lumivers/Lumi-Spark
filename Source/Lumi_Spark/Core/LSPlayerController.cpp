@@ -12,6 +12,7 @@
 #include "Weapon/LSGrenadeBase.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "UI/LSUHDWidget.h"
+#include "Weapon/LSThrowableComponent.h"
 
 ALSPlayerController::ALSPlayerController()
 {
@@ -359,38 +360,23 @@ void ALSPlayerController::HandleBurst()
 
 void ALSPlayerController::HandleThrowGrenadeStarted()
 {
-	
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSThrowableComponent* ThrowComp = Char->GetThrowableComponent())
+		{
+			ThrowComp->StartAimingThrow();
+		}
+	}
 }
 
 void ALSPlayerController::HandleThrowGrenadeCompleted()
 {
-	ALSCharacterBase* Char = GetPawn<ALSCharacterBase>();
-	if (!Char || !Char->HasAuthority()) return;
-
-	//从摄像机视口正中央向前投掷
-	FVector CameraLoc;
-	FRotator CameraRot;
-	GetPlayerViewPoint(CameraLoc, CameraRot);
-
-	// 投掷起点向前微调，防止手雷生成在自身胶囊体内引发碰撞穿模
-	const FVector SpawnLoc = CameraLoc + (CameraRot.Vector() * 80.0f);
-
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = Char;
-	SpawnParams.Instigator = Char;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	// 生成配置的基础手雷
-	if (DefaultGrenadeClass)
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-    	if (ALSGrenadeBase* Grenade = GetWorld()->SpawnActor<ALSGrenadeBase>(DefaultGrenadeClass, SpawnLoc, CameraRot, SpawnParams))
-    	{
-        	// 给手雷一个朝向准星仰角的初速度向量
-        	if (UProjectileMovementComponent* ProjComp = Grenade->GetProjectileMovement())
-        	{
-            	ProjComp->Velocity = CameraRot.Vector() * ProjComp->InitialSpeed;
-        	}
-    	}
+		if (ULSThrowableComponent* ThrowComp = Char->GetThrowableComponent())
+		{
+			ThrowComp->StopAimingThrow(false);
+		}
 	}
 }
 

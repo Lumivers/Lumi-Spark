@@ -7,8 +7,10 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
 #include "CollisionQueryParams.h"
+#include "LSCharacterBase.h"
 #include "Core/LSEventBus.h"
 #include "Core/LSTypes.h"
+#include "Weapon/LSElementalField.h"
 
 ALSGrenadeBase::ALSGrenadeBase()
 {
@@ -104,7 +106,20 @@ void ALSGrenadeBase::Explode()
     // 4. 执行核心伤害检测与元素注入
 	PerformExplosionDamageAndElement(ExplosionCenter);
 	
-    // 5. 销毁投掷物 Actor
+	// 5. 服务端贴地生成残留元素领域
+	if (HasAuthority() && bSpawnResidualField)
+	{
+		FHitResult GroundHit;
+		FCollisionQueryParams GroundParams;
+		GroundParams.AddIgnoredActor(this);
+		const FVector TraceEnd = ExplosionCenter - FVector(0.f, 0.f, 4000.f);
+		
+		const FVector FieldLoc = GetWorld()->LineTraceSingleByChannel(GroundHit, ExplosionCenter, TraceEnd, ECC_WorldStatic, GroundParams) ? GroundHit.ImpactPoint + FVector(0.f, 0.f, 5.f) : ExplosionCenter;
+		
+		SpawnResidualField(FieldLoc);
+	}
+	
+    // 6. 销毁投掷物 Actor
 	Destroy();
 }
 
@@ -171,10 +186,18 @@ void ALSGrenadeBase::PerformExplosionDamageAndElement(const FVector& ExplosionCe
 
 		if (ACharacter* Char = Cast<ACharacter>(HitActor))
 		{
-			const float ImpulseScale = FMath::Clamp(1.0f - (Distance / OuterRadius), 0.2f, 1.0f);
-			// 聚怪时附带向上微量抬升（Z+160），让敌人脱离地面摩擦力顺滑被吸向中心
-			const FVector UpLift = bInwardPull ? FVector(0.f, 0.f, 160.0f) : FVector(0.f, 0.f, 200.0f);
-			Char->LaunchCharacter(ImpulseDirection * (ExplosionImpulse / 100.0f) * ImpulseScale + UpLift, true, true);
+			bool bHasSuperArmor = false;
+			if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(Char))
+			{
+				bHasSuperArmor = LSChar->HasSuperArmor();
+			}
+			
+			if (!bHasSuperArmor)
+			{
+				const float ImpulseScale = FMath::Clamp(1.0f - (Distance / OuterRadius), 0.2f, 1.0f);
+				const FVector UpLift = bInwardPull ? FVector(0.f, 0.f, 160.f) : FVector(0.f, 0.f, 180.0f);
+				Char->LaunchCharacter(ImpulseDirection * (ExplosionImpulse / 100.0f) * ImpulseScale + UpLift, true, true);
+			}
 		}
 		else if (UPrimitiveComponent* Prim = Overlap.GetComponent())
 		{
@@ -298,4 +321,23 @@ ALSGrenade_Anemo::ALSGrenade_Anemo()
 	ExplosionImpulse = 55000.0f;          // 高吸附牵引力
 	bInwardPull = true;                   // 开启向心牵引黑洞机制
 	ElementGauge = ELSElementGauge::Light; // 风元素不驻留，默认 1U 触发扩散
+}
+
+void ALSGrenadeBase::SpawnResidualField(const FVector& FieldLocation)
+{
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = GetOwner();
+	SpawnParams.Instigator = GetInstigator();
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	TSubclassOf<ALSElementalField> ClassToSpawn = ElementalFieldClass;
+	if (!ClassToSpawn)
+		{
+	 		ClassToSpawn = ALSElementalField::StaticClass();
+	 	}
+	
+	if (ALSElementalField* Field = GetWorld()->SpawnActor<ALSElementalField>(ClassToSpawn, FieldLocation, FRotator::ZeroRotator, SpawnParams))
+	{
+		Field->InitializeField(ElementTag, GetInstigator() ? Cast<AActor>(GetInstigator()) : this, ResidualFieldDuration, ResidualFieldRadius);
+	}
 }

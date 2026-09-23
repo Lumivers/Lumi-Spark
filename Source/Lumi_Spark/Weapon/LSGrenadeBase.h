@@ -11,6 +11,7 @@ class UStaticMeshComponent;
 class UProjectileMovementComponent;
 class USoundBase;
 class UParticleSystem;
+class ALSElementalField;
 
 /**
  * 元素物理投掷物基类 (ALSGrenadeBase)
@@ -97,6 +98,19 @@ protected:
     // 手雷自带的元素量级（手雷默认赋予 Heavy 2U 强元素，持续 12s 衰减，形成良好反应源）
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, CateGory = "Grenade|Element")
     ELSElementGauge ElementGauge = ELSElementGauge::Heavy;
+	
+	// 在地面生成的残留元素领域
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, CateGory = "Grenade|ResidualField")
+	bool bSpawnResidualField = true;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, CateGory = "Grenade|ResidualField")
+	float ResidualFieldDuration = 3.5f;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, CateGory = "Grenade|ResidualField")
+	float ResidualFieldRadius = 350.0f;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|ResidualField")
+	TSubclassOf<ALSElementalField> ElementalFieldClass;
 
     // ─── 爆炸特效与音效 ───
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, CateGory = "Grenade|Effects")
@@ -114,6 +128,9 @@ protected:
 
     // 计算径向爆炸波及检测（射线防穿墙、计算伤害与广播元素总线）
     virtual void PerformExplosionDamageAndElement(const FVector& ExplosionCenter);
+	
+	// 在地面生成持续残留元素领域
+	virtual void SpawnResidualField(const FVector& FieldLocation);
 
     // 距离伤害衰减换算公式
     float CalculateRadialDamage(float Distance) const;
@@ -130,7 +147,7 @@ private:
 // 4 种基础元素雷 C++ 预置派生类
 // ══════════════════════════════════════════════════════════════
 
-/** 烈火高爆手雷：超强爆炸破坏力、较大击退、施加 2U 强火附着 */
+//烈火高爆手雷：超强爆炸破坏力、较大击退、施加 2U 强火附着
 UCLASS()
 class LUMI_SPARK_API ALSGrenade_Pyro : public ALSGrenadeBase
 {
@@ -139,7 +156,7 @@ public:
     ALSGrenade_Pyro();
 };
 
-/** 潮汐激流手雷：范围波及广、全场大范围潮湿浸染、施加 2U 强水附着 */
+//潮汐激流手雷：范围波及广、全场大范围潮湿浸染、施加 2U 强水附着
 UCLASS()
 class LUMI_SPARK_API ALSGrenade_Hydro : public ALSGrenadeBase
 {
@@ -148,7 +165,7 @@ public:
 	ALSGrenade_Hydro();
 };
 
-/** 寒霜极冰手雷：极寒冷气凝结、施加 2U 强冰附着，控场冻结关键先手 */
+//寒霜极冰手雷：极寒冷气凝结、施加 2U 强冰附着，控场冻结关键先手
 UCLASS()
 class LUMI_SPARK_API ALSGrenade_Cryo : public ALSGrenadeBase
 {
@@ -158,7 +175,7 @@ public:
 };
 
 
-/** 狂雷过载手雷：集中高脉冲爆发、施加 2U 强雷附着，剧变感电/超导点火器 */
+//狂雷过载手雷：集中高脉冲爆发、施加 2U 强雷附着，剧变感电/超导点火器
 UCLASS()
 class LUMI_SPARK_API ALSGrenade_Electro : public ALSGrenadeBase
 {
@@ -167,7 +184,7 @@ public:
 	ALSGrenade_Electro();
 };
 
-/** 丰饶剧变草雷：施加 2U 强草附着，大范围播撒草系反应底，催生草原核核心 */
+// 丰饶剧变草雷：施加 2U 强草附着，大范围播撒草系反应底，催生草原核核心
 UCLASS()
 class LUMI_SPARK_API ALSGrenade_Dendro : public ALSGrenadeBase
 {
@@ -176,7 +193,7 @@ public:
 	ALSGrenade_Dendro();
 };
 
-/** 涡流引力风雷：超大范围向心聚怪黑洞，施加风元素触发大范围元素扩散 */
+//涡流引力风雷：超大范围向心聚怪黑洞，施加风元素触发大范围元素扩散
 UCLASS()
 class LUMI_SPARK_API ALSGrenade_Anemo : public ALSGrenadeBase
 {

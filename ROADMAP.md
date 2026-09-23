@@ -14,7 +14,7 @@
 | **阶段 3：高等元素论与反应引擎** | ElementComponent, 16种反应, DendroCore, ICD, DamagePopWidget | **已完成** | **100% ✅** |
 | **阶段 4：三人小队切换与技能** | TeamSwitchComponent, SkillComponent, TargetDummy, 阵亡顺切 | **已完成** | **100% ✅** |
 | **阶段 5：2~4人联机合作架构** | GameState, 动态缩放, 破盾, 仇恨表, 倒地互救, 交互接口 | **已完成** | **100% ✅** |
-| **阶段 6：数据资产化与资源组件解耦** | DataAsset 体系, Health/Stamina/Energy 组件, 武器派生类, 投掷管理器 | **进行中** | **50% ⏳** |
+| **阶段 6：数据资产化与资源组件解耦** | DataAsset 体系, Health/Stamina/Energy 组件, 武器派生类, 投掷管理器 | **已完成** | **100% ✅** |
 | **阶段 7：敌人 AI 与行为树系统** | AIController, EnemyBase, 7类敌人, 掩体, BT 节点, Boss | 待开始 | 0% |
 | **阶段 8：驱动核心与装备系统** | 6 槽驱动核心, 驱动盘, 套装判定, 属性汇总管线 | 待开始 | 0% |
 | **阶段 9：搜打撤循环与 Meta-Tree** | 侵蚀系统, 背包, 安全箱, 跑尸, 异体刃, 撤离, 天赋树, 经济 | 待开始 | 0% |
@@ -102,9 +102,9 @@
 - [x] **榴弹发射器 (`ALSLauncher`)**：抛物线投射物实体、碰触/延时爆炸
 
 ### 6.4 投掷物管理器增强
-- [ ] **投掷管理组件 (`ULSThrowableComponent`)**：手雷数量管理、按住 G 实时抛物线预测、Spline 落点指示器
-- [ ] **手雷残留元素领域 (`SpawnResidualField`)**：爆炸后地面 3.5s 元素领域（火海 DoT / 水雾湿润 / 冰冻地面）
-- [ ] **手雷物理击退冲击**：对未霸体敌人施加 `AddImpulse` 微挑击飞
+- [x] **投掷管理组件 (`ULSThrowableComponent`)**：手雷数量管理、按住 G 实时抛物线预测、落点指示器与客户端预测/服务端权威投掷
+- [x] **手雷残留元素领域 (`ALSElementalField` & `SpawnResidualField`)**：贴地检测、爆炸后地面 3.5s 元素领域（火海 DoT / 水雾湿润 / 冰冻地面 40% 减速）
+- [x] **手雷物理击退冲击与霸体保护**：引入 `TAG_State_SuperArmor`，对非霸体目标施加向上微挑击飞 (`UpLift`)，霸体目标免疫位移
 
 ---
 

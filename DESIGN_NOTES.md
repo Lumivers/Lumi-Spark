@@ -44,6 +44,7 @@
 40. [数据资产体系架构、UPrimaryDataAsset 索引与枚举解耦（DataAsset Architecture & PrimaryAssetId）](#40-数据资产体系架构uprimarydataasset-索引与枚举解耦dataasset-architecture--primaryassetid)
 41. [独立资源组件解耦、单一真相源与彻底告别双重状态屎山（Health/Stamina/Energy Components & Single Source of Truth）](#41-独立资源组件解耦单一真相源与彻底告别双重状态屎山healthstaminaenergy-components--single-source-of-truth)
 42. [五大特化武器子类派生、物理抛物线弹道与范围视线爆炸结算（Specialized Weapons & Projectile Architecture）](#42-五大特化武器子类派生物理抛物线弹道与范围视线爆炸结算specialized-weapons--projectile-architecture)
+43. [战术投掷管理组件、实时抛物线预测、地面残留领域与三目类型二义性避坑（Throwable Component, Trajectory Prediction & Residual Field）](#43-战术投掷管理组件实时抛物线预测地面残留领域与三目类型二义性避坑throwable-component-trajectory-prediction--residual-field)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -1273,3 +1274,76 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
    - 霰弹枪单次射出 8 颗弹丸，切忌向服务器发送 8 次独立 RPC（如循环调用 8 次 `Server_Fire`），这会导致网络带宽瞬间拥塞并触发丢包反作弊限制。正确做法是由 1 次开火事件发起，在服务端循环 8 次局部 LineTrace 并由 Multicast 统一部署表现。
 3. **狙击枪蓄力增伤生命周期竞争**：
    - 必须在 `FireOnce()` 的最顶层将当前蓄力倍率备份至 `LastFiredChargeMultiplier`，然后再执行 `Super::FireOnce()` 和重置 `CurrentChargeTime = 0`。若重置顺序颠倒，伤害计算时取到的蓄力倍率将永远是初始的 1.0x。
+
+---
+
+## 43. 战术投掷管理组件、实时抛物线预测、地面残留领域与三目类型二义性避坑（Throwable Component, Trajectory Prediction & Residual Field）
+
+### 43.1 背景与设计动机
+在《Lumi-Spark》早期阶段，手雷投掷逻辑被简陋地堆在 `LSPlayerController` 中，玩家按下按键瞬间直接原地生成一颗手雷，既没有库存数量限制与冷却保护，也无法感知落点在哪里。
+随着项目推进到 6.4 阶段，我们将投掷体系重构为工业级架构：
+1. **手雷战术资源化 (`ULSThrowableComponent`)**：3 发手雷库存、1.0s 投掷冷却、权威网络复制同步（`OnRep_CurrentGrenadeCount`）以及拾取补给；
+2. **可视化抛物线预瞄（Zero-Tick Idle Trajectory Preview）**：长按 `[G]` 键激活组件 Tick，实时运行物理抛物线预测并绘制绿色平滑轨迹与落点光圈；
+3. **高等元素论地面驻留领域 (`ALSElementalField`)**：爆炸后在地面生成持续 3.5s 的元素领域实体（火海持续灼烧、水雾湿润、冰霜减速 40%），为全队元素反应提供持续反应底；
+4. **物理微挑（UpLift）与霸体保护（SuperArmor）**：非霸体敌人被轻微挑空腾空击飞，大型精英/Boss 携带 `TAG_State_SuperArmor` 免疫位移。
+
+---
+
+### 43.2 核心系统设计与技术细节
+
+#### 1. 战术投掷组件 (`ULSThrowableComponent`)：按需使能与预测管线
+- **Zero-Tick 性能考量**：
+  在构造函数中配置 `PrimaryComponentTick.bStartWithTickEnabled = false`，平时组件完全休眠不消耗任何 CPU；仅当玩家按下 `[G]` 键进入 `StartAimingThrow()` 时，才调用 `SetComponentTickEnabled(true)` 激活 Tick。松开投掷或取消后立即切换回休眠。
+- **UE 原生抛物线积分 (`PredictProjectilePath`)**：
+  在 `UpdateTrajectoryPrediction()` 中调用 `UGameplayStatics::PredictProjectilePath(this, Params, Result)`：
+  - 传入视口起点向前 70cm（防止与自身胶囊体穿模）；
+  - 初速度 `CamRot.Vector() * ThrowForce (1600 cm/s)`；
+  - 采样 20Hz、最大时长 3.0s；
+  - 提取 `PathData` 生成连贯的绿色调试轨迹线（`DrawDebugLine`，生命周期 -1.0f 随帧刷新），并在命中终点依据碰撞法线绘制落点圆环（`DrawDebugCircle`）。
+- **小队元素手雷动态分发 (`ResolveGrenadeClass`)**：
+  组件向拥有者查询 `GetCharacterElementTag()`：
+  - 火系角色投掷 `ALSGrenade_Pyro`；
+  - 水系角色投掷 `ALSGrenade_Hydro`；
+  - 冰系角色投掷 `ALSGrenade_Cryo`；
+  - 雷/草/风角色分别投掷对应元素雷；若未匹配则自动回退至默认手雷类。
+
+#### 2. 残留元素领域 (`ALSElementalField`)：贴地检测与定时器驱动
+- **贴地射线与斜坡法线适配**：
+  手雷爆炸时，向 -Z 方向发射一条 `LineTraceSingleByChannel(ECC_WorldStatic)` 射线寻找地面，若命中则以 `GroundHit.ImpactPoint + FVector(0,0,5)` 作为生成点，确保领域紧贴地面或斜坡，杜绝悬空浮空 Bug。
+- **0.5s 节拍定时器结算**：
+  实体生命周期为 3.5s（`SetLifeSpan(3.5f)`），利用 `FTimerHandle` 以 0.5s 间隔执行 `HandlePeriodicTick`：
+  - **火海 (Pyro)**：每 0.5s 对区域内 Pawn 造成 15 点 DoT 伤害并刷新 1U 弱火附着；
+  - **水雾 (Hydro)**：持续施加 1U 弱水附着（湿润状态）；
+  - **霜原 (Cryo)**：持续施加 1U 弱冰附着，且将敌人 `MaxWalkSpeed` 乘以 0.6（降低 40% 移动速度）；
+  - **雷磁 (Electro)** / **草雾 (Dendro)**：周期性广播元素附着，支撑多段感电/超导/原绽放。
+
+#### 3. 物理微挑与霸体保护
+- 在爆炸冲量计算时，水平方向冲量容易被 UE 底层的地面摩擦力（Ground Friction）抵消，导致受害者仅有微弱抖动。
+- 加入 `UpLift = FVector(0, 0, 180)` 可以让受害者短暂离地脱离摩擦力，形成击飞抛物线；
+- 同时在 `ALSCharacterBase` 引入 `FGameplayTagContainer ActiveGameplayTags`，当目标包含 `TAG_State_SuperArmor` 时，直接跳过 `LaunchCharacter`，实现硬直/位移免疫。
+
+---
+
+### 43.3 工业级实战避坑指南 (Troubleshooting)
+
+1. **`TSubclassOf<T>` 与裸指针 `UClass*` 在三目运算符中的类型推导二义性 (error C2445 / 操作数类型不兼容)**：
+   - **现象**：
+     ```cpp
+     // 编译报错：error C2445: 条件表达式的结果类型多义
+     TSubclassOf<ALSElementalField> ClassToSpawn = ElementalFieldClass ? ElementalFieldClass : ALSElementalField::StaticClass();
+     ```
+   - **根因**：
+     C++ 三目运算符 `condition ? expr1 : expr2` 要求两个分支能推导出一个**唯一的公共类型**。
+     `TSubclassOf<T>` 重载了 `operator UClass*()`（可隐式转换为 `UClass*`），同时又拥有单参构造函数 `TSubclassOf(UClass*)`（可由 `UClass*` 隐式构造）。
+     编译器在两个候选转换中权重相等，无法决议到底应该将 `TSubclassOf` 转为 `UClass*`，还是将 `UClass*` 转为 `TSubclassOf`，因此直接报语法二义性。
+   - **终极解法**：
+     拆解为明确清晰的 `if` 结构：
+     ```cpp
+     TSubclassOf<ALSElementalField> ClassToSpawn = ElementalFieldClass;
+     if (!ClassToSpawn)
+     {
+         ClassToSpawn = ALSElementalField::StaticClass();
+     }
+     ```
+2. **手雷投掷起点穿模原地自爆**：
+   - 在计算生成起点时，若直接使用摄像机视口位置（`CameraLoc`），当玩家低头或快速移动时，手雷刚 Spawn 就会和玩家自己的胶囊体产生重叠，若配置了触碰即爆会瞬间炸伤自己。起点必须沿摄像机朝向向前平移至少 70cm（`CamLoc + CamRot.Vector() * 70.0f`）。

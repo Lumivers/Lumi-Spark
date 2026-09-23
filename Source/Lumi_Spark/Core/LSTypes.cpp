@@ -11,6 +11,11 @@ namespace LSTags
 	UE_DEFINE_GAMEPLAY_TAG(TAG_State_ADS,        "State.ADS");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Invincible, "State.Invincible");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Dead,       "State.Dead");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Downed,     "State.Downed");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Reviving,   "State.Reviving");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Stunned,    "State.Stunned");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_State_SuperArmor, "State.SuperArmor");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_State_AimingThrow,"State.AimingThrow");
 	
 	// ─── 元素类型 ───
 	UE_DEFINE_GAMEPLAY_TAG(TAG_Element_Pyro,     "Element.Pyro");

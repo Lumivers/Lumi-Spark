@@ -17,6 +17,7 @@ class ULSSkillComponent;
 class ULSHealthComponent;
 class ULSStaminaComponent;
 class ULSEnergyComponent;
+class ULSThrowableComponent;
 
 UCLASS()
 class LUMI_SPARK_API ALSCharacterBase : public ACharacter, public ILSInteractableInterface
@@ -49,6 +50,7 @@ public:
 	FORCEINLINE ULSHealthComponent* GetHealthComponent() const { return HealthComponent; }
 	FORCEINLINE ULSStaminaComponent* GetStaminaComponent() const { return StaminaComponent; }
 	FORCEINLINE ULSEnergyComponent* GetEnergyComponent() const { return EnergyComponent; }
+	FORCEINLINE ULSThrowableComponent* GetThrowableComponent() const { return ThrowableComponent; }
 
 	// 角色固有元素属性（供同色微粒判定）
 	UFUNCTION(BlueprintPure, Category = "Character|Identity")
@@ -77,6 +79,22 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Health|Downed")
 	virtual void Revive(AActor* Reviver, float RestoredHealthPercent = 0.5f);
+	
+	//角色gameplay容器与状态查询
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "State")
+	FGameplayTagContainer ActiveGameplayTags;
+	
+	UFUNCTION(BlueprintCallable, Category = "State")
+	void AddGameplayTag(FGameplayTag Tag) { ActiveGameplayTags.AddTag(Tag); }
+	
+	UFUNCTION(BlueprintCallable, Category = "State")
+	void RemoveGameplayTag(FGameplayTag Tag) { ActiveGameplayTags.RemoveTag(Tag); }
+	
+	UFUNCTION(BlueprintPure, Category = "State")
+	bool HasMatchingGameplayTag(FGameplayTag Tag) const { return ActiveGameplayTags.HasTag(Tag); }
+	
+	UFUNCTION(BlueprintPure, Category = "State")
+	bool HasSuperArmor() const { return ActiveGameplayTags.HasTag(LSTags::TAG_State_SuperArmor); }
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
@@ -106,6 +124,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Energy", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULSEnergyComponent> EnergyComponent;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Throwable", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ULSThrowableComponent> ThrowableComponent;
 
 	// 角色固有属性
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character|Identity")
