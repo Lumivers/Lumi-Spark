@@ -15,7 +15,7 @@
 | **阶段 4：三人小队切换与技能** | TeamSwitchComponent, SkillComponent, TargetDummy, 阵亡顺切 | **已完成** | **100% ✅** |
 | **阶段 5：2~4人联机合作架构** | GameState, 动态缩放, 破盾, 仇恨表, 倒地互救, 交互接口 | **已完成** | **100% ✅** |
 | **阶段 6：数据资产化与资源组件解耦** | DataAsset 体系, Health/Stamina/Energy 组件, 武器派生类, 投掷管理器 | **已完成** | **100% ✅** |
-| **阶段 7：敌人 AI 与行为树系统** | AIController, EnemyBase, 7类敌人, 掩体, BT 节点, Boss | **进行中** | **33% ⏳** |
+| **阶段 7：敌人 AI 与行为树系统** | AIController, EnemyBase, 7类敌人, 掩体, BT 节点, Boss | **进行中** | **66% ⏳** |
 | **阶段 8：驱动核心与装备系统** | 6 槽驱动核心, 驱动盘, 套装判定, 属性汇总管线 | 待开始 | 0% |
 | **阶段 9：搜打撤循环与 Meta-Tree** | 侵蚀系统, 背包, 安全箱, 跑尸, 撤离, 天赋树, 经济 | 待开始 | 0% |
 | **阶段 10：完整 UI/HUD 与打击反馈** | 准星, 头像栏, 击杀流, 敌人血条, 体力条, HitFeedback, 装备UI | 待开始 | 0% |
@@ -119,11 +119,11 @@
 - [x] **敌人数据资产 (`ULSEnemyDataAsset`)**：基础属性、行为树引用、掉落表
 
 ### 7.2 掩体与战术寻路
-- [ ] **掩体感知组件 (`ULSCoverPointComponent`)**：全高/半高/可破坏掩体标记、威胁朝向遮挡计算
-- [ ] **BT 任务：寻找掩体 (`UBTTask_FindCover`)**：EQS 查询最优掩体点
-- [ ] **BT 任务：侧翼包抄 (`UBTTask_FlankPlayer`)**：EQS 侧翼查询，夹角 >60°
-- [ ] **BT 任务：元素攻击 (`UBTTask_ElementalAttack`)**：精英怪释放元素技能
-- [ ] **BT 装饰器：元素检查 (`UBTDecorator_CheckElement`)**：检测目标元素附着状态
+- [x] **掩体感知组件 (`ULSCoverPointComponent`)**：全高/半高/可破坏掩体标记、威胁朝向遮挡计算
+- [x] **BT 任务：寻找掩体 (`UBTTask_FindCover`)**：EQS/几何射线查询最优掩体点与防挤占锁定
+- [x] **BT 任务：侧翼包抄 (`UBTTask_FlankPlayer`)**：NavMesh 侧翼包抄投影，夹角 >60° (75°)
+- [x] **BT 任务：元素攻击 (`UBTTask_ElementalAttack`)**：精英怪释放元素技能
+- [x] **BT 装饰器：元素检查 (`UBTDecorator_CheckElement`)**：检测目标元素附着状态并自主打反应
 
 ### 7.3 七类敌人行为特征
 - [ ] **近战杂兵 (`ALSEnemy_Melee`)**：直线冲锋蓄力、近距离挥砍打断

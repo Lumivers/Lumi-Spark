@@ -46,6 +46,7 @@
 42. [五大特化武器子类派生、物理抛物线弹道与范围视线爆炸结算（Specialized Weapons & Projectile Architecture）](#42-五大特化武器子类派生物理抛物线弹道与范围视线爆炸结算specialized-weapons--projectile-architecture)
 43. [战术投掷管理组件、实时抛物线预测、地面残留领域与三目类型二义性避坑（Throwable Component, Trajectory Prediction & Residual Field）](#43-战术投掷管理组件实时抛物线预测地面残留领域与三目类型二义性避坑throwable-component-trajectory-prediction--residual-field)
 44. [敌人 AI 基础框架、Perception 多感官融合、数据驱动抗性与组件化装配（Enemy Base, AI Perception & Aggro Integration）](#44-敌人-ai-基础框架perception-多感官融合数据驱动抗性与组件化装配enemy-base-ai-perception--aggro-integration)
+45. [掩体系统几何视线遮挡判定、战术包抄寻路与元素决策行为树（Cover System, Flanking & Tactical BT Nodes）](#45-掩体系统几何视线遮挡判定战术包抄寻路与元素决策行为树cover-system-flanking--tactical-bt-nodes)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -1418,3 +1419,75 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
    - 一旦在 C++ 中包含 `UAIPerceptionComponent`、`UBehaviorTree` 或 `UBlackboardComponent`，虚幻构建系统（UBT）不会自动链接 AI 代码。必须在 `Lumi_Spark.Build.cs` 的 `PublicDependencyModuleNames` 中显式添加 `"AIModule"`, `"GameplayTasks"`, `"NavigationSystem"`。
 3. **AI 控制器对 Pawn 的弱引用规范 (`TWeakObjectPtr`)**：
    - `ALSAIController` 中持有被控制实体时，切勿使用裸指针或 `TObjectPtr` 强引用敌人。如果敌人死亡被销毁或关卡卸载，强引用可能阻碍 GC 或引发悬挂野指针崩溃。采用 `TWeakObjectPtr<ALSEnemyBase>` 并在使用前通过 `.IsValid()` 进行判空，是虚幻 AI 的标准健壮性实践。
+
+---
+
+## 45. 掩体系统几何视线遮挡判定、战术包抄寻路与元素决策行为树（Cover System, Flanking & Tactical BT Nodes）
+
+### 45.1 背景与设计动机
+在传统初学者项目中，AI 往往只有“傻冲直走”或“站桩对射”。为了让《Lumi-Spark》的 PvE 具备像《全境封锁》或《战争机器》一样的掩体博弈与战术机动，我们在 7.2 阶段落地了完整的掩体与战术寻路系统：
+1. **掩体与空间遮挡判定 (`LSCoverPointComponent` & `ALSCoverPoint`)**：将场景中的墙体、沙袋标记为掩体，动态计算该掩体能否阻断来自威胁方向的射线弹道；
+2. **战术寻找掩体 (`UBTTask_FindCover`)**：AI 遇险或交火时自动检索附近未占用的最优掩体，锁定并移动至掩体后；
+3. **侧翼包抄拉枪线 (`UBTTask_FlankPlayer`)**：当玩家在掩体后架枪时，AI 从与玩家视角夹角 >60°（默认 75°）的侧翼机动，形成交叉火力；
+4. **自主打元素反应 (`UBTDecorator_CheckElement`)**：赋予怪打元素反应的智商（例如玩家身上挂水时，AI 优先释放雷系技能触发感电打断，或冰系技能冻结控场）。
+
+---
+
+### 45.2 核心系统设计与技术细节
+
+#### 1. 掩体视线遮挡算法 (`LSCoverPointComponent::IsValidAgainst`)
+- **遮挡射线判定原理**：
+  掩体并非仅仅是场景中一个静态点，其核心价值在于能否在三维空间中形成对玩家子弹的物理阻隔。
+  - 从威胁者坐标（`ThreatLocation`）向掩体站姿中心点（`GetComponentLocation() + FVector(0,0,CoverHeight*0.5f)`）发射单条 `ECC_Visibility` 视线检测射线；
+  - 若射线被掩体几何体阻隔（`bBlocked == true`），说明威胁者视角下该点不可见，返回有效（安全）；若通畅无阻隔，说明该掩体从当前威胁角度看是完全暴露的，判定为无效。
+- **全高/半高防护区分 (`ECoverType`)**：
+  - `Full`（全高掩体，180cm）：立柱、整面高墙，站姿即可完全遮挡；
+  - `Half`（半高掩体，90cm）：沙袋、矮箱，必须配合蹲姿（Crouch）进行遮挡；
+  - `Destructible`（可破坏掩体）：留作后续关卡掩体破坏扩展。
+- **防挤占互斥锁定 (`SetOccupied`)**：
+  通过 `bIsOccupied` 与 `OccupyingActor` 记录当前占有者，任务在选取掩体后立即上锁，避免多只怪物在同一个沙袋后穿模挤作一团。
+
+#### 2. 行为树任务：寻找最优掩体 (`UBTTask_FindCover`)
+- 抓取黑板中的威胁目标（`TargetActor`）或最后已知坐标（`LastKnownLocation`）；
+- 在 18 米（`MaxSearchRadius = 1800cm`）半径内遍历所有 `AALSCoverPoint`；
+- 过滤出未被占用且 `IsValidAgainst(ThreatLoc)` 返回 true 的掩体点；
+- 按空间距离平方排序，选取离 AI 最近的掩体，上锁并写入黑板 `CoverLocation`。
+
+#### 3. 行为树任务：侧翼包抄算法 (`UBTTask_FlankPlayer`)
+- **左右就近包抄方向决议**：
+  抓取玩家的 ForwardVector 与玩家指向 AI 的方向向量，通过三维叉乘的 Z 轴分量 `CrossZ = FVector::CrossProduct(TargetForward, DirToAI).Z`：
+  - `CrossZ >= 0` 代表 AI 位于玩家右侧，向右侧翼展开；
+  - `CrossZ < 0` 代表 AI 位于玩家左侧，向左侧翼展开；
+- **旋转矩阵与角度约束**：
+  将 `TargetForward` 绕世界 Z 轴旋转 `DesiredFlankAngle = 75°`，推演 9 米距离（`FlankRadius = 900cm`）外的包抄候选点；
+- **NavMesh 动态投影安全保护**：
+  调用 `UNavigationSystemV1::ProjectPointToNavigation` 将空间候选点投影至地面导航网格，确保包抄目标点绝对可达且不卡在障碍物内。
+
+#### 4. 目标元素检测条件装饰器 (`UBTDecorator_CheckElement`)
+- 重写 `CalculateRawConditionValue`，查询黑板目标身上的 `ULSElementComponent`；
+- 调用 `ElemComp->HasElementAura(RequiredElementTag)`，结合 `bInvertCondition` 灵活控制分支流转。
+
+---
+
+### 45.3 工业级实战避坑指南 (Troubleshooting)
+
+1. **黑板 API 类型匹配陷阱 (MSVC error C2664 / FVector 无法转换为 UObject*)**：
+   - **现象**：
+     ```cpp
+     // 编译报错：无法将 FVector 转换为形参类型 UObject*
+     BB->SetValueAsObject(LSBlackboardKeys::CoverLocation, BestCover->GetActorLocation());
+     ```
+   - **根因**：
+     黑板组件为不同数据类型提供了强类型特化接口：
+     - 对象指针（Actor / Component）对应 `SetValueAsObject(Key, UObject*)`；
+     - 三维坐标（位置向量）对应 `SetValueAsVector(Key, const FVector&)`。
+     如果误把坐标向量传给 `SetValueAsObject`，IDE 或编译器会直接拦截类型失配。
+   - **修复**：
+     将坐标向量写入黑板时必须使用 `SetValueAsVector`：
+     ```cpp
+     BB->SetValueAsVector(LSBlackboardKeys::CoverLocation, BestCover->GetActorLocation());
+     ```
+2. **包抄点寻路投影（NavMesh Projection）的必要性**：
+   - 通过旋转向量算出的包抄点纯属空中的几何数学解，如果不做投影，当玩家背靠山体或墙角时，算出的包抄点很可能落在不可通行的山体内或悬崖外。通过 `ProjectPointToNavigation` 并设定合理的容差盒（如 `FVector(400, 400, 500)`），能在几何解不可达时自动平移至最近的有效寻路面上，避免 AI 路径规划失败呆立原地。
+3. **掩体防护高度的视线偏移**：
+   - 检验掩体阻隔时，射线的终点切勿直接使用掩体的地面坐标（`GetComponentLocation()`，通常在地面 Z=0 处）。如果射线打在地面上，即使没有掩体也会被地面微凸遮挡导致误判。必须抬高至站姿胸口高度（`CoverHeight * 0.5f`），才能真实反映子弹视线能否被沙袋挡住。
