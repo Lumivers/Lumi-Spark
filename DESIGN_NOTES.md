@@ -45,6 +45,7 @@
 41. [独立资源组件解耦、单一真相源与彻底告别双重状态屎山（Health/Stamina/Energy Components & Single Source of Truth）](#41-独立资源组件解耦单一真相源与彻底告别双重状态屎山healthstaminaenergy-components--single-source-of-truth)
 42. [五大特化武器子类派生、物理抛物线弹道与范围视线爆炸结算（Specialized Weapons & Projectile Architecture）](#42-五大特化武器子类派生物理抛物线弹道与范围视线爆炸结算specialized-weapons--projectile-architecture)
 43. [战术投掷管理组件、实时抛物线预测、地面残留领域与三目类型二义性避坑（Throwable Component, Trajectory Prediction & Residual Field）](#43-战术投掷管理组件实时抛物线预测地面残留领域与三目类型二义性避坑throwable-component-trajectory-prediction--residual-field)
+44. [敌人 AI 基础框架、Perception 多感官融合、数据驱动抗性与组件化装配（Enemy Base, AI Perception & Aggro Integration）](#44-敌人-ai-基础框架perception-多感官融合数据驱动抗性与组件化装配enemy-base-ai-perception--aggro-integration)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -1347,3 +1348,73 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
      ```
 2. **手雷投掷起点穿模原地自爆**：
    - 在计算生成起点时，若直接使用摄像机视口位置（`CameraLoc`），当玩家低头或快速移动时，手雷刚 Spawn 就会和玩家自己的胶囊体产生重叠，若配置了触碰即爆会瞬间炸伤自己。起点必须沿摄像机朝向向前平移至少 70cm（`CamLoc + CamRot.Vector() * 70.0f`）。
+
+---
+
+## 44. 敌人 AI 基础框架、Perception 多感官融合、数据驱动抗性与组件化装配（Enemy Base, AI Perception & Aggro Integration）
+
+### 44.1 背景与设计动机
+在阶段 7 之前，玩家面对的都是没有任何主观能动性的打靶木桩（`ALSTargetDummy`）。为了将游戏推进至有策略深度的 PvE，我们构建了工业级的敌人 AI 基础框架：
+1. **数据驱动一切 (`ULSEnemyDataAsset`)**：将基础血量、防御、移动速度、七元素抗性字典、微粒掉落与行为树资产全部解耦至 DataAsset，策划无需修改代码即可派生配置各种怪物；
+2. **四大战斗组件全量装配 (`ALSEnemyBase`)**：将前期沉淀的 `Health`（生命回血）、`Element`（高等元素论附着与反应）、`Shield`（复合破盾）、`Threat`（动态仇恨）四大专职组件整合成标准实体；
+3. **多感官战术感知中枢 (`ALSAIController`)**：基于 UE 原生 `UAIPerceptionComponent`，整合视觉（20m/90°）、听觉（30m 枪声感知）、受击感知，配合仇恨系统决议攻击目标，并提供 5 秒视野脱失记忆倒计时。
+
+---
+
+### 44.2 核心系统设计与技术细节
+
+#### 1. 敌人实体基类 (`ALSEnemyBase`)：承伤管线与组件装配
+- **全乘区承伤管线重写 (`TakeDamage`)**：
+  ```
+  输入原始伤害 
+      │
+      ▼
+  [1. 元素抗性减免] ──► 查询 CachedResistances 对特定元素进行百分比折算（-1.0~1.0）
+      │
+      ▼
+  [2. 复合破盾拦截] ──► 若 ShieldComponent 有护盾，优先吸收并执行 2.0x 元素克制消耗
+      │
+      ▼
+  [3. 仇恨积分记录] ──► 向 ThreatComponent 注入本次有效伤害产生的仇恨点
+      │
+      ▼
+  [4. 最终生命扣除] ──► 移交 HealthComponent->TakeDamage() 执行最终生命折减
+  ```
+- **霸体与状态机 (`ActiveGameplayTags`)**：
+  内置 `FGameplayTagContainer ActiveGameplayTags`，若数据资产中配置了 `bDefaultSuperArmor = true`，初始化即被打上 `TAG_State_SuperArmor`，在面对手雷击飞或霰弹冲击时直接免疫位移和硬直打断。
+- **死亡与能量微粒掉落 (`OnDeath` & `SpawnEnergyParticles`)**：
+  监听生命组件的 `OnDeath` 广播，触发死亡时禁用胶囊体碰撞、停止寻路移动，并向击杀者小队派发对应数量与属性的元素能量微粒（`CollectParticle`），支撑玩家的 Q 技能大招循环。
+
+#### 2. 战术感知控制器 (`ALSAIController`)：感知与仇恨联动
+- **三位一体感知配置**：
+  - **视觉 (`SightConfig`)**：2000cm 视距、2500cm 脱离视距、90° 视场半角，被设置为 Dominant Sense（主导感知）；
+  - **听觉 (`HearingConfig`)**：3000cm 枪声感知半径，感知枪声来源并在黑板更新 `LastKnownLocation`；
+  - **伤害感知 (`DamageConfig`)**：被子弹或手雷偷袭时瞬间感知攻击者方向，立即回头反击。
+- **感知与仇恨权重的有机结合**：
+  许多初学者做 AI 时只依赖 Perception，导致“谁刚进视野就转头打谁”。我们设计为：
+  - 感知负责“发现候选目标”；
+  - 控制器通过 `UpdateBestTarget()` 优先向敌人的 `ThreatComponent` 查询当前仇恨值最高的玩家；若仇恨表无目标，再退回感知列表中挑选最近目标，写入黑板 `TargetActor`，完美契合多人联机与仇恨拉怪玩法。
+- **5 秒脱失记忆（LoseSight Memory Timer）**：
+  当玩家翻越掩体脱离视线时，`OnTargetPerceptionUpdated` 触发 `WasSuccessfullySensed() == false`。此时控制器并不瞬间丢掉目标，而是启动 5.0 秒定时器 `LoseSightTimerHandle`。只有当 5 秒过去玩家依然未现身，才清除 `TargetActor` 并将状态降级为 `Alert`（警戒搜索）。
+
+---
+
+### 44.3 工业级实战避坑指南 (Troubleshooting)
+
+1. **组件对外接口命名的全局一致性 (MSVC error C2039)**：
+   - **现象**：
+     - `LSEnemyBase.cpp(47): error C2039: "SetMaxHealth": 不是 "ULSHealthComponent" 的成员`
+     - `LSEnemyBase.cpp(83): error C2039: "RecordDamageThreat": 不是 "ULSThreatComponent" 的成员`
+   - **根因**：
+     在重构组件化架构时，组件暴露出的是职责明确的业务接口：
+     - `ULSHealthComponent` 的初始化接口是 `InitializeHealth(float InMaxHealth, float InCurrentHealth = -1.0f)`；
+     - `ULSThreatComponent` 的受击增加仇恨接口是 `AddThreatFromDamage(AActor* DamageCauser, float Damage, bool bIsReaction)`。
+     凭记忆手敲伪代码极易引发名称脱节。
+   - **修复**：
+     严格使用真实暴露的 API：
+     - `HealthComponent->InitializeHealth(EnemyDataAsset->MaxHealth);`
+     - `ThreatComponent->AddThreatFromDamage(DamageCauser, AdjustedDamage, false);`
+2. **UE 原生 AI 模块依赖遗漏 (LNK2019 / C1083)**：
+   - 一旦在 C++ 中包含 `UAIPerceptionComponent`、`UBehaviorTree` 或 `UBlackboardComponent`，虚幻构建系统（UBT）不会自动链接 AI 代码。必须在 `Lumi_Spark.Build.cs` 的 `PublicDependencyModuleNames` 中显式添加 `"AIModule"`, `"GameplayTasks"`, `"NavigationSystem"`。
+3. **AI 控制器对 Pawn 的弱引用规范 (`TWeakObjectPtr`)**：
+   - `ALSAIController` 中持有被控制实体时，切勿使用裸指针或 `TObjectPtr` 强引用敌人。如果敌人死亡被销毁或关卡卸载，强引用可能阻碍 GC 或引发悬挂野指针崩溃。采用 `TWeakObjectPtr<ALSEnemyBase>` 并在使用前通过 `.IsValid()` 进行判空，是虚幻 AI 的标准健壮性实践。

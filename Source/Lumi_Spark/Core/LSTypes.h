@@ -14,6 +14,15 @@ enum class ELSWeaponSlot : uint8
 	Throwable UMETA(DisplayName = "元素投掷物 (slot 3)")
 };
 
+//场景掩体防护类型
+UENUM(Blueprintable)
+enum class ELSCoverType : uint8
+{
+	Full	UMETA(DisplayName = "全掩体（完全遮挡）"),
+	Half	UMETA(DisplayName = "半掩体（部分遮挡）"),
+	Destructible	UMETA(DisplayName = "可破坏掩体")
+};
+
 //射击模式枚举
 UENUM(Blueprintable)
 enum class ELSFireMode : uint8
@@ -156,4 +165,20 @@ namespace LSTags
 	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Weapon_Type_Shotgun);
 	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Weapon_Type_Sniper);
 	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Weapon_Type_Launcher);
+	
+	//敌人AI行为状态
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_AI_State_Idle);
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_AI_State_Alert);
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_AI_State_Combat);
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_AI_State_Fleeing);
+}
+
+//行为树黑板常用key常亮定义
+namespace LSBlackboardKeys
+{
+	const FName TargetActor = FName(TEXT("TargetActor"));
+	const FName LastKnownLocation = FName(TEXT("LastKnownLocation"));
+	const FName CoverLocation = FName(TEXT("CoverLocation"));
+	const FName DistanceToTarget = FName(TEXT("DistanceToTarget"));
+	const FName AIState = FName(TEXT("AIState"));
 }

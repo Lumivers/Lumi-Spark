@@ -15,9 +15,9 @@
 | **阶段 4：三人小队切换与技能** | TeamSwitchComponent, SkillComponent, TargetDummy, 阵亡顺切 | **已完成** | **100% ✅** |
 | **阶段 5：2~4人联机合作架构** | GameState, 动态缩放, 破盾, 仇恨表, 倒地互救, 交互接口 | **已完成** | **100% ✅** |
 | **阶段 6：数据资产化与资源组件解耦** | DataAsset 体系, Health/Stamina/Energy 组件, 武器派生类, 投掷管理器 | **已完成** | **100% ✅** |
-| **阶段 7：敌人 AI 与行为树系统** | AIController, EnemyBase, 7类敌人, 掩体, BT 节点, Boss | 待开始 | 0% |
+| **阶段 7：敌人 AI 与行为树系统** | AIController, EnemyBase, 7类敌人, 掩体, BT 节点, Boss | **进行中** | **33% ⏳** |
 | **阶段 8：驱动核心与装备系统** | 6 槽驱动核心, 驱动盘, 套装判定, 属性汇总管线 | 待开始 | 0% |
-| **阶段 9：搜打撤循环与 Meta-Tree** | 侵蚀系统, 背包, 安全箱, 跑尸, 异体刃, 撤离, 天赋树, 经济 | 待开始 | 0% |
+| **阶段 9：搜打撤循环与 Meta-Tree** | 侵蚀系统, 背包, 安全箱, 跑尸, 撤离, 天赋树, 经济 | 待开始 | 0% |
 | **阶段 10：完整 UI/HUD 与打击反馈** | 准星, 头像栏, 击杀流, 敌人血条, 体力条, HitFeedback, 装备UI | 待开始 | 0% |
 | **阶段 11：战术关卡与动态物资生态** | LevelManager, WaveSystem, 宝箱, 传送门, 地脉紊乱词条, NavMesh | 待开始 | 0% |
 | **阶段 12：性能优化与最终打磨** | 对象池, AI 分帧, LOD/裁剪, 音频, 任务系统, 压测验证 | 待开始 | 0% |
@@ -114,9 +114,9 @@
 > **对应设计文档**：§9 敌人 AI 系统
 
 ### 7.1 AI 基础框架
-- [ ] **AI 控制器基类 (`ALSAIController`)**：`UAIPerceptionComponent` 视觉 2000cm/90° + 听觉 3000cm、丢失视野 5s 倒计时
-- [ ] **敌人基类 (`ALSEnemyBase`)**：血量/抗性表/等级/微粒掉落、挂载 ElementComponent + ShieldComponent + ThreatComponent
-- [ ] **敌人数据资产 (`ULSEnemyDataAsset`)**：基础属性、行为树引用、掉落表
+- [x] **AI 控制器基类 (`ALSAIController`)**：`UAIPerceptionComponent` 视觉 2000cm/90° + 听觉 3000cm、丢失视野 5s 倒计时
+- [x] **敌人基类 (`ALSEnemyBase`)**：血量/抗性表/等级/微粒掉落、挂载 ElementComponent + ShieldComponent + ThreatComponent
+- [x] **敌人数据资产 (`ULSEnemyDataAsset`)**：基础属性、行为树引用、掉落表
 
 ### 7.2 掩体与战术寻路
 - [ ] **掩体感知组件 (`ULSCoverPointComponent`)**：全高/半高/可破坏掩体标记、威胁朝向遮挡计算

@@ -71,4 +71,10 @@ namespace LSTags
 	UE_DEFINE_GAMEPLAY_TAG(TAG_Weapon_Type_Shotgun,  "Weapon.Type.Shotgun");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_Weapon_Type_Sniper,   "Weapon.Type.Sniper");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_Weapon_Type_Launcher, "Weapon.Type.Launcher");
+	
+	//AI状态标签
+	UE_DEFINE_GAMEPLAY_TAG(TAG_AI_State_Idle,      "AI.State.Idle");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_AI_State_Alert,     "AI.State.Alert");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_AI_State_Combat,    "AI.State.Combat");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_AI_State_Fleeing,   "AI.State.Fleeing");
 }
