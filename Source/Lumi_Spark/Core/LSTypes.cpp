@@ -77,4 +77,13 @@ namespace LSTags
 	UE_DEFINE_GAMEPLAY_TAG(TAG_AI_State_Alert,     "AI.State.Alert");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_AI_State_Combat,    "AI.State.Combat");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_AI_State_Fleeing,   "AI.State.Fleeing");
+	
+	//敌人特化兵种
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Enemy_Type_Melee,     "Enemy.Type.Melee");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Enemy_Type_Ranged,    "Enemy.Type.Ranged");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Enemy_Type_Sniper,    "Enemy.Type.Sniper");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Enemy_Type_Shielder,  "Enemy.Type.Shielder");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Enemy_Type_Bomber,    "Enemy.Type.Bomber");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Enemy_Type_Elite,     "Enemy.Type.Elite");
+	UE_DEFINE_GAMEPLAY_TAG(TAG_Enemy_Type_Boss,      "Enemy.Type.Boss");
 }
