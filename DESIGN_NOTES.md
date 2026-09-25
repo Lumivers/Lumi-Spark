@@ -47,6 +47,7 @@
 43. [战术投掷管理组件、实时抛物线预测、地面残留领域与三目类型二义性避坑（Throwable Component, Trajectory Prediction & Residual Field）](#43-战术投掷管理组件实时抛物线预测地面残留领域与三目类型二义性避坑throwable-component-trajectory-prediction--residual-field)
 44. [敌人 AI 基础框架、Perception 多感官融合、数据驱动抗性与组件化装配（Enemy Base, AI Perception & Aggro Integration）](#44-敌人-ai-基础框架perception-多感官融合数据驱动抗性与组件化装配enemy-base-ai-perception--aggro-integration)
 45. [掩体系统几何视线遮挡判定、战术包抄寻路与元素决策行为树（Cover System, Flanking & Tactical BT Nodes）](#45-掩体系统几何视线遮挡判定战术包抄寻路与元素决策行为树cover-system-flanking--tactical-bt-nodes)
+46. [七类特化敌人实战机制、多阶段 Boss 转场状态机与模之屋 MMD 资产导入踩坑全解析（Specialized Enemy Types, Boss Phases & MMD Import Pipeline）](#46-七类特化敌人实战机制多阶段-boss-转场状态机与模之屋-mmd-资产导入踩坑全解析specialized-enemy-types-boss-phases--mmd-import-pipeline)
 ---
 ## 1. 项目架构分层与目录规范
 
@@ -1491,3 +1492,43 @@ $$\text{FinalDamage} = \text{BaseDamage} \times (1 + \text{DmgBonus}) \times \te
    - 通过旋转向量算出的包抄点纯属空中的几何数学解，如果不做投影，当玩家背靠山体或墙角时，算出的包抄点很可能落在不可通行的山体内或悬崖外。通过 `ProjectPointToNavigation` 并设定合理的容差盒（如 `FVector(400, 400, 500)`），能在几何解不可达时自动平移至最近的有效寻路面上，避免 AI 路径规划失败呆立原地。
 3. **掩体防护高度的视线偏移**：
    - 检验掩体阻隔时，射线的终点切勿直接使用掩体的地面坐标（`GetComponentLocation()`，通常在地面 Z=0 处）。如果射线打在地面上，即使没有掩体也会被地面微凸遮挡导致误判。必须抬高至站姿胸口高度（`CoverHeight * 0.5f`），才能真实反映子弹视线能否被沙袋挡住。
+
+---
+
+## 46. 七类特化敌人实战机制、多阶段 Boss 转场状态机与模之屋 MMD 资产导入踩坑全解析（Specialized Enemy Types, Boss Phases & MMD Import Pipeline）
+
+### 46.1 阶段 7 封顶总结与兵种定位
+随着 7.3 落地，**阶段 7（敌人 AI 与行为树系统）** 正式宣告 **100% 全部封顶**。七类敌人涵盖了主流战术射击游戏的全部核心机制：
+1. **近战冲锋兵 (`ALSEnemy_Melee`)**：蓄力重劈，1.2s 前摇窗口受到足额伤害（>50）即被打断，提供拼刀/打断爽感；
+2. **远程步枪射手 (`ALSEnemy_Ranged`)**：掩体对射，保持 12~18 米，贴近 <600cm 自动触发后撤；
+3. **红外狙击手 (`ALSEnemy_Sniper`)**：高处远距架枪，开火前发射 1.5s 红色瞄准激光，给玩家滑铲躲避窗口；
+4. **防弹盾兵 (`ALSEnemy_Shielder`)**：正面 120° 扇区（`Dot > 0.3`）100% 物理子弹免疫，逼迫滑铲绕后或元素反应破防；
+5. **元素自爆兵 (`ALSEnemy_Bomber`)**：650 极速冲刺，贴身或死亡自爆产生火/雷范围 AoE，支持诱导友军误伤；
+6. **元素精英怪 (`ALSEnemy_Elite`)**：标配复合元素多层盾、固有免击退霸体（`SuperArmor`），周期性释放高伤战技；
+7. **多阶段 Boss (`ALSEnemyBoss`)**：70%、30% 血量门槛转场、无敌状态机（`Invincible`）与动作演出、热切换独立行为树与狂暴加成。
+
+---
+
+### 46.2 模之屋 (Aplaybox) / MMD 资产导入虚幻引擎四大天坑与标准流水线
+
+针对从模之屋下载的原神战术风格模型（纳塔步兵、愚人众保镖、队长等），直接拖入虚幻引擎必然踩坑，必须遵循以下标准工业管线：
+
+#### 1. 格式陷阱（PMX vs FBX）
+- **现象**：模之屋的模型压缩包里往往是 `.pmx` 文件和贴图文件夹，直接拖进 UE 内容浏览器没有任何反应或报不支持；
+- **解决**：必须先在 **Blender** 中安装开源插件 **Cats Blender Plugin** 或 **mmd_tools**，导入 `.pmx` 后，点击 `Fix Model` 自动修复半透明法线与多余骨骼，然后导出为标准的 `.fbx`。
+
+#### 2. 坐标系与缩放陷阱（Scale & Axis Drift）
+- **现象**：直接导入 FBX 后，角色横躺在地面上（面向 Z 轴而非 X 轴），或者尺寸极其微小（原本 1.8 米的人物缩成 18 厘米）；
+- **原因**：MMD 是 Y 轴向上且单位较小，UE 是 Z 轴向上且单位为厘米（1 Unit = 1 cm）；
+- **解决**：在 Blender 导出 FBX 时，设置 `Apply Transform`，前向 `-Y`，向上 `Z`；或者在 UE 导入面板的 **Transform -> Import Uniform Scale** 设置为合适的缩放比，勾选 `Convert Scene`。
+
+#### 3. 骨骼命名与 IK 重定向（Retargeting Pipeline）
+- **现象**：导入后由于骨骼名称是日文/汉字（如 `センター`、`全ての親`、`首`、`頭`），无法直接播放 UE 默认的持枪/奔跑动作动画；
+- **解决**：
+  1. 为该骨骼生成一个 **IK Rig**（`IK_Enemy`）；
+  2. 将关键骨骼链（Spine、LeftArm、RightArm、LeftLeg、RightLeg、Head）与 UE5 官方小白人（`IK_Mannequin`）对齐；
+  3. 创建一个 **IK Retargeter**，直接将小白人的战术移动、滑铲、举枪射击蒙太奇**一键批量导出**给该二次元模型，彻底免去手动绑骨动画的工作！
+
+#### 4. 二次元卡通材质渲染（Toon Shading / NPR）
+- **现象**：拖入 UE 后默认使用 PBR 材质（金属度/粗糙度），二次元角色脸部在光照下出现严重的黑块、法令纹和丑陋阴影；
+- **解决**：原神模型的脸部阴影是基于顶点色或面部朝向判定的。在材质球中将 Blend Mode 设为 `Masked`，将 Shading Model 设为 `Subsurface` 或自建 `NPR Toon Shader`（漫反射分段阶梯采样），脸部材质禁用投射阴影（`Cast Shadow = false`），方可还原二次元清澈干净的面部视效。

@@ -180,6 +180,14 @@ namespace LSTags
 	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Enemy_Type_Bomber);   // 元素自爆兵
 	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Enemy_Type_Elite);    // 元素精英怪
 	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_Enemy_Type_Boss);     // 多阶段首领
+	
+	//驱动核心套装标签
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_DriveSet_TacticalSwap);       // 战术连携（速切流）
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_DriveSet_PrecisionMarksman); // 精准射手（弱点爆头流）
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_DriveSet_ElementalResonance);// 元素共振（反应增伤流）
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_DriveSet_MobileAssault);     // 机动突击（身法滑铲流）
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_DriveSet_HeavyBastion);      // 重装阵线（壁垒破盾流）
+	LUMI_SPARK_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_DriveSet_TacticalOrdnance);  // 战术爆破（手雷领域流）
 }
 
 //行为树黑板常用key常亮定义

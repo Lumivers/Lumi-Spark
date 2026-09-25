@@ -1,4 +1,4 @@
-﻿#include "BTTask_FindCover.h"
+#include "BTTask_FindCover.h"
 #include "AIController.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Enemy/ALSCoverPoint.h"
@@ -52,7 +52,7 @@ EBTNodeResult::Type UBTTask_FindCover::ExecuteTask(UBehaviorTreeComponent& Owner
 	if (BestCover)
 	{
 		BestCover->SetOccupied(true, AIPawn);
-		BB->SetValueAsObject(LSBlackboardKeys::CoverLocation, BestCover->GetActorLocation());
+		BB->SetValueAsVector(LSBlackboardKeys::CoverLocation, BestCover->GetActorLocation());
 		return EBTNodeResult::Succeeded;
 	}
 	
