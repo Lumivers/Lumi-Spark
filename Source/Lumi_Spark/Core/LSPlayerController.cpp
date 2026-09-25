@@ -13,12 +13,14 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "UI/LSUHDWidget.h"
 #include "Weapon/LSThrowableComponent.h"
+#include "Equipment/ULSDriveCoreComponent.h"
 
 ALSPlayerController::ALSPlayerController()
 {
 	bShowMouseCursor = false;
 
 	TeamSwitchComponent = CreateDefaultSubobject<ULSTeamSwitchComponent>(TEXT("TeamSwitchComponent"));
+	DriveCoreComponent = CreateDefaultSubobject<ULSDriveCoreComponent>(TEXT("DriveCoreComponent"));
 }
 
 void ALSPlayerController::BeginPlay()

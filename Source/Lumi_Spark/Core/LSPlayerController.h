@@ -11,6 +11,7 @@ class UInputAction;
 struct FInputActionValue;
 class ALSCharacterBase;
 class ULSTeamSwitchComponent;
+class ULSDriveCoreComponent;
 
 UCLASS()
 class LUMI_SPARK_API ALSPlayerController : public APlayerController
@@ -124,9 +125,15 @@ public:
 	UFUNCTION(Server, Reliable)
 	void Server_CompleteInteract(AActor* TargetActor);
 	
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	ULSDriveCoreComponent* GetDriveCoreComponent() const { return DriveCoreComponent; }
+	
 protected:
 	//当前交互目标（由 ILSInteractableInterface 接口提供）
 	TWeakObjectPtr<AActor> CurrentInteractTarget;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ULSDriveCoreComponent> DriveCoreComponent;
 	
 	//当前长按进度计时器与总时长
 	float InteractTimer = 0.0f;

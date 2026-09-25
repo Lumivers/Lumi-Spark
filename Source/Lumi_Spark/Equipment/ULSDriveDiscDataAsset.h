@@ -6,9 +6,8 @@
 #include "Equipment/LSDriveCoreTypes.h"
 #include "ULSDriveDiscDataAsset.generated.h"
 
-/**
- * 驱动核心套装加成数据结构
- */
+
+//驱动核心套装加成数据结构
 USTRUCT(BlueprintType)
 struct LUMI_SPARK_API FLSDriveSetBonus
 {
@@ -31,9 +30,8 @@ struct LUMI_SPARK_API FLSDriveSetBonus
 	FGameplayTag MechanismTag;
 };
 
-/**
- * 槽位主词条生成权重项
- */
+
+//槽位主词条生成权重项
 USTRUCT(BlueprintType)
 struct LUMI_SPARK_API FLSMainStatWeightEntry
 {
@@ -55,9 +53,8 @@ struct LUMI_SPARK_API FLSMainStatWeightEntry
 	float MaxValue = 0.0f;
 };
 
-/**
- * 驱动盘流派数据资产 (ULSDriveDiscDataAsset)
- */
+
+//驱动盘流派数据资产 (ULSDriveDiscDataAsset)
 UCLASS(BlueprintType)
 class LUMI_SPARK_API ULSDriveDiscDataAsset : public UPrimaryDataAsset
 {
@@ -92,9 +89,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Generation|MainStats")
 	TMap<ELSDriveDiscSlot, FLSMainStatWeightEntry> MainStatPool;
 
-	/**
-	 * 辅助工具函数：根据槽位与品质，随机/生成一个规范的驱动盘实例
-	 */
+	
+	//辅助工具函数：根据槽位与品质，随机/生成一个规范的驱动盘实例
 	UFUNCTION(BlueprintCallable, Category = "DriveDisc|Factory")
 	static FLSDriveDisc GenerateDisc(ULSDriveDiscDataAsset* SetAsset, ELSDriveDiscSlot Slot, ELSDriveDiscRarity Rarity);
 };

@@ -68,6 +68,7 @@ public:
 	FORCEINLINE float GetCurrentSpread() const { return CurrentSpread; }
 	FORCEINLINE float GetBaseSpread() const { return BaseSpread; }
 	FORCEINLINE float GetMaxSpread() const { return MaxSpread; }
+	FORCEINLINE float GetBaseDamage() const { return BaseDamage; }
 	
 	FORCEINLINE float GetSpreadRatio() const 
 	{ 

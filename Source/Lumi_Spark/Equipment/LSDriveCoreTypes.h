@@ -309,6 +309,10 @@ struct LUMI_SPARK_API FLSCombatAttributes
 	// 战术换弹提速比例 (0.0 = 基础，0.15 = 换弹速度提升 15%)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes", meta = (ClampMin = "0.0", ClampMax = "0.8"))
 	float ReloadSpeedBonus = 0.0f;
+	
+	// 战技冷却缩减比例 (0.12 = E 技能冷却缩减 12%)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float SkillCooldownReduction = 0.0f;
 
 	// 护盾强效比例 (0.0 = 基础，0.35 = 护盾吸收量/耐久提升 35%)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
