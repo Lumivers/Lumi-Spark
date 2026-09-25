@@ -17,6 +17,10 @@
 #include "Components/DecalComponent.h"
 #include "Character/LSCameraComponent.h"
 #include "Weapon/LSWeaponDataAsset.h"
+#include "Core/LSPlayerController.h"
+#include "Equipment/ULSDriveCoreComponent.h"
+#include "Enemy/LSEnemyBase.h"
+#include "Enemy/LSEnemyDataAsset.h"
 
 ALSWeaponBase::ALSWeaponBase()
 {
@@ -337,35 +341,50 @@ void ALSWeaponBase::Client_HitConfirm_Implementation(bool bIsHeadshot, float Fin
 	}
 }
 
+float ALSWeaponBase::GetReloadSpeedMultiplier() const
+{
+	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
+	{
+		if (ALSPlayerController* PC = Cast<ALSPlayerController>(OwnerChar->GetController()))
+		{
+			if (ULSDriveCoreComponent* DriveCore = PC->GetDriveCoreComponent())
+			{
+				const FLSCombatAttributes Attr = DriveCore->CalculateCombatAttributes(OwnerChar);
+				return 1.0f + Attr.ReloadSpeedBonus;
+			}
+		}
+	}
+	return 1.0f;
+}
+
 void ALSWeaponBase::Reload()
 {
 	if (!CanReload()) return;
-	// 停止正在进行的射击并重置后坐力
 	StopFire();
 	
-	//播放换弹音效
 	if (ReloadSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, ReloadSound, GetActorLocation());
 	}
 	
-	//播放换弹动作蒙太奇
+	// 动态获取换弹倍率，动作按比例加速播放！
+	const float AnimSpeed = GetReloadSpeedMultiplier();
+
 	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
 	{
 		if (CharacterReloadMontage && OwnerChar->GetMesh())
 		{
-			OwnerChar->PlayAnimMontage(CharacterReloadMontage);
+			OwnerChar->PlayAnimMontage(CharacterReloadMontage, AnimSpeed);
 		}
 		if (FPArmsReloadMontage && OwnerChar->GetFPArmsMesh())
 		{
 			if (UAnimInstance* ArmsAnimInst = OwnerChar->GetFPArmsMesh()->GetAnimInstance())
 			{
-				ArmsAnimInst->Montage_Play(FPArmsReloadMontage);
+				ArmsAnimInst->Montage_Play(FPArmsReloadMontage, AnimSpeed);
 			}
 		}
 	}
 	
-	//发送 Server RPC 在服务端倒计时填充弹药
 	Server_Reload();
 }
 
@@ -381,8 +400,9 @@ void ALSWeaponBase::Server_Reload_Implementation()
 	bIsReloading = true;
 	OnReloadStart.Broadcast();
 	
-	//服务端倒计时换弹
-	GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ALSWeaponBase::FinishReload, ReloadTime, false);
+	// 服务端使用缩短后的时间倒计时填充弹药
+	const float EffectiveTime = ReloadTime / GetReloadSpeedMultiplier();
+	GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ALSWeaponBase::FinishReload, EffectiveTime, false);
 }
 
 void ALSWeaponBase::FinishReload()

@@ -6,6 +6,8 @@
 #include "Element/LSElementComponent.h"
 #include "Core/LSEventBus.h"
 #include "Engine/DamageEvents.h"
+#include "Core/LSPlayerController.h"
+#include "Equipment/ULSDriveCoreComponent.h"
 
 ALSSniperRifle::ALSSniperRifle()
 {
@@ -81,27 +83,23 @@ void ALSSniperRifle::ProcessHit(const FHitResult& Hit)
 	AActor* HitActor = Hit.GetActor();
 	if (!HitActor) return;
 
-	// 1. 结合蓄力增伤倍率计算
+	// 1. 计算距离衰减与爆头判定
 	const float Distance = (Hit.ImpactPoint - GetActorLocation()).Size();
 	const float Dropoff = CalculateDamageDropoff(Distance);
-	const float ChargedBaseDamage = BaseDamage * LastFiredChargeMultiplier;
-	float FinalDamage = ChargedBaseDamage * Dropoff;
 
-	// 2. 3.0x 爆头判定
 	bool bIsHeadshot = false;
 	if (Hit.BoneName.ToString().Contains(TEXT("head"), ESearchCase::IgnoreCase) || 
 		(Hit.Component.IsValid() && Hit.Component->ComponentHasTag(TEXT("head"))))
 	{
-		FinalDamage *= HeadshotMultiplier;
 		bIsHeadshot = true;
 	}
 
-	// 3. 组装全局伤害上下文
+	// 2. 组装伤害上下文（只传入距离衰减后的物理基准伤害，不提前乘爆头，交给计算器算暴击）
 	FLSDamageContext DamageContext;
 	DamageContext.DamageCauser = GetOwner() ? GetOwner() : this;
 	DamageContext.TargetActor = HitActor;
-	DamageContext.BaseDamage = ChargedBaseDamage;
-	DamageContext.FinalDamage = FinalDamage;
+	DamageContext.BaseDamage = BaseDamage;
+	DamageContext.FinalDamage = BaseDamage * Dropoff;
 	DamageContext.ElementTag = ElementTag;
 	DamageContext.DamageTypeTag = LSTags::TAG_Damage_Type_Bullet;
 	DamageContext.bIsHeadshot = bIsHeadshot;
@@ -110,20 +108,43 @@ void ALSSniperRifle::ProcessHit(const FHitResult& Hit)
 	ULSElementComponent* TargetElementComp = HitActor->FindComponentByClass<ULSElementComponent>();
 	FGameplayTag AuraTag = TargetElementComp ? TargetElementComp->GetPrimaryAuraTag() : FGameplayTag();
 
+	// 3. 动态组装攻击者面板（读取全队驱动核心）
 	FLSAttackerStats AttackerStats;
-	AttackerStats.Attack = ChargedBaseDamage;
-	AttackerStats.CritRate = 0.1f;
-	AttackerStats.CritDamage = 0.5f;
-	AttackerStats.ElementalMastery = 120.0f;
+	AttackerStats.Attack = BaseDamage;
+	AttackerStats.CritRate = 0.10f; // 狙击枪基础自带10%暴击
+	AttackerStats.CritDamage = 0.50f;
+	AttackerStats.ElementalMastery = 0.0f;
 	AttackerStats.Level = 90;
+
+	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
+	{
+		if (ALSPlayerController* PC = Cast<ALSPlayerController>(OwnerChar->GetController()))
+		{
+			if (ULSDriveCoreComponent* DriveCore = PC->GetDriveCoreComponent())
+			{
+				AttackerStats = DriveCore->BuildAttackerStats(OwnerChar);
+			}
+		}
+	}
+
+	// 狙击枪核心机制 1：蓄力倍率直接放大攻击力
+	AttackerStats.Attack *= LastFiredChargeMultiplier;
+
+	// 狙击枪核心机制 2：3.0x 爆头倍率由暴伤保障（保底 200% 暴伤，即 1 + 2.0 = 3.0 倍伤害）
+	if (bIsHeadshot)
+	{
+		AttackerStats.CritDamage = FMath::Max(AttackerStats.CritDamage, HeadshotMultiplier - 1.0f);
+	}
 
 	FLSDefenderStats DefenderStats;
 	DefenderStats.Level = 90;
 	DefenderStats.Defense = 500.0f;
 	DefenderStats.ElementalResistance = 0.1f;
 
+	// 4. 交给伤害计算器统一部署全乘区
 	FLSDamageResult DamageResult = ULSDamageCalculator::CalculateDamage(DamageContext, AttackerStats, DefenderStats, AuraTag);
 
+	// 5. 元素附着与扣血广播
 	if (TargetElementComp && ElementTag.IsValid())
 	{
 		TargetElementComp->ApplyElement(GetOwner() ? GetOwner() : this, ElementTag, ElementGauge);

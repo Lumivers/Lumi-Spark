@@ -255,6 +255,9 @@ protected:
 	// 本地播放开火视听表现（枪声、枪口粒子、蒙太奇、后坐力抖动）
 	void PlayLocalFireEffects(bool bIsADS);
 	
+	// 获取当前武器的换弹速度加成倍率（读取驱动核心，保底为 1.0）
+	float GetReloadSpeedMultiplier() const;
+	
 	// 网络RPC接口
 	
 	//1，服务端权威开火RPC（扣弹药、服务端射线检测、伤害计算）

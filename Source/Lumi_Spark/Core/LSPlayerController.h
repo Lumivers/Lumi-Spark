@@ -128,6 +128,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	ULSDriveCoreComponent* GetDriveCoreComponent() const { return DriveCoreComponent; }
 	
+	// ═══ 控制台测试与打靶指令 ═══
+	
+	// 控制台一键装备 4+2 预设神装（按 ~ 键输入: LS.EquipSet Resonance 或 LS.EquipSet Marksman） 
+	UFUNCTION(Exec, Category = "DriveCore|Debug")
+	void LSEquipSet(const FString& SetName);
+	
+	// 控制台在屏幕上打印当前小队全量战力属性（输入: LS.PrintStats） 
+	UFUNCTION(Exec, Category = "DriveCore|Debug")
+	void LSPrintStats();
+	
 protected:
 	//当前交互目标（由 ILSInteractableInterface 接口提供）
 	TWeakObjectPtr<AActor> CurrentInteractTarget;

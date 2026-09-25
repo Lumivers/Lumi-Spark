@@ -534,3 +534,83 @@ void ALSPlayerController::Server_CompleteInteract_Implementation(AActor* TargetA
 		}
 	}
 }
+
+void ALSPlayerController::LSEquipSet(const FString& SetName)
+{
+	if (!DriveCoreComponent) return;
+
+	FGameplayTag FourPieceTag;
+	FGameplayTag TwoPieceTag;
+
+	if (SetName.Equals(TEXT("Resonance"), ESearchCase::IgnoreCase) || SetName.Equals(TEXT("Cascade"), ESearchCase::IgnoreCase))
+	{
+		FourPieceTag = LSTags::TAG_DriveSet_ElementalResonance; // 4 元素共振
+		TwoPieceTag = LSTags::TAG_DriveSet_TacticalSwap;        // 2 战术连携
+	}
+	else if (SetName.Equals(TEXT("Marksman"), ESearchCase::IgnoreCase))
+	{
+		FourPieceTag = LSTags::TAG_DriveSet_PrecisionMarksman;  // 4 精准射手
+		TwoPieceTag = LSTags::TAG_DriveSet_ElementalResonance;  // 2 元素共振
+	}
+	else if (SetName.Equals(TEXT("Blitz"), ESearchCase::IgnoreCase) || SetName.Equals(TEXT("Assault"), ESearchCase::IgnoreCase))
+	{
+		FourPieceTag = LSTags::TAG_DriveSet_MobileAssault;      // 4 机动突击
+		TwoPieceTag = LSTags::TAG_DriveSet_PrecisionMarksman;   // 2 精准射手
+	}
+	else if (SetName.Equals(TEXT("Bastion"), ESearchCase::IgnoreCase))
+	{
+		FourPieceTag = LSTags::TAG_DriveSet_HeavyBastion;       // 4 重装阵线
+		TwoPieceTag = LSTags::TAG_DriveSet_TacticalSwap;        // 2 战术连携
+	}
+	else
+	{
+		// 默认穿 4 战术连携 + 2 元素共振
+		FourPieceTag = LSTags::TAG_DriveSet_TacticalSwap;
+		TwoPieceTag = LSTags::TAG_DriveSet_ElementalResonance;
+	}
+
+	DriveCoreComponent->EquipPresetLoadout(FourPieceTag, TwoPieceTag, ELSDriveDiscRarity::Classified);
+	UE_LOG(LogTemp, Warning, TEXT("[DriveCore] 成功为全队装配 4+2 绝密级套装: %s"), *SetName);
+	LSPrintStats();
+}
+
+void ALSPlayerController::LSPrintStats()
+{
+	ALSCharacterBase* ActiveChar = Cast<ALSCharacterBase>(GetPawn());
+	if (!ActiveChar || !DriveCoreComponent)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[DriveCore] 无法打印属性：ActiveCharacter 或 DriveCoreComponent 为空！"));
+		return;
+	}
+
+	const FLSCombatAttributes Attr = DriveCoreComponent->CalculateCombatAttributes(ActiveChar);
+
+	FString StatSummary = FString::Printf(
+		TEXT("\n═════════════ Lumi-Spark 驱动核心全队战力面板 ═════════════\n")
+		TEXT("• 当前角色: %s\n")
+		TEXT("• 总攻击力: %.1f\n")
+		TEXT("• 最大生命: %.1f\n")
+		TEXT("• 能量护盾: %.1f (护盾强效: +%.1f%%)\n")
+		TEXT("• 防御力:   %.1f (元素抗性: %.1f%%)\n")
+		TEXT("• 暴击率:   %.1f%%  |  暴击伤害: %.1f%%\n")
+		TEXT("• 元素精通: %.0f    |  反应增伤: +%.1f%%\n")
+		TEXT("• 穿透率:   %.1f%%  |  换弹加速: +%.1f%%\n")
+		TEXT("• 充能效率: %.1f%%  |  战技CDR:  -%.1f%%\n")
+		TEXT("═══════════════════════════════════════════════════════════"),
+		*ActiveChar->GetName(),
+		Attr.TotalAttack,
+		Attr.TotalMaxHealth,
+		Attr.TotalShield, Attr.ShieldStrength * 100.0f,
+		Attr.TotalDefense, Attr.ElementalResistance * 100.0f,
+		Attr.TotalCritRate * 100.0f, Attr.TotalCritDamage * 100.0f,
+		Attr.TotalElementalMastery, Attr.ReactionDamageBonus * 100.0f,
+		Attr.PenetrationRate * 100.0f, Attr.ReloadSpeedBonus * 100.0f,
+		Attr.EnergyRecharge * 100.0f, Attr.SkillCooldownReduction * 100.0f
+	);
+
+	UE_LOG(LogTemp, Warning, TEXT("%s"), *StatSummary);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Cyan, StatSummary);
+	}
+}
