@@ -71,14 +71,18 @@ public:
 	/** 获取当前生效护盾的剩余百分比 (0.0 ~ 1.0) */
 	UFUNCTION(BlueprintPure, Category = "Shield")
 	float GetActiveShieldRatio() const;
-
-	/** 手动追加一层新护盾（如 Boss 二阶段转阶段套盾） */
+	
+	// 追加护盾
 	UFUNCTION(BlueprintCallable, Category = "Shield")
 	void AddShieldLayer(const FGameplayTag& ShieldElement, float ShieldAmount, float AbsorptionRatio = 1.0f);
-
-	/** 重置回满所有护盾 */
+	
+	// 重置回满所有护盾
 	UFUNCTION(BlueprintCallable, Category = "Shield")
 	void RestoreAllShields();
+	
+	// 破除护盾
+	UFUNCTION(BlueprintCallable, Category = "Shield")
+	void ShatterAllShields();
 
 public:
 	// ─── 委托事件 ───

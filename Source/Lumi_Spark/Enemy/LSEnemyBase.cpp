@@ -27,6 +27,97 @@ ALSEnemyBase::ALSEnemyBase()
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 }
 
+// ILSInteractableInterface 交互接口实现
+bool ALSEnemyBase::CanInteract(AActor* Interactor) const
+{
+	if (!bAllowBackstabExecution || bIsDead || !Interactor)
+	{
+		return false;
+	}
+	
+	// 目标已死亡判定
+	if (HealthComponent && HealthComponent->IsDead())
+	{
+		return false;
+	}
+	
+	const FVector EnemyLoc = GetActorLocation();
+	const FVector InteractorLoc = Interactor->GetActorLocation();
+	
+	// 1. 高度差校验（防止跳在头顶或上下楼梯误触）
+	if (FMath::Abs(EnemyLoc.Z - InteractorLoc.Z) > 100.0f)
+	{
+		return false;
+	}
+	
+	// 2. 水平距离校验（默认 2.3 米内）
+	const float DistSq2D = FVector::DistSquared2D(EnemyLoc, InteractorLoc);
+	if (DistSq2D > FMath::Square(BackstabMaxDistance))
+	{
+		return false;
+	}
+	
+	// 3. 背后空间点积校验（核心几何计算）
+	const FVector EnemyForward = GetActorForwardVector().GetSafeNormal2D();
+	const FVector ToInteractor = (InteractorLoc - EnemyLoc).GetSafeNormal2D();
+	
+	// 当玩家处于怪的正背后时，ToInteractor 与 EnemyForward 反向，点积趋近于 -1.0
+	// 这里取 Dot < -0.4f，相当于怪物背后约 132° 的后向扇形夹角
+	const float BehindDot = FVector::DotProduct(EnemyForward, ToInteractor);
+	if (BehindDot > -0.4f)
+	{
+		return false; // 未在背后扇形区域
+	}
+	
+	// 4. 玩家朝向校验（玩家必须面朝怪物背部）
+	const FVector InteractorForward = Interactor->GetActorForwardVector().GetSafeNormal2D();
+	const float FacingDot = FVector::DotProduct(InteractorForward, EnemyForward);
+	if (FacingDot < 0.2f)
+	{
+		return false; // 玩家未朝向怪物背部（如背对背）
+	}
+	
+	return true;
+}
+
+FText ALSEnemyBase::GetInteractPrompt(AActor* Interactor) const
+{
+	return NSLOCTEXT("LumiSpark", "XenoBladePrompt", "按 [F] 异体刃背后处决 (-75% HP / 破盾)");
+}
+
+void ALSEnemyBase::OnInteractComplete(AActor* Interactor)
+{
+	// 按 F 瞬发处决
+	ExecuteXenoBlade(Interactor);
+}
+
+bool ALSEnemyBase::ExecuteXenoBlade(AActor* Interactor)
+{
+	if (!HasAuthority()) return false;
+	if (bIsDead || !HealthComponent || HealthComponent->IsDead()) return false;
+	
+	// 1. 瞬碎所有元素护盾
+	if (ShieldComponent)
+	{
+		ShieldComponent->ShatterAllShields();
+	}
+	
+	// 2. 扣除 75% 最大生命值
+	const float MaxHP = HealthComponent->GetMaxHealth();
+	const float ExecutionDamage = MaxHP * BackstabDamageRatio;
+	
+	// 处决伤害划归为技能真伤类型（透穿肉身）
+	HealthComponent->TakeDamage(ExecutionDamage, LSTags::TAG_Damage_Type_Skill, Interactor, Interactor ? Interactor->GetInstigatorController() : nullptr);
+	
+	// 3. 广播处决事件
+	OnXenoBladeExecuted.Broadcast(this, Interactor, ExecutionDamage);
+	
+	// 4. 调试反馈
+	GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Red, FString::Printf(TEXT("🗡️ 【异体刃处决】成功！对 %s 造成 %.0f 点真实伤害（75%% 最大生命），全层元素护盾瞬间粉碎！"), *GetName(), ExecutionDamage));
+	
+	return true;
+}
+
 void ALSEnemyBase::BeginPlay()
 {
 	Super::BeginPlay();

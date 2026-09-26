@@ -16,6 +16,7 @@
 #include "Equipment/ULSDriveCoreComponent.h"
 #include "Extraction/ULSBackpackComponent.h"
 #include "Extraction/LSExtractionTypes.h"
+#include "Extraction/ULSCorrosionComponent.h"
 #include "Equipment/ULSDriveDiscDataAsset.h"
 
 ALSPlayerController::ALSPlayerController()
@@ -25,6 +26,7 @@ ALSPlayerController::ALSPlayerController()
 	TeamSwitchComponent = CreateDefaultSubobject<ULSTeamSwitchComponent>(TEXT("TeamSwitchComponent"));
 	DriveCoreComponent = CreateDefaultSubobject<ULSDriveCoreComponent>(TEXT("DriveCoreComponent"));
 	BackpackComponent = CreateDefaultSubobject<ULSBackpackComponent>(TEXT("BackpackComponent"));
+	CorrosionComponent = CreateDefaultSubobject<ULSCorrosionComponent>(TEXT("CorrosionComponent"));
 }
 
 void ALSPlayerController::BeginPlay()
@@ -467,48 +469,6 @@ void ALSPlayerController::Tick(float DeltaSeconds)
 	}
 }
 
-void ALSPlayerController::HandleInteractStarted()
-{
-	APawn* ControlledPawn = GetPawn();
-	if (!ControlledPawn) return;
-
-	// 从摄像机视线向前 2.5 米做球体检测抓取可交互对象
-	FVector CameraLoc;
-	FRotator CameraRot;
-	GetPlayerViewPoint(CameraLoc, CameraRot);
-
-	const FVector TraceEnd = CameraLoc + CameraRot.Vector() * 250.0f;
-	FHitResult Hit;
-	FCollisionQueryParams QueryParams;
-	QueryParams.AddIgnoredActor(ControlledPawn);
-
-	if (GetWorld()->SweepSingleByChannel(Hit, CameraLoc, TraceEnd, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(40.0f), QueryParams))
-	{
-		if (Hit.GetActor() && Hit.GetActor()->Implements<ULSInteractableInterface>())
-		{
-			ILSInteractableInterface* Interface = Cast<ILSInteractableInterface>(Hit.GetActor());
-			if (Interface && Interface->CanInteract(ControlledPawn))
-			{
-				const float Duration = Interface->GetInteractDuration(ControlledPawn);
-				if (Duration <= 0.0f)
-				{
-					// 单击瞬时交互
-					Server_CompleteInteract(Hit.GetActor());
-					Interface->OnInteractComplete(ControlledPawn);
-				}
-				else
-				{
-					// 长按蓄力交互（倒地救人）
-					CurrentInteractTarget = Hit.GetActor();
-					CurrentInteractDuration = Duration;
-					InteractTimer = 0.0f;
-					Interface->OnInteractStart(ControlledPawn);
-				}
-			}
-		}
-	}
-}
-
 void ALSPlayerController::HandleInteractCompleted()
 {
 	if (CurrentInteractTarget.IsValid())
@@ -755,4 +715,116 @@ void ALSPlayerController::LSSimulateDeath()
 
 	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, FString::Printf(TEXT("💀 就地战死！遗留在尸体标包: %d 件 | 🛡️ 安全箱绝对带回: %d 件"), Dropped.Num(), Retained.Num()));
 	UE_LOG(LogTemp, Error, TEXT("💥 战死模拟结算：现场留下 %d 堆掉落物（生成 CorpseMarker 供跑尸）；安全箱内 %d 件物品 100%% 成功保底！"), Dropped.Num(), Retained.Num());
+}
+
+void ALSPlayerController::HandleInteractStarted()
+{
+	APawn* ControlledPawn = GetPawn();
+	if (!ControlledPawn) return;
+	
+	FHitResult Hit;
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(ControlledPawn);
+	
+	bool bFoundInteractable = false;
+	
+	// 通道 1：近身扇形球体检测（优先抓取正前方的异体刃背后处决目标）
+	const FVector PawnLoc = ControlledPawn->GetActorLocation();
+	const FVector PawnForward = ControlledPawn->GetActorForwardVector();
+	const FVector MeleeTraceEnd = PawnLoc + (PawnForward * 200.0f);
+	
+	if (GetWorld()->SweepSingleByChannel(Hit, PawnLoc, MeleeTraceEnd, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(50.0f), QueryParams))
+	{
+		if (Hit.GetActor() && Hit.GetActor()->Implements<ULSInteractableInterface>())
+		{
+			ILSInteractableInterface* Interface = Cast<ILSInteractableInterface>(Hit.GetActor());
+			if (Interface && Interface->CanInteract(ControlledPawn))
+			{
+				bFoundInteractable = true;
+			}
+		}
+	}
+	
+	// 通道 2：摄像机视线射线检测（抓取远距离宝箱、拉起倒地队友等常规交互物）
+	if (!bFoundInteractable)
+	{
+		FVector CameraLoc;
+		FRotator CameraRot;
+		GetPlayerViewPoint(CameraLoc, CameraRot);
+		const FVector TraceEnd = CameraLoc + (CameraRot.Vector() * 450.0f);
+		if (GetWorld()->SweepSingleByChannel(Hit, CameraLoc, TraceEnd, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(40.0f), QueryParams))
+		{
+			if (Hit.GetActor() && Hit.GetActor()->Implements<ULSInteractableInterface>())
+			{
+				ILSInteractableInterface* Interface = Cast<ILSInteractableInterface>(Hit.GetActor());
+				if (Interface && Interface->CanInteract(ControlledPawn))
+				{
+					bFoundInteractable = true;
+				}
+			}
+		}
+	}
+	
+	// 执行交互路由
+	if (bFoundInteractable && Hit.GetActor())
+	{
+		ILSInteractableInterface* Interface = Cast<ILSInteractableInterface>(Hit.GetActor());
+		const float Duration = Interface->GetInteractDuration(ControlledPawn);
+		if (Duration <= 0.0f)
+		{
+			// 单击瞬发（处决、普通拾取）
+			Server_CompleteInteract(Hit.GetActor());
+			Interface->OnInteractComplete(ControlledPawn);
+		}
+		else
+		{
+			// 蓄力长按（救助倒地队友）
+			CurrentInteractTarget = Hit.GetActor();
+			CurrentInteractDuration = Duration;
+			InteractTimer = 0.0f;
+			Interface->OnInteractStart(ControlledPawn);
+		}
+	}
+}
+
+// ─── 控制台指令实现 ───
+void ALSPlayerController::LSAddCorrosion(float Amount)
+{
+	if (!CorrosionComponent) return;
+	CorrosionComponent->CurrentCorrosion = FMath::Clamp(CorrosionComponent->CurrentCorrosion + Amount, 0.0f, CorrosionComponent->MaxCorrosion);
+	if (CorrosionComponent->CurrentCorrosion >= CorrosionComponent->MaxCorrosion && !CorrosionComponent->bIsOverloaded)
+	{
+		CorrosionComponent->bIsOverloaded = true;
+		CorrosionComponent->OnCorrosionOverloadChanged.Broadcast(true);
+	}
+	CorrosionComponent->OnCorrosionUpdated.Broadcast(CorrosionComponent->CurrentCorrosion, CorrosionComponent->MaxCorrosion, CorrosionComponent->CurrentFilterDurability);
+	GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Yellow, FString::Printf(TEXT("🧪 [Debug] 侵蚀度已增加 %.1f -> 当前: %.1f%% (过载: %s)"), Amount, CorrosionComponent->CurrentCorrosion, CorrosionComponent->bIsOverloaded ? TEXT("是") : TEXT("否")));
+}
+
+void ALSPlayerController::LSUseInjector()
+{
+	if (CorrosionComponent)
+	{
+		CorrosionComponent->UsePurificationInjector(100.0f);
+	}
+}
+
+void ALSPlayerController::LSInstallFilter(float Durability)
+{
+	if (CorrosionComponent)
+	{
+		CorrosionComponent->InstallFilter(Durability > 0.0f ? Durability : 120.0f);
+	}
+}
+
+void ALSPlayerController::LSPrintCorrosion()
+{
+	if (!CorrosionComponent) return;
+	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, FString::Printf(TEXT("═══ 地脉侵蚀监控 ═══\n侵蚀度: %.1f / %.1f (%.0f%%)\n滤芯耐久: %.1f 秒 (状态: %s)\n过载状态: %s\n视效暗角强度: %.2f\n机动移速倍率: %.2fx"),
+		CorrosionComponent->CurrentCorrosion, CorrosionComponent->MaxCorrosion, CorrosionComponent->GetCorrosionPercent() * 100.0f,
+		CorrosionComponent->CurrentFilterDurability, CorrosionComponent->HasActiveFilter() ? TEXT("正常防护") : TEXT("耗尽加速"),
+		CorrosionComponent->bIsOverloaded ? TEXT("🚨 过载中 (扣血+减速)") : TEXT("正常"),
+		CorrosionComponent->GetVignetteIntensity(),
+		CorrosionComponent->GetCorrosionSpeedMultiplier()
+	));
 }

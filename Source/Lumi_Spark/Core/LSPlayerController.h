@@ -13,6 +13,7 @@ class ALSCharacterBase;
 class ULSTeamSwitchComponent;
 class ULSDriveCoreComponent;
 class ULSBackpackComponent;
+class ULSCorrosionComponent;
 
 UCLASS()
 class LUMI_SPARK_API ALSPlayerController : public APlayerController
@@ -143,7 +144,6 @@ public:
 	ULSBackpackComponent* GetBackpackComponent() const { return BackpackComponent; }
 	
 	// ═══ 搜打撤调试指令 ═══
-	// 
 	// 拾取物资 (LS.AddLoot Bearing / LS.AddLoot Tape / LS.AddLoot Record / LS.AddLoot Disc / LS.AddLoot Blueprint)
 	UFUNCTION(Exec, Category = "Extraction|Debug")
 	void LSAddLoot(const FString& LootType);
@@ -160,6 +160,25 @@ public:
 	UFUNCTION(Exec, Category = "Extraction|Debug")
 	void LSSimulateDeath();
 
+	UFUNCTION(BlueprintPure, Category = "Extraction")
+	ULSCorrosionComponent* GetCorrosionComponent() const { return CorrosionComponent; }
+	
+	// ═══ 阶段 9.1 侵蚀与处决调试指令 ═══
+	// 手动增加侵蚀值（如 LS.AddCorrosion 50 或 LS.AddCorrosion 100 触发过载）
+	UFUNCTION(Exec, Category = "Extraction|Debug")
+	void LSAddCorrosion(float Amount);
+	
+	// 立即使用净化针 (LS.UseInjector)
+	UFUNCTION(Exec, Category = "Extraction|Debug")
+	void LSUseInjector();
+	
+	// 立即更换滤芯 (LS.InstallFilter 180)
+	UFUNCTION(Exec, Category = "Extraction|Debug")
+	void LSInstallFilter(float Durability);
+	
+	// 打印侵蚀与滤芯状态 (LS.PrintCorrosion)
+	UFUNCTION(Exec, Category = "Extraction|Debug")
+	void LSPrintCorrosion();
 	
 protected:
 	//当前交互目标（由 ILSInteractableInterface 接口提供）
@@ -170,6 +189,9 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Extraction", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULSBackpackComponent> BackpackComponent;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Extraction", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ULSCorrosionComponent> CorrosionComponent;
 	
 	//当前长按进度计时器与总时长
 	float InteractTimer = 0.0f;

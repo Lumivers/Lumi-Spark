@@ -224,3 +224,34 @@ void ULSShieldComponent::OnRep_ShieldLayers()
 		}
 	}
 }
+
+void ULSShieldComponent::ShatterAllShields()
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+	bool bHadAnyShield = false;
+
+	// 遍历并将所有仍有护盾量的层数清零，同时触发单层破损事件
+	for (FLSShieldLayer& Layer : ShieldLayers)
+	{
+		if (Layer.CurrentShield > 0.0f)
+		{
+			bHadAnyShield = true;
+			Layer.CurrentShield = 0.0f;
+			OnShieldLayerBroken.Broadcast(Layer.ShieldElement);
+		}
+	}
+
+	// 若此前确实存在护盾，触发全盾破损与全局事件总线
+	if (bHadAnyShield)
+	{
+		OnAllShieldsDepleted.Broadcast();
+		if (ULSEventBus* EventBus = ULSEventBus::Get(this))
+		{
+			EventBus->OnShieldBroken.Broadcast(GetOwner(), FGameplayTag());
+		}
+	}
+
+	// 处决一击强制定身瘫痪
+	ApplyShieldBreakStun();
+}
