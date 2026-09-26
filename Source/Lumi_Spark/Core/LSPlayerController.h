@@ -12,6 +12,7 @@ struct FInputActionValue;
 class ALSCharacterBase;
 class ULSTeamSwitchComponent;
 class ULSDriveCoreComponent;
+class ULSBackpackComponent;
 
 UCLASS()
 class LUMI_SPARK_API ALSPlayerController : public APlayerController
@@ -130,7 +131,7 @@ public:
 	
 	// ═══ 控制台测试与打靶指令 ═══
 	
-	// 控制台一键装备 4+2 预设神装（按 ~ 键输入: LS.EquipSet Resonance 或 LS.EquipSet Marksman） 
+	// 控制台一键装备 4+2 预设（按 ~ 键输入: LS.EquipSet Resonance 或 LS.EquipSet Marksman） 
 	UFUNCTION(Exec, Category = "DriveCore|Debug")
 	void LSEquipSet(const FString& SetName);
 	
@@ -138,12 +139,37 @@ public:
 	UFUNCTION(Exec, Category = "DriveCore|Debug")
 	void LSPrintStats();
 	
+	UFUNCTION(BlueprintPure, Category = "Extraction")
+	ULSBackpackComponent* GetBackpackComponent() const { return BackpackComponent; }
+	
+	// ═══ 搜打撤调试指令 ═══
+	// 
+	// 拾取物资 (LS.AddLoot Bearing / LS.AddLoot Tape / LS.AddLoot Record / LS.AddLoot Disc / LS.AddLoot Blueprint)
+	UFUNCTION(Exec, Category = "Extraction|Debug")
+	void LSAddLoot(const FString& LootType);
+	
+	// 升级背包阶位
+	UFUNCTION(Exec, Category = "Extraction|Debug")
+	void LSUpgradeBackpack();
+	
+	// 在屏幕与日志打印当前全队背包与安全箱明细 (LS.PrintBackpack)
+	UFUNCTION(Exec, Category = "Extraction|Debug")
+	void LSPrintBackpack();
+	
+	// 模拟阵亡掉落 (LS.SimulateDeath)
+	UFUNCTION(Exec, Category = "Extraction|Debug")
+	void LSSimulateDeath();
+
+	
 protected:
 	//当前交互目标（由 ILSInteractableInterface 接口提供）
 	TWeakObjectPtr<AActor> CurrentInteractTarget;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULSDriveCoreComponent> DriveCoreComponent;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Extraction", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ULSBackpackComponent> BackpackComponent;
 	
 	//当前长按进度计时器与总时长
 	float InteractTimer = 0.0f;

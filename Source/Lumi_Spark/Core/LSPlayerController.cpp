@@ -14,6 +14,9 @@
 #include "UI/LSUHDWidget.h"
 #include "Weapon/LSThrowableComponent.h"
 #include "Equipment/ULSDriveCoreComponent.h"
+#include "Extraction/ULSBackpackComponent.h"
+#include "Extraction/LSExtractionTypes.h"
+#include "Equipment/ULSDriveDiscDataAsset.h"
 
 ALSPlayerController::ALSPlayerController()
 {
@@ -21,6 +24,7 @@ ALSPlayerController::ALSPlayerController()
 
 	TeamSwitchComponent = CreateDefaultSubobject<ULSTeamSwitchComponent>(TEXT("TeamSwitchComponent"));
 	DriveCoreComponent = CreateDefaultSubobject<ULSDriveCoreComponent>(TEXT("DriveCoreComponent"));
+	BackpackComponent = CreateDefaultSubobject<ULSBackpackComponent>(TEXT("BackpackComponent"));
 }
 
 void ALSPlayerController::BeginPlay()
@@ -613,4 +617,142 @@ void ALSPlayerController::LSPrintStats()
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Cyan, StatSummary);
 	}
+}
+
+void ALSPlayerController::LSAddLoot(const FString& LootType)
+{
+	if (!BackpackComponent) return;
+
+	if (LootType.Equals(TEXT("Bearing"), ESearchCase::IgnoreCase))
+	{
+		// 材料：旧式降噪轴承（堆叠 100，单价 120 丁尼）
+		FLSInventoryItem Bearing = FLSInventoryItem::CreateMaterial(
+			TEXT("Item_Mat_Bearing"),
+			FText::FromString(TEXT("旧式降噪轴承")),
+			15,
+			120.0f
+		);
+		BackpackComponent->AddItem(Bearing);
+		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Cyan, TEXT("📦 拾取材料: [旧式降噪轴承] x15（可用于 Meta-Tree 加点与修枪）"));
+	}
+	else if (LootType.Equals(TEXT("Tape"), ESearchCase::IgnoreCase))
+	{
+		// 收藏品：特化加密录像带（单价 8,000 丁尼）
+		FLSInventoryItem Tape = FLSInventoryItem::CreateCollectible(
+			TEXT("Item_Col_EncryptedTape"),
+			FText::FromString(TEXT("【精密】特化加密录像带")),
+			8000.0f,
+			ELSExtractionRarity::Precision
+		);
+		BackpackComponent->AddItem(Tape);
+		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Yellow, TEXT("📼 摸到高价值收藏品: [特化加密录像带]！单价 8000 丁尼！"));
+	}
+	else if (LootType.Equals(TEXT("Record"), ESearchCase::IgnoreCase))
+	{
+		// 顶级收藏品：绝密黄金黑胶唱片（大红单价 60,000 丁尼，自动优先进安全箱！）
+		FLSInventoryItem Record = FLSInventoryItem::CreateCollectible(
+			TEXT("Item_Col_GoldenRecord"),
+			FText::FromString(TEXT("【绝密】初代黄金黑胶唱片")),
+			60000.0f,
+			ELSExtractionRarity::Classified
+		);
+		BackpackComponent->AddItem(Record, true);
+		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("📀 摸到顶级大红收藏品: [初代黄金黑胶唱片]！价值 60000 丁尼，已自动护送入安全箱！"));
+	}
+	else if (LootType.Equals(TEXT("Disc"), ESearchCase::IgnoreCase))
+	{
+		// 驱动盘装备：Slot4 致命爆发暴击盘
+		FLSDriveDisc Disc;
+		Disc.DiscID = FGuid::NewGuid();
+		Disc.DiscName = FText::FromString(TEXT("精密特化·致命爆发"));
+		Disc.Slot = ELSDriveDiscSlot::Slot4_Critical;
+		Disc.Rarity = ELSDriveDiscRarity::Precision;
+		Disc.Level = 12;
+		Disc.MainStat = FLSDriveDiscStat(ELSDriveStatType::CritRate, 0.311f);
+		Disc.SubStats.Add(FLSDriveDiscStat(ELSDriveStatType::CritDamage, 0.155f));
+		Disc.SubStats.Add(FLSDriveDiscStat(ELSDriveStatType::AttackPercent, 0.082f));
+
+		FLSInventoryItem DiscItem = FLSInventoryItem::CreateDriveDiscItem(Disc);
+		BackpackComponent->AddItem(DiscItem, false);
+		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Purple, FString::Printf(TEXT("💿 摸到驱动盘战利品: [%s]（占 1 格，不可堆叠）"), *Disc.DiscName.ToString()));
+	}
+	else if (LootType.Equals(TEXT("Blueprint"), ESearchCase::IgnoreCase))
+	{
+		// 武器原型图纸（大红，自动入安全箱）
+		FLSInventoryItem Wpn = FLSInventoryItem::CreateWeaponBlueprint(
+			TEXT("Item_Wpn_ArcSMG"),
+			FText::FromString(TEXT("【绝密】电弧连发冲锋枪原型图纸")),
+			100000.0f
+		);
+		BackpackComponent->AddItem(Wpn, true);
+		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("🔫 摸到大红武器图纸！价值 100000 丁尼，已锁定在安全箱中！"));
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::White, TEXT("用法: LS.AddLoot [Bearing / Tape / Record / Disc / Blueprint]"));
+	}
+}
+
+void ALSPlayerController::LSUpgradeBackpack()
+{
+	if (!BackpackComponent) return;
+	const int32 NewCap = BackpackComponent->UpgradeBackpackTier();
+	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("🎒 背包阶位晋级！新容量上限: %d 格！"), NewCap));
+}
+
+void ALSPlayerController::LSPrintBackpack()
+{
+	if (!BackpackComponent) return;
+
+	const float TotalVal = BackpackComponent->CalculateTotalLootValue();
+	const int32 TotalMats = BackpackComponent->GetTotalMaterialCount();
+
+	UE_LOG(LogTemp, Warning, TEXT("================ 🎒 全队战利品背包清单 ================"));
+	UE_LOG(LogTemp, Warning, TEXT("当前背包阶位: %d | 格数: %d/60 | 安全箱: %d/6"), static_cast<int32>(BackpackComponent->CurrentTier), BackpackComponent->BackpackCapacity, BackpackComponent->SecureBoxCapacity);
+	UE_LOG(LogTemp, Warning, TEXT("总身价: %.0f 丁尼 | 科技材料总数: %d"), TotalVal, TotalMats);
+
+	UE_LOG(LogTemp, Warning, TEXT("--- 🛡️ 绝密安全箱 (100%% 保底) ---"));
+	for (int32 i = 0; i < BackpackComponent->SecureBoxSlots.Num(); ++i)
+	{
+		const FLSInventoryItem& Item = BackpackComponent->SecureBoxSlots[i];
+		if (Item.IsValid())
+		{
+			UE_LOG(LogTemp, Display, TEXT("  [安全格 %d] %s x%d (估值: %.0f) [安全]"), i, *Item.DisplayName.ToString(), Item.Quantity, Item.UnitValue * Item.Quantity);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Display, TEXT("  [安全格 %d] (空)"), i);
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("--- 📦 普通战利品格 (死亡掉落) ---"));
+	for (int32 i = 0; i < BackpackComponent->BackpackSlots.Num(); ++i)
+	{
+		const FLSInventoryItem& Item = BackpackComponent->BackpackSlots[i];
+		if (Item.IsValid())
+		{
+			UE_LOG(LogTemp, Display, TEXT("  [背包格 %d] %s x%d (估值: %.0f)"), i, *Item.DisplayName.ToString(), Item.Quantity, Item.UnitValue * Item.Quantity);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Display, TEXT("  [背包格 %d] (空)"), i);
+		}
+	}
+	UE_LOG(LogTemp, Warning, TEXT("======================================================"));
+
+	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("🎒 背包状态已输出！容量: %d格 | 总身价: %.0f 丁尼"), BackpackComponent->BackpackCapacity, TotalVal));
+}
+
+void ALSPlayerController::LSSimulateDeath()
+{
+	if (!BackpackComponent) return;
+
+	TArray<FLSInventoryItem> Dropped;
+	TArray<FLSInventoryItem> Retained;
+
+	// 模拟战死（常规遗迹 0% 保留全部掉落在现场）
+	BackpackComponent->ProcessDeathDrop(0.0f, Dropped, Retained);
+
+	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, FString::Printf(TEXT("💀 就地战死！遗留在尸体标包: %d 件 | 🛡️ 安全箱绝对带回: %d 件"), Dropped.Num(), Retained.Num()));
+	UE_LOG(LogTemp, Error, TEXT("💥 战死模拟结算：现场留下 %d 堆掉落物（生成 CorpseMarker 供跑尸）；安全箱内 %d 件物品 100%% 成功保底！"), Dropped.Num(), Retained.Num());
 }

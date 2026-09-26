@@ -15,7 +15,8 @@ public class Lumi_Spark : ModuleRules
 			ModuleDirectory,
 			Path.Combine(ModuleDirectory, "Core"),
 			Path.Combine(ModuleDirectory, "Character"),
-			Path.Combine(ModuleDirectory, "Enemy")
+			Path.Combine(ModuleDirectory, "Enemy"),
+			Path.Combine(ModuleDirectory, "Extraction")
 		});
 	}
 }
