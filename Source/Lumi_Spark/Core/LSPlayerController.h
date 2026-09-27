@@ -180,6 +180,24 @@ public:
 	UFUNCTION(Exec, Category = "Extraction|Debug")
 	void LSPrintCorrosion();
 	
+	// ═══ 撤离事件客户端 RPC ═══
+	UFUNCTION(Client, Reliable)
+	void Client_OnExtractionCountdownStarted(const FText& PointName, float Duration);
+
+	UFUNCTION(Client, Reliable)
+	void Client_OnExtractionCountdownProgress(float Progress, float RemainingTime);
+
+	UFUNCTION(Client, Reliable)
+	void Client_OnExtractionCountdownCanceled();
+
+	UFUNCTION(Client, Reliable)
+	void Client_OnExtractionSuccess(const FLSRaidReport& Report);
+
+	// ═══ 撤离调试指令 ═══
+	// 模拟成功撤离并根据战区难度结算 (控制台输入: LS.SimulateExtract Low / Medium / Hard / Extreme)
+	UFUNCTION(Exec, Category = "Extraction|Debug")
+	void LSSimulateExtract(const FString& HazardStr = TEXT("Medium"));
+	
 protected:
 	//当前交互目标（由 ILSInteractableInterface 接口提供）
 	TWeakObjectPtr<AActor> CurrentInteractTarget;

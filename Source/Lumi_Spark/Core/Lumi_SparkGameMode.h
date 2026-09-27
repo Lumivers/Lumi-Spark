@@ -18,6 +18,7 @@ public:
 	
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
+	virtual void HandlePlayerExtraction(ALSPlayerController* PC, const struct FLSRaidReport& Report);
 	
 	// 权威检查所有玩家状态，若所有玩家均处于倒地或者死亡，判定团灭
 	UFUNCTION(BlueprintCallable, Category = "GameMode|Raid")

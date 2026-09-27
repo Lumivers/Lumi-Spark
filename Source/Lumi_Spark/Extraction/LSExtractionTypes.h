@@ -37,6 +37,16 @@ enum class ELSBackpackTier : uint8
 	ClassifiedTier  UMETA(DisplayName = "机密次元包 (50格, +10)")
 };
 
+// 战区侵蚀危险与战斗强度分级
+UENUM(BlueprintType)
+enum class ELSHazardDifficulty : uint8
+{
+	Low     UMETA(DisplayName = "简单 (外围低危, -1耐久)"),
+	Medium  UMETA(DisplayName = "中等 (常规探索, -1耐久)"),
+	Hard    UMETA(DisplayName = "困难 (核心裂隙, -2耐久)"),
+	Extreme UMETA(DisplayName = "高危 (终极巢穴/Boss, -3耐久)")
+};
+
 // 战利品背包单格物品实例
 USTRUCT(BlueprintType)
 struct LUMI_SPARK_API FLSInventoryItem
@@ -240,4 +250,52 @@ struct LUMI_SPARK_API FLSXenoBladeData
 	bool bRequiresBlueprint = false;
 
 	static FLSXenoBladeData GetStandardBladeConfig(EXenoBladeVariant InVariant, ELSExtractionRarity InRarity);
+};
+
+// 战局结算状态
+UENUM(BlueprintType)
+enum class ELSExtractionStatus : uint8
+{
+	Extracted       UMETA(DisplayName = "成功撤离"),
+	KilledInAction  UMETA(DisplayName = "阵亡 (KIA)"),
+	MissingInAction UMETA(DisplayName = "迷失/超时 (MIA)")
+};
+
+// 单次出击战报报告
+USTRUCT(BlueprintType)
+struct LUMI_SPARK_API FLSRaidReport
+{
+	GENERATED_BODY()
+
+	// 结算状态
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RaidReport")
+	ELSExtractionStatus Status = ELSExtractionStatus::Extracted;
+
+	// 战区危险度
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RaidReport")
+	ELSHazardDifficulty HazardLevel = ELSHazardDifficulty::Medium;
+
+	// 战局总耗时（秒）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RaidReport")
+	float RaidDurationSeconds = 0.0f;
+
+	// 成功带出的物资总估值（金币）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RaidReport")
+	float TotalExtractedValue = 0.0f;
+
+	// 成功带出的物品总格数
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RaidReport")
+	int32 ExtractedItemCount = 0;
+
+	// 本次撤离扣除的面罩耐久点数（1/1/2/3）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RaidReport")
+	int32 DurabilityDeducted = 1;
+
+	// 结算后剩余的面罩耐久点数
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RaidReport")
+	int32 RemainingMaskDurability = 0;
+
+	// 成功带出的全部物品清单（普通背包 + 安全箱）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RaidReport")
+	TArray<FLSInventoryItem> ExtractedLoot;
 };

@@ -828,3 +828,54 @@ void ALSPlayerController::LSPrintCorrosion()
 		CorrosionComponent->GetHealthRecoveryCapPercent() * 100.0f
 	));
 }
+
+void ALSPlayerController::Client_OnExtractionCountdownStarted_Implementation(const FText& PointName, float Duration)
+{
+	GEngine->AddOnScreenDebugMessage(1101, 3.0f, FColor::Cyan,
+		FString::Printf(TEXT("🚨 正在撤离 [%s] - 保持在区域内 (%.1f 秒)..."), *PointName.ToString(), Duration));
+}
+
+void ALSPlayerController::Client_OnExtractionCountdownProgress_Implementation(float Progress, float RemainingTime)
+{
+	GEngine->AddOnScreenDebugMessage(1101, 0.5f, FColor::Cyan,
+		FString::Printf(TEXT("⏳ 撤离倒计时: %.1f 秒 [%.0f%%]"), RemainingTime, Progress * 100.0f));
+}
+
+void ALSPlayerController::Client_OnExtractionCountdownCanceled_Implementation()
+{
+	GEngine->AddOnScreenDebugMessage(1101, 3.0f, FColor::Yellow, TEXT("⚠️ 离开撤离区，撤离已取消！"));
+}
+
+void ALSPlayerController::Client_OnExtractionSuccess_Implementation(const FLSRaidReport& Report)
+{
+	GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Green,
+		FString::Printf(TEXT("🎉 撤离成功！带出物资估值: %.0f 金币 | 抗蚀耐久: -%d (剩余 %d) | 物品数: %d"),
+			Report.TotalExtractedValue, Report.DurabilityDeducted, Report.RemainingMaskDurability, Report.ExtractedItemCount));
+
+	SwitchToUIInputMode();
+	if (APawn* ControlledPawn = GetPawn())
+	{
+		ControlledPawn->DisableInput(this);
+	}
+}
+
+void ALSPlayerController::LSSimulateExtract(const FString& HazardStr)
+{
+	ELSHazardDifficulty Hazard = ELSHazardDifficulty::Medium;
+	if (HazardStr.Equals(TEXT("Low"), ESearchCase::IgnoreCase)) Hazard = ELSHazardDifficulty::Low;
+	else if (HazardStr.Equals(TEXT("Hard"), ESearchCase::IgnoreCase)) Hazard = ELSHazardDifficulty::Hard;
+	else if (HazardStr.Equals(TEXT("Extreme"), ESearchCase::IgnoreCase)) Hazard = ELSHazardDifficulty::Extreme;
+
+	if (CorrosionComponent)
+	{
+		CorrosionComponent->ApplyRaidDurabilityDeduction(Hazard);
+	}
+
+	const float TotalVal = BackpackComponent ? BackpackComponent->CalculateTotalLootValue() : 0.0f;
+	const int32 ItemCount = BackpackComponent ? (BackpackComponent->BackpackSlots.Num() + BackpackComponent->SecureBoxSlots.Num()) : 0;
+	const int32 RemainingDur = CorrosionComponent ? CorrosionComponent->CurrentMaskDurability : 0;
+
+	GEngine->AddOnScreenDebugMessage(-1, 6.0f, FColor::Green,
+		FString::Printf(TEXT("✅ [模拟撤离] 难度: %s | 估值: %.0f | 剩余面罩耐久: %d | 物品格: %d"),
+			*HazardStr, TotalVal, RemainingDur, ItemCount));
+}

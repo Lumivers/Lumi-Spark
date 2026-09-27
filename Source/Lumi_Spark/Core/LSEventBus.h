@@ -24,6 +24,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSPlayerRevived, AActor*, Revive
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnLSRaidWiped);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSShieldBroken, AActor*, Target, FGameplayTag, ShieldElement);
 
+// 5, 搜打撤出击结算事件委托
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSPlayerExtracted, APlayerController*, Controller, const FLSRaidReport&, RaidReport);
+
 UCLASS()
 class LUMI_SPARK_API ULSEventBus : public UGameInstanceSubsystem
 {
@@ -66,4 +69,7 @@ public:
 	
 	UPROPERTY(BlueprintAssignable, Category = "Events|Coop")
 	FOnLSShieldBroken OnShieldBroken;
+	
+	UPROPERTY(BlueprintAssignable, Category = "Events|Extraction")
+	FOnLSPlayerExtracted OnPlayerExtracted;
 };

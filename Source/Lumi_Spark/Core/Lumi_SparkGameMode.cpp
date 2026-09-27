@@ -4,6 +4,7 @@
 #include "Character/LSCharacterBase.h"
 #include "Character/LSTeamSwitchComponent.h"
 #include "Core/LSEventBus.h"
+#include "Extraction/LSExtractionTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "Weapon/LSGrenadeBase.h"
 
@@ -11,7 +12,7 @@ ALumi_SparkGameMode::ALumi_SparkGameMode()
 {
 	//指定默认玩家控制器
 	PlayerControllerClass = ALSPlayerController::StaticClass();
-	GameStateClass = ALSGrenadeBase::StaticClass();
+	GameStateClass = ALSGameState::StaticClass();
 	DefaultPawnClass = nullptr;
 }
 
@@ -91,4 +92,15 @@ void ALumi_SparkGameMode::HandleRaidWipe()
 	}
 	
 	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("⚠️ 团灭！"));
+}
+
+void ALumi_SparkGameMode::HandlePlayerExtraction(ALSPlayerController* PC, const FLSRaidReport& Report)
+{
+	if (!PC) return;
+
+	UE_LOG(LogTemp, Display, TEXT("[GameMode] 玩家 %s 撤离成功！带出物品价值: %.0f, 剩余面罩耐久: %d"),
+		*PC->GetName(), Report.TotalExtractedValue, Report.RemainingMaskDurability);
+
+	// 若全员都已撤离或死亡，可触发全局战局结束
+	CheckRaidWipeCondition();
 }

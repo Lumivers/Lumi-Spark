@@ -7,16 +7,6 @@
 
 class ALSCharacterBase;
 
-// 地脉危险与战斗强度分级
-UENUM(BlueprintType)
-enum class ELSHazardDifficulty : uint8
-{
-	Low     UMETA(DisplayName = "简单 (外围低危, -1耐久)"),
-	Medium  UMETA(DisplayName = "中等 (常规探索, -1耐久)"),
-	Hard    UMETA(DisplayName = "困难 (核心裂隙, -2耐久)"),
-	Extreme UMETA(DisplayName = "高危 (终极巢穴/Boss, -3耐久)")
-};
-
 // ─── 委托声明 ───
 // 侵蚀度与面罩数据刷新（供局内 HUD 与暗角后处理绑定）
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLSCorrosionUpdated, float, CurrentCorrosion, float, MaxCorrosion, int32, MaskDurability);
