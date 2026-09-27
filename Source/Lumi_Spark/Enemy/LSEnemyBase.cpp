@@ -95,26 +95,38 @@ bool ALSEnemyBase::ExecuteXenoBlade(AActor* Interactor)
 {
 	if (!HasAuthority()) return false;
 	if (bIsDead || !HealthComponent || HealthComponent->IsDead()) return false;
-	
+
 	// 1. 瞬碎所有元素护盾
 	if (ShieldComponent)
 	{
 		ShieldComponent->ShatterAllShields();
 	}
-	
-	// 2. 扣除 75% 最大生命值
+
+	// 2. 根据怪物品级确定处决伤害（普通小怪 100% / 精英怪 50% / Boss 25%）
+	float DamageRatio = 1.0f; // 默认普通小怪 100% 斩杀
+	if (EnemyDataAsset)
+	{
+		if (EnemyDataAsset->EnemyIDTag == LSTags::TAG_Enemy_Type_Boss || ActiveGameplayTags.HasTag(LSTags::TAG_Enemy_Type_Boss))
+		{
+			DamageRatio = 0.25f; // 首领 Boss 25%
+		}
+		else if (EnemyDataAsset->EnemyIDTag == LSTags::TAG_Enemy_Type_Elite || ActiveGameplayTags.HasTag(LSTags::TAG_Enemy_Type_Elite))
+		{
+			DamageRatio = 0.50f; // 精英怪 50%
+		}
+	}
+
 	const float MaxHP = HealthComponent->GetMaxHealth();
-	const float ExecutionDamage = MaxHP * BackstabDamageRatio;
-	
-	// 处决伤害划归为技能真伤类型（透穿肉身）
+	const float ExecutionDamage = MaxHP * DamageRatio;
+
+	// 3. 造成技能穿透伤害
 	HealthComponent->TakeDamage(ExecutionDamage, LSTags::TAG_Damage_Type_Skill, Interactor, Interactor ? Interactor->GetInstigatorController() : nullptr);
-	
-	// 3. 广播处决事件
+
 	OnXenoBladeExecuted.Broadcast(this, Interactor, ExecutionDamage);
-	
-	// 4. 调试反馈
-	GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Red, FString::Printf(TEXT("🗡️ 【异体刃处决】成功！对 %s 造成 %.0f 点真实伤害（75%% 最大生命），全层元素护盾瞬间粉碎！"), *GetName(), ExecutionDamage));
-	
+
+	FString RankName = DamageRatio >= 1.0f ? TEXT("普通小怪") : (DamageRatio >= 0.5f ? TEXT("精英怪") : TEXT("首领Boss"));
+	GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Red, FString::Printf(TEXT("【战术处决】对【%s】造成 %.0f 真实伤害（%.0f%% 生命），护盾已破除！"), *RankName, ExecutionDamage, DamageRatio * 100.0f));
+
 	return true;
 }
 

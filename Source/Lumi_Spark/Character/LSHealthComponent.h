@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -46,6 +46,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|Health")
 	float GetMaxHealth() const { return MaxHealth; }
 
+	// 获取受侵蚀压制后的实际生效生命上限（最大生命 * 上限比例）
+	UFUNCTION(BlueprintPure, Category = "Combat|Health")
+	float GetEffectiveMaxHealth() const { return MaxHealth * HealthCapRatio; }
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Health")
+	float GetHealthCapRatio() const { return HealthCapRatio; }
+
+	// 动态设置生命恢复上限比例（由侵蚀系统调用）
+	UFUNCTION(BlueprintCallable, Category = "Combat|Health")
+	void SetHealthCapRatio(float InRatio);
+
 	UFUNCTION(BlueprintPure, Category = "Combat|Health")
 	float GetHealthPercent() const { return MaxHealth > 0.0f ? (CurrentHealth / MaxHealth) : 0.0f; }
 
@@ -71,6 +82,10 @@ protected:
 
 	UPROPERTY(Replicated, EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Health", meta = (ClampMin = "1.0"))
 	float MaxHealth = 1000.0f;
+
+	// 生命恢复上限压制比例 [0.1, 1.0]（受地脉侵蚀压制）
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Health")
+	float HealthCapRatio = 1.0f;
 
 	UPROPERTY(ReplicatedUsing = OnRep_IsDead, VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Health")
 	bool bIsDead = false;

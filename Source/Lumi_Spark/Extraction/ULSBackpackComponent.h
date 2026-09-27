@@ -96,6 +96,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Backpack|Extraction")
 	void ClearBackpack();
 	
+	// 局外图纸学习与制造工厂
+
+	// 已掌握的图纸 ID 库（学习制：学会后永久可做）
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Backpack|Crafting")
+	TSet<FName> LearnedBlueprints;
+
+	// 学习图纸：消耗背包中的一张图纸物品，永久解锁该配方
+	UFUNCTION(BlueprintCallable, Category = "Backpack|Crafting")
+	bool LearnBlueprint(FName BlueprintItemID);
+
+	// 查询某图纸是否已掌握
+	UFUNCTION(BlueprintPure, Category = "Backpack|Crafting")
+	bool IsBlueprintLearned(FName BlueprintItemID) const { return LearnedBlueprints.Contains(BlueprintItemID); }
+
+	// 制造工厂生产接口：校验图纸与材料，扣除材料并产出全新装备
+	UFUNCTION(BlueprintCallable, Category = "Backpack|Crafting")
+	bool CraftItemFromRecipe(const FLSCraftingRecipe& Recipe);
+
+	// 非正常撤离/战死清空（只保留安全箱，普通背包全部清空）
+	UFUNCTION(BlueprintCallable, Category = "Backpack|Extraction")
+	void ProcessFailedExtraction(TArray<FLSInventoryItem>& OutDroppedLoot);
+	
 protected:
 	virtual void BeginPlay() override;
 	

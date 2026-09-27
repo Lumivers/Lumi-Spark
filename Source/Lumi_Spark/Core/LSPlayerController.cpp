@@ -797,7 +797,7 @@ void ALSPlayerController::LSAddCorrosion(float Amount)
 		CorrosionComponent->bIsOverloaded = true;
 		CorrosionComponent->OnCorrosionOverloadChanged.Broadcast(true);
 	}
-	CorrosionComponent->OnCorrosionUpdated.Broadcast(CorrosionComponent->CurrentCorrosion, CorrosionComponent->MaxCorrosion, CorrosionComponent->CurrentFilterDurability);
+	CorrosionComponent->OnCorrosionUpdated.Broadcast(CorrosionComponent->CurrentCorrosion, CorrosionComponent->MaxCorrosion, CorrosionComponent->CurrentMaskDurability);
 	GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Yellow, FString::Printf(TEXT("🧪 [Debug] 侵蚀度已增加 %.1f -> 当前: %.1f%% (过载: %s)"), Amount, CorrosionComponent->CurrentCorrosion, CorrosionComponent->bIsOverloaded ? TEXT("是") : TEXT("否")));
 }
 
@@ -813,18 +813,18 @@ void ALSPlayerController::LSInstallFilter(float Durability)
 {
 	if (CorrosionComponent)
 	{
-		CorrosionComponent->InstallFilter(Durability > 0.0f ? Durability : 120.0f);
+		CorrosionComponent->EquipNewMask(FMath::RoundToInt(Durability > 0.0f ? Durability : 10.0f));
 	}
 }
 
 void ALSPlayerController::LSPrintCorrosion()
 {
 	if (!CorrosionComponent) return;
-	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, FString::Printf(TEXT("═══ 地脉侵蚀监控 ═══\n侵蚀度: %.1f / %.1f (%.0f%%)\n滤芯耐久: %.1f 秒 (状态: %s)\n过载状态: %s\n视效暗角强度: %.2f\n机动移速倍率: %.2fx"),
+	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, FString::Printf(TEXT("═══ 地脉侵蚀监控 ═══\n侵蚀度: %.1f / %.1f (%.0f%%)\n面罩耐久: %d / %d 点 (状态: %s)\n过载状态: %s\n暗角强度: %.2f\n生命回复上限: %.0f%%"),
 		CorrosionComponent->CurrentCorrosion, CorrosionComponent->MaxCorrosion, CorrosionComponent->GetCorrosionPercent() * 100.0f,
-		CorrosionComponent->CurrentFilterDurability, CorrosionComponent->HasActiveFilter() ? TEXT("正常防护") : TEXT("耗尽加速"),
-		CorrosionComponent->bIsOverloaded ? TEXT("🚨 过载中 (扣血+减速)") : TEXT("正常"),
+		CorrosionComponent->CurrentMaskDurability, CorrosionComponent->GetMaxMaskDurability(), CorrosionComponent->HasActiveMask() ? TEXT("完好防护") : TEXT("已报废/跑刀"),
+		CorrosionComponent->bIsOverloaded ? TEXT("🚨 过载中 (扣血+上限压制)") : TEXT("正常"),
 		CorrosionComponent->GetVignetteIntensity(),
-		CorrosionComponent->GetCorrosionSpeedMultiplier()
+		CorrosionComponent->GetHealthRecoveryCapPercent() * 100.0f
 	));
 }

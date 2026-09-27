@@ -1,4 +1,4 @@
-﻿#include "Character/LSHealthComponent.h"
+#include "Character/LSHealthComponent.h"
 #include "Combat/LSShieldComponent.h"
 #include "Net/UnrealNetwork.h"
 
@@ -22,6 +22,7 @@ void ULSHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 
 	DOREPLIFETIME(ULSHealthComponent, CurrentHealth);
 	DOREPLIFETIME(ULSHealthComponent, MaxHealth);
+	DOREPLIFETIME(ULSHealthComponent, HealthCapRatio);
 	DOREPLIFETIME(ULSHealthComponent, bIsDead);
 }
 
@@ -36,9 +37,10 @@ void ULSHealthComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 	TimeSinceLastDamage += DeltaTime;
 
-	if (RegenRate > 0.0f && TimeSinceLastDamage >= RegenDelay && CurrentHealth < MaxHealth)
+	const float EffectiveMax = GetEffectiveMaxHealth();
+	if (RegenRate > 0.0f && TimeSinceLastDamage >= RegenDelay && CurrentHealth < EffectiveMax)
 	{
-		const float Restored = FMath::Min(RegenRate * DeltaTime, MaxHealth - CurrentHealth);
+		const float Restored = FMath::Min(RegenRate * DeltaTime, EffectiveMax - CurrentHealth);
 		if (Restored > 0.0f)
 		{
 			CurrentHealth += Restored;
@@ -98,13 +100,14 @@ float ULSHealthComponent::TakeDamage(float DamageAmount, FGameplayTag DamageElem
 
 float ULSHealthComponent::Heal(float HealAmount)
 {
-	if (bIsDead || HealAmount <= 0.0f || CurrentHealth >= MaxHealth)
+	const float EffectiveMax = GetEffectiveMaxHealth();
+	if (bIsDead || HealAmount <= 0.0f || CurrentHealth >= EffectiveMax)
 	{
 		return 0.0f;
 	}
 
 	const float OldHealth = CurrentHealth;
-	CurrentHealth = FMath::Clamp(CurrentHealth + HealAmount, 0.0f, MaxHealth);
+	CurrentHealth = FMath::Clamp(CurrentHealth + HealAmount, 0.0f, EffectiveMax);
 	const float ActualHealed = CurrentHealth - OldHealth;
 
 	if (ActualHealed > 0.0f)
@@ -118,6 +121,17 @@ float ULSHealthComponent::Heal(float HealAmount)
 	}
 
 	return ActualHealed;
+}
+
+void ULSHealthComponent::SetHealthCapRatio(float InRatio)
+{
+	HealthCapRatio = FMath::Clamp(InRatio, 0.10f, 1.0f);
+	const float EffectiveMax = GetEffectiveMaxHealth();
+	if (CurrentHealth > EffectiveMax)
+	{
+		CurrentHealth = EffectiveMax;
+		OnHealthChanged.Broadcast(CurrentHealth, MaxHealth, true);
+	}
 }
 
 void ULSHealthComponent::InitializeHealth(float InMaxHealth, float InCurrentHealth)

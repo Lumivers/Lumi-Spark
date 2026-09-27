@@ -75,3 +75,91 @@ FLSInventoryItem FLSInventoryItem::CreateWeaponBlueprint(FName InID, const FText
 	Item.UnitValue = InValue;
 	return Item;
 }
+
+FLSAntiCorrosionGearData FLSAntiCorrosionGearData::GetStandardConfig(ELSExtractionRarity InRarity)
+{
+	FLSAntiCorrosionGearData Data;
+	Data.Rarity = InRarity;
+
+	switch (InRarity)
+	{
+	case ELSExtractionRarity::Standard: // 绿
+		Data.MaxDurability = 4;
+		Data.CorrosionMitigation = 0.10f; // -10%
+		Data.DamageMitigation = 0.10f;    // -10%
+		Data.bRequiresBlueprint = false;  // 工坊直接制造
+		break;
+
+	case ELSExtractionRarity::Specialized: // 蓝
+		Data.MaxDurability = 6;
+		Data.CorrosionMitigation = 0.25f; // -25%
+		Data.DamageMitigation = 0.20f;    // -20%
+		Data.bRequiresBlueprint = false;  // 工坊直接制造
+		break;
+
+	case ELSExtractionRarity::Precision: // 紫
+		Data.MaxDurability = 8;
+		Data.CorrosionMitigation = 0.40f; // -40%
+		Data.DamageMitigation = 0.30f;    // -30%
+		Data.bRequiresBlueprint = true;   // 需图纸 (Lv.3工坊)
+		break;
+
+	case ELSExtractionRarity::Classified: // 金
+	case ELSExtractionRarity::Unique:     // 红（若有）
+	default:
+		Data.MaxDurability = 10;
+		Data.CorrosionMitigation = 0.55f; // -55%
+		Data.DamageMitigation = 0.45f;    // -45%
+		Data.bRequiresBlueprint = true;   // 需图纸 (幻境探索掉落)
+		break;
+	}
+	return Data;
+}
+
+FLSXenoBladeData FLSXenoBladeData::GetStandardBladeConfig(EXenoBladeVariant InVariant, ELSExtractionRarity InRarity)
+{
+	FLSXenoBladeData Data;
+	Data.Variant = InVariant;
+	Data.Rarity = InRarity;
+
+	// 耐久与图纸门槛
+	switch (InRarity)
+	{
+	case ELSExtractionRarity::Standard:
+		Data.MaxDurability = 4;
+		Data.bRequiresBlueprint = false;
+		break;
+	case ELSExtractionRarity::Specialized:
+		Data.MaxDurability = 6;
+		Data.bRequiresBlueprint = false;
+		break;
+	case ELSExtractionRarity::Precision:
+		Data.MaxDurability = 8;
+		Data.bRequiresBlueprint = true;
+		break;
+	case ELSExtractionRarity::Classified:
+	case ELSExtractionRarity::Unique:
+	default:
+		Data.MaxDurability = 10;
+		Data.bRequiresBlueprint = true;
+		break;
+	}
+
+	// 词条强化判定（紫/金生效）
+	if (InVariant == EXenoBladeVariant::HeavySlash)
+	{
+		Data.ExtraDamageRatio = 0.50f;
+		Data.FrontalExecutionChance = (InRarity >= ELSExtractionRarity::Classified) ? 0.75f : ((InRarity == ELSExtractionRarity::Precision) ? 0.35f : 0.0f);
+	}
+	else if (InVariant == EXenoBladeVariant::Parry)
+	{
+		Data.CleansedCorrosionRatio = 0.30f;
+		Data.TeamHealPercent = (InRarity >= ELSExtractionRarity::Classified) ? 0.10f : 0.05f;
+	}
+	else if (InVariant == EXenoBladeVariant::PhaseDash)
+	{
+		Data.ShieldShredBonus = (InRarity >= ELSExtractionRarity::Classified) ? 0.50f : 0.30f;
+	}
+
+	return Data;
+}
