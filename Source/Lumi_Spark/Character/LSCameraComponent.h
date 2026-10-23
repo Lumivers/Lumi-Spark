@@ -57,6 +57,20 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category="Camera")
 	void ToggleCameraMode();//循环切换一三人称
+
+	// 滚轮缩放第三人称视角臂长
+	UFUNCTION(BlueprintCallable, Category="Camera")
+	void AdjustCameraZoom(float ZoomDelta);
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|TPS")
+	float MinArmLength = 120.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|TPS")
+	float MaxArmLength = 550.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|TPS")
+	float ZoomStep = 35.f;
+
 	
 	UFUNCTION(BlueprintCallable, Category="Camera")
 	void EnterADS();//开镜/进入过肩瞄准
@@ -81,8 +95,9 @@ public:
 	
 private:
 	ELSCameraMode PreADSMode = ELSCameraMode::ThirdPerson;
-	float TargetArmLength = 300.0f;
-	FVector TargetSocketOffset = FVector(0.0f, 50.0f, 15.0f);
+	float TargetArmLength = 280.0f;
+	float CustomTPSArmLength = 280.0f;
+	FVector TargetSocketOffset = FVector(0.0f, 50.0f, 65.0f);
 	bool bIsInADS = false;
 	float TargetFov = 80.f;
 	

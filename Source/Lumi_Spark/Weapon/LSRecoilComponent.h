@@ -55,6 +55,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Modifier", meta = (ClampMin = "0.0"))
 	float RecoilMultiplier = 1.0f;
 	
+	//最大垂直累计后坐力天花板（度），达到后垂直不再上抬，防止视角升空
+	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Modifier", meta = (ClampMin = "0.0"))
+	float MaxVerticalPitch = 6.5f;
+	
 	//开镜瞄准时的后坐力倍率（默认减小30抖动）
 	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Modifier", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float ADSRecoilMultiplier = 0.7f;

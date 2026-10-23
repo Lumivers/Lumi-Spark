@@ -9,7 +9,7 @@ public class Lumi_Spark : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags", "UMG", "Slate", "SlateCore", "AnimGraphRuntime", "AIModule", "GameplayTasks", "NavigationSystem" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags", "UMG", "Slate", "SlateCore", "AnimGraphRuntime", "AIModule", "GameplayTasks", "NavigationSystem", "Niagara" });
 		
 		PublicIncludePaths.AddRange(new string[] {
 			ModuleDirectory,

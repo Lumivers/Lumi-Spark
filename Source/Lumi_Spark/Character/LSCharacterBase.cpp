@@ -12,6 +12,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "TimerManager.h"
 #include "Weapon/LSThrowableComponent.h"
 
@@ -21,9 +22,24 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = true;
 
-	// 摄像机与手臂装配
+	// 解绑角色与镜头朝向：平时镜头自由旋转，不强行随鼠标转向
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+
+	// 弹簧臂组件装配（原生驱动第三人称与过肩瞄准臂长及偏移）
+	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->SetupAttachment(GetCapsuleComponent());
+	CameraBoom->TargetArmLength = 300.0f;
+	CameraBoom->bUsePawnControlRotation = true; // 随 Controller 旋转
+	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->SocketOffset = FVector(0.0f, 50.0f, 65.0f); // 默认右肩偏移
+
+	// 摄像机挂载至弹簧臂末端 Socket
 	CameraComponent = CreateDefaultSubobject<ULSCameraComponent>(TEXT("LSCameraComp"));
-	CameraComponent->SetupAttachment(GetCapsuleComponent());
+	CameraComponent->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+	CameraComponent->bUsePawnControlRotation = false; // 自身不自转，随弹簧臂
+	CameraComponent->SpringArm = CameraBoom;
 	
 	FPArmsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FPArmsMesh"));
 	FPArmsMesh->SetupAttachment(CameraComponent);

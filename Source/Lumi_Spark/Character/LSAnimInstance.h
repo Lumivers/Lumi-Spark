@@ -72,6 +72,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
 	bool bIsAiming = false;
 
+	// 是否处于开火射击状态 (鼠标左键开火)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
+	bool bIsFiring = false;
+
 	//视口仰俯角 (-90° ~ 90°)，用于 AimOffset 瞄准偏移
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
 	float AimPitch = 0.0f;
@@ -79,4 +83,23 @@ protected:
 	//视口偏航相对角 (-180° ~ 180°)，用于 AimOffset 瞄准偏移
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
 	float AimYaw = 0.0f;
+
+	// ═══ 武器与左手逆运动学 (Left Hand IK) ═══
+
+	// 左手吸附目标变换（在角色 Mesh 的组件空间 Component Space，直接连入 TwoBoneIK）
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "IK")
+	FTransform LeftHandIKTransform = FTransform::Identity;
+
+	// 左手吸附位置向量（方便蓝图直接连线）
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "IK")
+	FVector LeftHandIKLocation = FVector::ZeroVector;
+
+	// 左手吸附旋转量
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "IK")
+	FRotator LeftHandIKRotation = FRotator::ZeroRotator;
+
+	// 是否激活左手 IK 权重（当前武器有 LeftHandSocket 则平滑为 1.0，否则为 0.0）
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "IK")
+	float LeftHandIKAlpha = 0.0f;
 };
+

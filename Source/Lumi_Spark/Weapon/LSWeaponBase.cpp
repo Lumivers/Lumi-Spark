@@ -2,6 +2,10 @@
 #include "Weapon/LSRecoilComponent.h"
 #include "Core/LSEventBus.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
+#include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
@@ -55,7 +59,10 @@ void ALSWeaponBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	
-	//未开火时平滑恢复散布
+	// 每帧物理回正程序化枪身物理后坐力回冲
+	UpdateProceduralRecoilKick(DeltaTime);
+
+	// 未开火时平滑恢复散布
 	if (!bIsFiring && CurrentSpread > BaseSpread)
 	{
 		CurrentSpread = FMath::FInterpTo(CurrentSpread, BaseSpread, DeltaTime, SpreadRecoveryRate);
@@ -64,12 +71,25 @@ void ALSWeaponBase::Tick(float DeltaTime)
 
 void ALSWeaponBase::StartFire()
 {
+	bWantsToFire = true;
+
 	if (!CanFire())
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("❌ CanFire 失败！Ammo=%d, Reloading=%d"), CurrentAmmo, (int32)bIsReloading));
-		if (CurrentAmmo <= 0 && CanReload())
+		if (bIsReloading)
 		{
-			Reload();
+			GEngine->AddOnScreenDebugMessage(-1, 0.5f, FColor::Yellow, TEXT("⏳ 正在换弹中..."));
+		}
+		else if (CurrentAmmo <= 0)
+		{
+			if (CanReload())
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Orange, TEXT("⚠️ 弹匣已空，正在自动换弹..."));
+				Reload();
+			}
+			else
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("❌ 备弹彻底耗尽！已无弹药！"));
+			}
 		}
 		return;
 	}
@@ -80,19 +100,20 @@ void ALSWeaponBase::StartFire()
 		RecoilComponent->StartRecoil();
 	}
 	
-	//执行射击逻辑
+	// 执行单发或首发送发射击
 	FireOnce();
 	
-	//全自动模式下启动循环定时器
+	// 全自动模式下启动循环定时器
 	if (FireMode == ELSFireMode::FullAuto && FireRate > 0.f)
 	{
-		const float TimeBetweenShots = 60.f / FireRate; //每分钟射速转换为每秒间隔
+		const float TimeBetweenShots = 60.f / FireRate;
 		GetWorldTimerManager().SetTimer(FireTimerHandle, this, &ALSWeaponBase::FireOnce, TimeBetweenShots, true);
 	}
 }
 
 void ALSWeaponBase::StopFire()
 {
+	bWantsToFire = false;
 	bIsFiring = false;
 	GetWorldTimerManager().ClearTimer(FireTimerHandle);
 	
@@ -106,20 +127,29 @@ void ALSWeaponBase::FireOnce()
 {
 	if (!CanFire())
 	{
-		StopFire();
+		GetWorldTimerManager().ClearTimer(FireTimerHandle);
+		bIsFiring = false;
 		if (CurrentAmmo <= 0 && CanReload())
 		{
+			GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Orange, TEXT("⚠️ 弹药打光，自动触发换弹！"));
 			Reload();
 		}
 		return;
 	}
 	
-	//1，计算是否开镜与双段射线端点
+	// 1. 开火时角色的面向对齐 Controller Yaw（确保腰射与连发时身体正对准星，枪口正对目标）
 	FVector MuzzleLocation;
 	FVector TraceEnd;
 	bool bIsADS = false;
 	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
 	{
+		if (AController* PC = OwnerChar->GetController())
+		{
+			FRotator DesiredRot = OwnerChar->GetActorRotation();
+			DesiredRot.Yaw = PC->GetControlRotation().Yaw;
+			OwnerChar->SetActorRotation(DesiredRot);
+		}
+
 		if (ULSCameraComponent* Cam = OwnerChar->GetCameraComponent())
 		{
 			bIsADS = Cam->IsADS();
@@ -131,12 +161,12 @@ void ALSWeaponBase::FireOnce()
 		return;
 	}
 	
-	// 2，本地先行表现
+	// 2. 本地先行视听与后坐力回冲表现
 	PlayLocalFireEffects(bIsADS);
 	PlayTracerEffect(MuzzleLocation, TraceEnd);
 	
-	// 客户端本地先行预测扣弹
-	if (!HasAuthority())
+	// 客户端本地先行预测扣弹（无限弹药模式下不扣）
+	if (!HasAuthority() && !bInfiniteAmmo)
 	{
 		CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
 		OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
@@ -154,10 +184,39 @@ void ALSWeaponBase::PlayLocalFireEffects(bool bIsADS)
 		UGameplayStatics::PlaySoundAtLocation(GetWorld(), FireSound, GetActorLocation());
 	}
 	
-	// 播放枪口火光粒子
-	if (MuzzleFlashEmitter && WeaponMesh)
+	// 播放枪口火光粒子（优先 Niagara，备用 Cascade，自适应挂载组件与插槽）
+	FName MatchedSocket = NAME_None;
+	USceneComponent* AttachComp = GetMuzzleAttachComponent(MatchedSocket);
+	FTransform MuzzleTransform;
+	GetMuzzleTransform(MuzzleTransform);
+
+	if (MuzzleFlashNiagara)
 	{
-		UGameplayStatics::SpawnEmitterAttached(MuzzleFlashEmitter, WeaponMesh, MuzzleSocketName, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget);
+		UNiagaraComponent* MuzzleNC = nullptr;
+		if (AttachComp && MatchedSocket != NAME_None)
+		{
+			MuzzleNC = UNiagaraFunctionLibrary::SpawnSystemAttached(MuzzleFlashNiagara, AttachComp, MatchedSocket, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
+		}
+		else
+		{
+			MuzzleNC = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), MuzzleFlashNiagara, MuzzleTransform.GetLocation(), MuzzleTransform.Rotator());
+		}
+		if (MuzzleNC)
+		{
+			MuzzleNC->SetVariableBool(FName("User.Trigger"), true);
+			MuzzleNC->Activate(true);
+		}
+	}
+	else if (MuzzleFlashEmitter)
+	{
+		if (AttachComp && MatchedSocket != NAME_None)
+		{
+			UGameplayStatics::SpawnEmitterAttached(MuzzleFlashEmitter, AttachComp, MatchedSocket, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget);
+		}
+		else
+		{
+			UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), MuzzleFlashEmitter, MuzzleTransform.GetLocation(), MuzzleTransform.Rotator());
+		}
 	}
 	
 	// 播放角色全身开火动作蒙太奇
@@ -177,10 +236,13 @@ void ALSWeaponBase::PlayLocalFireEffects(bool bIsADS)
 		}
 	}
 	
+	// 触发枪身程序化机械后坐力回冲与枪口上跳抖动！
+	ApplyProceduralRecoilKick();
+
 	// 后坐力与动态散布增长
 	if (RecoilComponent)
 	{
-		RecoilComponent->ApplyRecoil();
+		RecoilComponent->ApplyRecoil(bIsADS);
 	}
 	CurrentSpread = FMath::Min(CurrentSpread + SpreadIncreasePerShot, MaxSpread);
 	
@@ -198,8 +260,11 @@ void ALSWeaponBase::Server_Fire_Implementation(const FVector_NetQuantize& Muzzle
 {
 	if (!CanFire()) return;
 	
-	// 1，服务端权威扣除弹药
-	CurrentAmmo--;
+	// 1，服务端权威扣除弹药（无限弹药模式下不扣）
+	if (!bInfiniteAmmo)
+	{
+		CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
+	}
 	
 	// 广播通知本地HUD刷新弹药数字
 	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
@@ -239,14 +304,44 @@ void ALSWeaponBase::Multicast_FireEffects_Implementation(const FVector_NetQuanti
 		}
 	}
 	
-	//其他远端客户端播放枪声与火光
+	// 其他远端客户端播放枪声与火光
 	if (FireSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(GetWorld(), FireSound, GetActorLocation());
 	}
-	if (MuzzleFlashEmitter && WeaponMesh)
+
+	FName MatchedSocket = NAME_None;
+	USceneComponent* AttachComp = GetMuzzleAttachComponent(MatchedSocket);
+	FTransform MuzzleTransform;
+	GetMuzzleTransform(MuzzleTransform);
+
+	if (MuzzleFlashNiagara)
 	{
-		UGameplayStatics::SpawnEmitterAttached(MuzzleFlashEmitter, WeaponMesh, MuzzleSocketName, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget);
+		UNiagaraComponent* MuzzleNC = nullptr;
+		if (AttachComp && MatchedSocket != NAME_None)
+		{
+			MuzzleNC = UNiagaraFunctionLibrary::SpawnSystemAttached(MuzzleFlashNiagara, AttachComp, MatchedSocket, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
+		}
+		else
+		{
+			MuzzleNC = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), MuzzleFlashNiagara, MuzzleTransform.GetLocation(), MuzzleTransform.Rotator());
+		}
+		if (MuzzleNC)
+		{
+			MuzzleNC->SetVariableBool(FName("User.Trigger"), true);
+			MuzzleNC->Activate(true);
+		}
+	}
+	else if (MuzzleFlashEmitter)
+	{
+		if (AttachComp && MatchedSocket != NAME_None)
+		{
+			UGameplayStatics::SpawnEmitterAttached(MuzzleFlashEmitter, AttachComp, MatchedSocket, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget);
+		}
+		else
+		{
+			UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), MuzzleFlashEmitter, MuzzleTransform.GetLocation(), MuzzleTransform.Rotator());
+		}
 	}
 	
 	// 播放子弹曳光和枪口粒子
@@ -410,22 +505,37 @@ void ALSWeaponBase::FinishReload()
 	bIsReloading = false;
 	
 	const int32 AmmoNeeded = MagazineSize - CurrentAmmo;
-	const int32 AmmoToLoad = FMath::Min(AmmoNeeded, CurrentReserveAmmo);
+	const int32 AmmoToLoad = bInfiniteAmmo ? AmmoNeeded : FMath::Min(AmmoNeeded, CurrentReserveAmmo);
 	
 	CurrentAmmo += AmmoToLoad;
-	CurrentReserveAmmo -= AmmoToLoad;
+	if (!bInfiniteAmmo)
+	{
+		CurrentReserveAmmo -= AmmoToLoad;
+	}
 	
+	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("✅ 换弹完成！当前弹药: %d / %s"), CurrentAmmo, bInfiniteAmmo ? TEXT("∞") : *FString::FromInt(CurrentReserveAmmo)));
+
 	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
 	OnReloadEnd.Broadcast();
+
+	// 如果换弹前玩家一直长按开火键，换弹完成后自动无缝继续全自动射击！
+	if (bWantsToFire && CanFire() && FireMode == ELSFireMode::FullAuto)
+	{
+		bIsFiring = true;
+		FireOnce();
+		const float TimeBetweenShots = 60.f / FireRate;
+		GetWorldTimerManager().SetTimer(FireTimerHandle, this, &ALSWeaponBase::FireOnce, TimeBetweenShots, true);
+	}
 }
+
 bool ALSWeaponBase::CanFire() const
 {
-	return !bIsReloading && CurrentAmmo > 0;
+	return !bIsReloading && (bInfiniteAmmo || CurrentAmmo > 0);
 }
 
 bool ALSWeaponBase::CanReload() const
 {
-	return !bIsReloading && CurrentAmmo < MagazineSize && CurrentReserveAmmo > 0;
+	return !bIsReloading && CurrentAmmo < MagazineSize && (bInfiniteAmmo || CurrentReserveAmmo > 0);
 }
 
 float ALSWeaponBase::CalculateDamageDropoff(float Distance) const
@@ -442,50 +552,69 @@ bool ALSWeaponBase::CalculateTraceEndpoints(FVector& OutMuzzleLoc, FVector& OutT
 	ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
 	if (!OwnerChar) return false;
 	
-	// 1. 枪口起点位置
-	OutMuzzleLoc = WeaponMesh->DoesSocketExist(MuzzleSocketName) 
-		? WeaponMesh->GetSocketLocation(MuzzleSocketName) 
-		: GetActorLocation();
+	// 1. 枪口起点位置（多级智能匹配：优先网格体插槽）
+	FTransform MuzzleTransform;
+	GetMuzzleTransform(MuzzleTransform);
+	OutMuzzleLoc = MuzzleTransform.GetLocation();
 	
-	// 2. 从摄像机视角获取视线中心与朝向
-	FVector CameraLocation;
-	FRotator CameraRotation;
-	if (APlayerController* PC = Cast<APlayerController>(OwnerChar->GetController()))
-	{
-		PC->GetPlayerViewPoint(CameraLocation, CameraRotation);
-	}
-	else
-	{
-		CameraLocation = OwnerChar->GetActorLocation() + FVector(0, 0, 60.0f);
-		CameraRotation = OwnerChar->GetActorRotation();
-	}
-	
-	// 3. 计算散布角（开镜衰减）
+	// 2. 计算散布角（开镜衰减）
 	float FinalSpread = CurrentSpread;
 	if (bIsADS)
 	{
 		FinalSpread *= ADSSpreadMultiplier;
 	}
 	
-	const FVector AimDir = CameraRotation.Vector();
-	const FVector SpreadDir = FMath::VRandCone(AimDir, FMath::DegreesToRadians(FinalSpread * 0.5f));
-	
-	// 4. 第一段：从相机向前打超长射线确定准星落点（解决视差）
-	const FVector CamTraceEnd = CameraLocation + SpreadDir * MaxRange;
-	FHitResult CamHit;
-	FCollisionQueryParams CamParams;
-	CamParams.AddIgnoredActor(this);
-	CamParams.AddIgnoredActor(OwnerChar);
-	
-	FVector TargetPoint = CamTraceEnd;
-	if (GetWorld()->LineTraceSingleByChannel(CamHit, CameraLocation, CamTraceEnd, ECC_Visibility, CamParams))
+	if (bFireAlongMuzzleForward)
 	{
-		TargetPoint = CamHit.ImpactPoint;
+		// 模式 A：纯正的枪口物理朝向（Muzzle Forward）
+		// 子弹严格沿着枪口插槽世界朝向打出，绝无侧向大角度折弯！
+		FVector MuzzleForward = MuzzleTransform.GetRotation().Vector();
+
+		// 模型局部轴向容错保护：若模型局部坐标系的 +X 轴恰好被做反（指向后背），点积小于 0 则自动翻转对齐角色前方
+		if (FVector::DotProduct(MuzzleForward, OwnerChar->GetActorForwardVector()) < -0.2f)
+		{
+			MuzzleForward = -MuzzleForward;
+		}
+
+		const FVector SpreadDir = FMath::VRandCone(MuzzleForward, FMath::DegreesToRadians(FinalSpread * 0.5f));
+		OutTraceEnd = OutMuzzleLoc + SpreadDir * MaxRange;
+		return true;
 	}
-	
-	// 5. 第二段：从枪口连接到目标点并延伸
-	OutTraceEnd = OutMuzzleLoc + (TargetPoint - OutMuzzleLoc).GetSafeNormal() * MaxRange;
-	return true;
+	else
+	{
+		// 模式 B：摄像机两段式视差对齐
+		FVector CameraLocation;
+		FRotator CameraRotation;
+		if (APlayerController* PC = Cast<APlayerController>(OwnerChar->GetController()))
+		{
+			PC->GetPlayerViewPoint(CameraLocation, CameraRotation);
+		}
+		else
+		{
+			CameraLocation = OwnerChar->GetActorLocation() + FVector(0, 0, 60.0f);
+			CameraRotation = OwnerChar->GetActorRotation();
+		}
+		
+		const FVector AimDir = CameraRotation.Vector();
+		const FVector SpreadDir = FMath::VRandCone(AimDir, FMath::DegreesToRadians(FinalSpread * 0.5f));
+		
+		// 第一段：从相机向前打超长射线确定准星落点（解决视差）
+		const FVector CamTraceEnd = CameraLocation + SpreadDir * MaxRange;
+		FHitResult CamHit;
+		FCollisionQueryParams CamParams;
+		CamParams.AddIgnoredActor(this);
+		CamParams.AddIgnoredActor(OwnerChar);
+		
+		FVector TargetPoint = CamTraceEnd;
+		if (GetWorld()->LineTraceSingleByChannel(CamHit, CameraLocation, CamTraceEnd, ECC_Visibility, CamParams))
+		{
+			TargetPoint = CamHit.ImpactPoint;
+		}
+		
+		// 第二段：从枪口连接到目标点并延伸
+		OutTraceEnd = OutMuzzleLoc + (TargetPoint - OutMuzzleLoc).GetSafeNormal() * MaxRange;
+		return true;
+	}
 }
 
 void ALSWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -511,8 +640,26 @@ void ALSWeaponBase::PlayImpactEffects(const FHitResult& Hit)
 {
 	if (!GetWorld()) return;
 	
-	// 1. 在击中表面法线方向生成撞击火花/碎屑粒子
-	if (ImpactEmitter)
+	// 1. 在击中表面法线方向生成撞击火花/碎屑粒子（同时适配常规 Niagara 与 Lyra Array 系统）
+	if (ImpactNiagara)
+	{
+		if (UNiagaraComponent* ImpactComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), ImpactNiagara, Hit.ImpactPoint, Hit.ImpactNormal.Rotation()))
+		{
+			ImpactComp->SetVariableBool(FName("User.Trigger"), true);
+			ImpactComp->SetVariableInt(FName("User.NumberOfHits"), 1);
+			
+			TArray<FVector> ImpactPosArray;
+			ImpactPosArray.Add(Hit.ImpactPoint);
+			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition(ImpactComp, FName("User.ImpactPositions"), ImpactPosArray);
+			
+			TArray<FVector> ImpactNormArray;
+			ImpactNormArray.Add(Hit.ImpactNormal);
+			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(ImpactComp, FName("User.ImpactNormals"), ImpactNormArray);
+			
+			ImpactComp->Activate(true);
+		}
+	}
+	else if (ImpactEmitter)
 	{
 		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ImpactEmitter, Hit.ImpactPoint, Hit.ImpactNormal.Rotation());
 	}
@@ -523,32 +670,106 @@ void ALSWeaponBase::PlayImpactEffects(const FHitResult& Hit)
 		UGameplayStatics::PlaySoundAtLocation(GetWorld(), ImpactSound, Hit.ImpactPoint);
 	}
 	
-	// 3. 在击中表面附着弹孔贴花（支持附着在移动物体上）
-	if (ImpactDecalMaterial && Hit.GetComponent())
+	// 3. 在击中表面附着弹孔贴花（支持最多同时存在 MaxDecalCount 个弹孔，先进先出循环复用）
+	if (ImpactDecalMaterial)
 	{
-		// 贴花投影方向沿法线反向切入
-		const FRotator DecalRotation = Hit.ImpactNormal.Rotation() + FRotator(-90.0f, 0.0f, 0.0f);
-		UGameplayStatics::SpawnDecalAttached(
-			ImpactDecalMaterial,
-			DecalSize,
-			Hit.GetComponent(),
-			Hit.BoneName,
-			Hit.ImpactPoint,
-			DecalRotation,
-			EAttachLocation::KeepWorldPosition,
-			DecalLifeSpan
-		);
+		FRotator DecalRotation = (-Hit.ImpactNormal).Rotation();
+		DecalRotation.Roll = FMath::FRandRange(-180.0f, 180.0f);
+		UDecalComponent* SpawnedDecal = nullptr;
+
+		if (Hit.GetComponent())
+		{
+			SpawnedDecal = UGameplayStatics::SpawnDecalAttached(
+				ImpactDecalMaterial,
+				DecalSize,
+				Hit.GetComponent(),
+				Hit.BoneName,
+				Hit.ImpactPoint,
+				DecalRotation,
+				EAttachLocation::KeepWorldPosition,
+				DecalLifeSpan
+			);
+		}
+		else
+		{
+			SpawnedDecal = UGameplayStatics::SpawnDecalAtLocation(
+				GetWorld(),
+				ImpactDecalMaterial,
+				DecalSize,
+				Hit.ImpactPoint,
+				DecalRotation,
+				DecalLifeSpan
+			);
+		}
+
+		if (SpawnedDecal)
+		{
+			// 清理失效弱引用
+			ActiveDecals.RemoveAll([](const TWeakObjectPtr<UDecalComponent>& DecalPtr) {
+				return !DecalPtr.IsValid();
+			});
+
+			// 超出数量上限时，销毁最早生成的弹孔，杜绝堆积卡顿
+			while (ActiveDecals.Num() >= MaxDecalCount)
+			{
+				if (ActiveDecals[0].IsValid())
+				{
+					ActiveDecals[0]->DestroyComponent();
+				}
+				ActiveDecals.RemoveAt(0);
+			}
+
+			ActiveDecals.Add(SpawnedDecal);
+		}
 	}
 }
 
 void ALSWeaponBase::PlayTracerEffect(const FVector& StartLoc, const FVector& EndLoc)
 {
-	if (!TracerEmitter || !GetWorld()) return;
+	if (!GetWorld()) return;
 	
-	// 生成曳光光束粒子，并设置 Target 向量为射线终点
-	if (UParticleSystemComponent* TracerComp = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), TracerEmitter, StartLoc))
+	// 射线物理阻挡测试：如果中途有障碍物（墙体等），弹道精确止于墙面命中点
+	FHitResult ObstacleHit;
+	FCollisionQueryParams TraceParams;
+	TraceParams.AddIgnoredActor(this);
+	TraceParams.AddIgnoredActor(GetOwner());
+	
+	FVector VisualEnd = EndLoc;
+	if (GetWorld()->LineTraceSingleByChannel(ObstacleHit, StartLoc, EndLoc, ECC_Visibility, TraceParams))
 	{
-		TracerComp->SetVectorParameter(TracerTargetParamName, EndLoc);
+		VisualEnd = ObstacleHit.ImpactPoint;
+	}
+
+	// 基础保底：始终绘制高亮金色瞬时射线（持续 0.05 秒），确保任何视角都能看到子弹飞行轨迹！
+	DrawDebugLine(GetWorld(), StartLoc, VisualEnd, FColor(255, 215, 0), false, 0.05f, 0, 1.5f);
+
+	// 1. Niagara 曳光粒子（同时兼容普通向量与 Lyra 数组系统）
+	if (TracerNiagara)
+	{
+		if (UNiagaraComponent* NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), TracerNiagara, StartLoc))
+		{
+			NiagaraComp->SetVariableVec3(TracerNiagaraParamName, VisualEnd);
+			NiagaraComp->SetVariableVec3(FName("User.TraceEnd"), VisualEnd);
+			NiagaraComp->SetVariablePosition(FName("User.MuzzlePosition"), StartLoc);
+			NiagaraComp->SetVariableBool(FName("User.Trigger"), true);
+			
+			TArray<FVector> ImpactPosArray;
+			ImpactPosArray.Add(VisualEnd);
+			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition(NiagaraComp, FName("User.ImpactPositions"), ImpactPosArray);
+			
+			NiagaraComp->Activate(true);
+		}
+		return;
+	}
+
+	// 2. Cascade 曳光粒子
+	if (TracerEmitter)
+	{
+		if (UParticleSystemComponent* TracerComp = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), TracerEmitter, StartLoc))
+		{
+			TracerComp->SetVectorParameter(TracerTargetParamName, VisualEnd);
+		}
+		return;
 	}
 }
 
@@ -603,4 +824,218 @@ void ALSWeaponBase::InitializeFromDataAsset(const ULSWeaponDataAsset* InDataAsse
 
 	// 广播一次弹药更新，确保 HUD 同步
 	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
+}
+
+bool ALSWeaponBase::GetLeftHandSocketTransform(FTransform& OutTransform, FName SocketName) const
+{
+	// 1. 遍历自身附加的所有 Primitive 组件（包括蓝图里添加的 StaticMeshComponent）
+	TInlineComponentArray<UPrimitiveComponent*> PrimComponents(this);
+	for (UPrimitiveComponent* Prim : PrimComponents)
+	{
+		if (Prim && Prim->DoesSocketExist(SocketName))
+		{
+			OutTransform = Prim->GetSocketTransform(SocketName, RTS_World);
+			return true;
+		}
+	}
+	
+	// 2. 备用检查默认的 WeaponMesh
+	if (WeaponMesh && WeaponMesh->DoesSocketExist(SocketName))
+	{
+		OutTransform = WeaponMesh->GetSocketTransform(SocketName, RTS_World);
+		return true;
+	}
+
+	return false;
+}
+
+bool ALSWeaponBase::GetMuzzleTransform(FTransform& OutTransform) const
+{
+	// 优先在所有 Mesh 组件上查找标准的枪口插槽（支持 MuzzleSocketName 与通用 Muzzle / MuzzleFlash）
+	static const TArray<FName> CandidateSockets = {
+		MuzzleSocketName,
+		FName("Muzzle"),
+		FName("MuzzleFlash"),
+		FName("Socket") // 兼顾当前可能尚未重命名的默认插槽
+	};
+
+	TInlineComponentArray<UMeshComponent*> MeshComponents(this);
+	for (UMeshComponent* MeshComp : MeshComponents)
+	{
+		if (!MeshComp) continue;
+		for (const FName& SocketCandidate : CandidateSockets)
+		{
+			if (SocketCandidate != NAME_None && MeshComp->DoesSocketExist(SocketCandidate))
+			{
+				OutTransform = MeshComp->GetSocketTransform(SocketCandidate, RTS_World);
+				return true;
+			}
+		}
+	}
+
+	// 2. 若网格体尚无插槽，基于武器主网格体包围盒进行几何前沿估算（确保子弹与枪火从枪管最前端射出）
+	UMeshComponent* BestMeshComp = nullptr;
+	for (UMeshComponent* MeshComp : MeshComponents)
+	{
+		if (UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(MeshComp))
+		{
+			if (SMC->GetStaticMesh())
+			{
+				BestMeshComp = SMC;
+				break;
+			}
+		}
+		else if (USkeletalMeshComponent* SKMC = Cast<USkeletalMeshComponent>(MeshComp))
+		{
+			if (SKMC->GetSkeletalMeshAsset())
+			{
+				BestMeshComp = SKMC;
+				break;
+			}
+		}
+	}
+
+	if (!BestMeshComp && WeaponMesh)
+	{
+		BestMeshComp = WeaponMesh;
+	}
+
+	if (BestMeshComp)
+	{
+		const FBox LocalBox = BestMeshComp->GetLocalBounds().GetBox();
+		// +X 轴为枪口正前方，取最前端 Max.X；Y 轴取居中；Z 轴取偏上 65% 高度（避开弹匣）
+		const float ForwardX = LocalBox.Max.X;
+		const float CenterY = (LocalBox.Min.Y + LocalBox.Max.Y) * 0.5f;
+		const float CenterZ = LocalBox.Min.Z + (LocalBox.Max.Z - LocalBox.Min.Z) * 0.65f;
+
+		const FVector LocalMuzzlePos(ForwardX, CenterY, CenterZ);
+		const FVector WorldMuzzlePos = BestMeshComp->GetComponentTransform().TransformPosition(LocalMuzzlePos);
+		const FRotator WorldRotation = BestMeshComp->GetComponentRotation();
+
+		OutTransform = FTransform(WorldRotation, WorldMuzzlePos);
+		return true;
+	}
+
+	// 3. 终极保底：若无任何网格体，取 Actor 沿着朝向前方 50cm
+	OutTransform = FTransform(GetActorRotation(), GetActorLocation() + GetActorForwardVector() * 50.0f);
+	return false;
+}
+
+FVector ALSWeaponBase::GetMuzzleLocation() const
+{
+	FTransform MuzzleTransform;
+	GetMuzzleTransform(MuzzleTransform);
+	return MuzzleTransform.GetLocation();
+}
+
+USceneComponent* ALSWeaponBase::GetMuzzleAttachComponent(FName& OutSocketName) const
+{
+	static const TArray<FName> CandidateSockets = {
+		MuzzleSocketName,
+		FName("Muzzle"),
+		FName("MuzzleFlash"),
+		FName("Socket")
+	};
+
+	TInlineComponentArray<UMeshComponent*> MeshComponents(this);
+	for (UMeshComponent* MeshComp : MeshComponents)
+	{
+		if (!MeshComp) continue;
+		for (const FName& SocketCandidate : CandidateSockets)
+		{
+			if (SocketCandidate != NAME_None && MeshComp->DoesSocketExist(SocketCandidate))
+			{
+				OutSocketName = SocketCandidate;
+				return MeshComp;
+			}
+		}
+	}
+
+	OutSocketName = NAME_None;
+	for (UMeshComponent* MeshComp : MeshComponents)
+	{
+		if (UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(MeshComp))
+		{
+			if (SMC->GetStaticMesh()) return SMC;
+		}
+	}
+	return WeaponMesh ? WeaponMesh : RootComponent;
+}
+
+void ALSWeaponBase::ApplyProceduralRecoilKick()
+{
+	// 1. 枪身后坐位移：沿枪管自身局部 -X 轴向后猛挫，Z 轴微量上抬
+	CurrentRecoilKickLoc.X = FMath::Clamp(CurrentRecoilKickLoc.X - RecoilKickDistance, -MaxRecoilKickDistance, 0.0f);
+	CurrentRecoilKickLoc.Z = FMath::Clamp(CurrentRecoilKickLoc.Z + 0.35f, 0.0f, 1.2f);
+
+	// 2. 枪口上挑与横摆：Pitch 仰角瞬时上挑，随机微量横偏晃动
+	CurrentRecoilKickRot.Pitch = FMath::Clamp(CurrentRecoilKickRot.Pitch + RecoilKickPitch, 0.0f, 6.0f);
+	CurrentRecoilKickRot.Yaw += FMath::FRandRange(-RecoilKickYaw, RecoilKickYaw);
+	CurrentRecoilKickRot.Roll += FMath::FRandRange(-RecoilKickYaw * 0.5f, RecoilKickYaw * 0.5f);
+}
+
+void ALSWeaponBase::UpdateProceduralRecoilKick(float DeltaTime)
+{
+	if (!RootComponent) return;
+
+	// 首次缓存与父级插槽绑定的基础相对变换
+	if (!bHasCachedBaseTransform)
+	{
+		if (GetAttachParentActor() || RootComponent->GetAttachParent())
+		{
+			BaseAttachRelativeTransform = RootComponent->GetRelativeTransform();
+			bHasCachedBaseTransform = true;
+		}
+	}
+
+	// 阻尼弹性极速平滑回正（弹簧回弹手感）
+	CurrentRecoilKickLoc = FMath::VInterpTo(CurrentRecoilKickLoc, FVector::ZeroVector, DeltaTime, RecoilRecoverySpeed);
+	CurrentRecoilKickRot = FMath::RInterpTo(CurrentRecoilKickRot, FRotator::ZeroRotator, DeltaTime, RecoilRecoverySpeed);
+
+	// 程序化瞄准俯仰跟随：当玩家向上/向下看时，枪身随之仰俯，消除子弹折射感
+	if (bEnableProceduralAimPitch)
+	{
+		float TargetPitch = 0.0f;
+		if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
+		{
+			bool bIsADS = false;
+			if (ULSCameraComponent* Cam = OwnerChar->GetCameraComponent())
+			{
+				bIsADS = Cam->IsADS();
+			}
+
+			// 只有按住右键瞄准 (bIsADS) 或正在开火时才进行枪身程序化俯仰；自由观察视角下枪身平端
+			if (bIsADS || bIsFiring)
+			{
+				if (AController* PC = OwnerChar->GetController())
+				{
+					const float RawPitch = FRotator::NormalizeAxis(PC->GetControlRotation().Pitch);
+					// 核心非对称设计：向上仰视与向下俯视采用独立倍率与极限夹角控制！
+					const float CalculatedUpAngle = RawPitch * ProceduralAimPitchUpMultiplier;
+					const float ChosenMultiplier = (CalculatedUpAngle >= 0.0f) ? ProceduralAimPitchUpMultiplier : ProceduralAimPitchDownMultiplier;
+
+					TargetPitch = FMath::Clamp(RawPitch * ChosenMultiplier, MinAimPitchLimit, MaxAimPitchLimit);
+				}
+			}
+		}
+		CurrentProceduralAimPitch = FMath::FInterpTo(CurrentProceduralAimPitch, TargetPitch, DeltaTime, 18.0f);
+	}
+	else
+	{
+		CurrentProceduralAimPitch = 0.0f;
+	}
+
+	if (bHasCachedBaseTransform)
+	{
+		// 计算叠加后坐力、瞄准俯仰与姿态偏移后的局部旋转
+		FRotator CombinedRot = CurrentRecoilKickRot + GripRotationOffset;
+		CombinedRot.Pitch += CurrentProceduralAimPitch;
+
+		FTransform KickTransform;
+		KickTransform.SetLocation(CurrentRecoilKickLoc + GripLocationOffset);
+		KickTransform.SetRotation(CombinedRot.Quaternion());
+
+		const FTransform FinalTransform = KickTransform * BaseAttachRelativeTransform;
+		RootComponent->SetRelativeTransform(FinalTransform);
+	}
 }

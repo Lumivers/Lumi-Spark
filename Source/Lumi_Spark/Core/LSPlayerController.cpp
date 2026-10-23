@@ -155,8 +155,17 @@ void ALSPlayerController::SetupInputComponent()
 		if (IA_SwitchToSlot2) EnhancedInputComponent->BindAction(IA_SwitchToSlot2, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchToSlot2);
 		if (IA_SwitchToSlot3) EnhancedInputComponent->BindAction(IA_SwitchToSlot3, ETriggerEvent::Started, this, &ALSPlayerController::HandleSwitchToSlot3);
 		if (IA_CycleCharacter) EnhancedInputComponent->BindAction(IA_CycleCharacter, ETriggerEvent::Triggered, this, &ALSPlayerController::HandleCycleCharacter);
+		if (IA_Zoom) EnhancedInputComponent->BindAction(IA_Zoom, ETriggerEvent::Triggered, this, &ALSPlayerController::HandleZoom);
+	}
+
+	// 4. 原生滚轮缩放直接绑定（双重保障，避免依赖未配置的 Enhanced Input 资产）
+	if (InputComponent)
+	{
+		InputComponent->BindKey(EKeys::MouseScrollUp, IE_Pressed, this, &ALSPlayerController::HandleZoomIn);
+		InputComponent->BindKey(EKeys::MouseScrollDown, IE_Pressed, this, &ALSPlayerController::HandleZoomOut);
 	}
 }
+
 
 void ALSPlayerController::SwitchToGameInputMode()
 {
@@ -273,6 +282,20 @@ void ALSPlayerController::HandleCrouchCompleted()
 	}
 }
 
+void ALSPlayerController::HandleZoom(const FInputActionValue& Value)
+{
+	const float ZoomDelta = Value.Get<float>();
+	if (FMath::IsNearlyZero(ZoomDelta)) return;
+
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSCameraComponent* Cam = Char->GetCameraComponent())
+		{
+			Cam->AdjustCameraZoom(ZoomDelta);
+		}
+	}
+}
+
 void ALSPlayerController::HandleToggleView()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
@@ -281,11 +304,46 @@ void ALSPlayerController::HandleToggleView()
 	}
 }
 
+void ALSPlayerController::HandleZoomIn()
+{
+	GEngine->AddOnScreenDebugMessage(54320, 1.0f, FColor::Yellow, TEXT("🔭 [Input] 滚轮向上，拉近视角"));
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSCameraComponent* Cam = Char->GetCameraComponent())
+		{
+			Cam->AdjustCameraZoom(1.0f);
+		}
+	}
+}
+
+void ALSPlayerController::HandleZoomOut()
+{
+	GEngine->AddOnScreenDebugMessage(54320, 1.0f, FColor::Yellow, TEXT("🔭 [Input] 滚轮向下，拉远视角"));
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSCameraComponent* Cam = Char->GetCameraComponent())
+		{
+			Cam->AdjustCameraZoom(-1.0f);
+		}
+	}
+}
+
 void ALSPlayerController::HandleFireStarted()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("🎯 [Input] 触发了鼠标左键开火！"));
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
+		// 开火瞬间打断冲刺
+		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
+		{
+			MoveComp->StopSprint();
+		}
+
+		// 开火瞬间：角色身形立即对齐摄像机视线水平朝向（Controller Yaw），确保枪管正对准星
+		FRotator NewRot = Char->GetActorRotation();
+		NewRot.Yaw = GetControlRotation().Yaw;
+		Char->SetActorRotation(NewRot);
+
 		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent())
 		{
 			WeaponComp->StartFire();
@@ -303,6 +361,8 @@ void ALSPlayerController::HandleFireCompleted()
 
 void ALSPlayerController::HandleADSStarted()
 {
+	GEngine->AddOnScreenDebugMessage(12345, 2.0f, FColor::Green, TEXT("🔍 [Input] 触发右键瞄准 (ADS) - 进入过肩模式！"));
+	if (bIsAiming) return;
 	bIsAiming = true;
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
@@ -313,6 +373,8 @@ void ALSPlayerController::HandleADSStarted()
 
 void ALSPlayerController::HandleADSCompleted()
 {
+	GEngine->AddOnScreenDebugMessage(12345, 2.0f, FColor::Cyan, TEXT("🔄 [Input] 释放右键，退出瞄准！"));
+	if (!bIsAiming) return;
 	bIsAiming = false;
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{

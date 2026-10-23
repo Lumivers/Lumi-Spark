@@ -9,6 +9,7 @@
 
 // 前向声明：基础设施与玩法组件
 class ULSCameraComponent;
+class USpringArmComponent;
 class ULSMovementComponent;
 class USkeletalMeshComponent;
 class ULSWeaponComponent;
@@ -41,6 +42,7 @@ public:
 	virtual void OnInteractComplete(AActor* Interactor) override;
 	
 	// ─── 统一组件访问器 ───
+	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	FORCEINLINE ULSCameraComponent* GetCameraComponent() const { return CameraComponent; }
 	FORCEINLINE USkeletalMeshComponent* GetFPArmsMesh() const { return FPArmsMesh; }
 	FORCEINLINE ULSMovementComponent* GetLSMovementComponent() const { return Cast<ULSMovementComponent>(GetCharacterMovement()); }
@@ -97,6 +99,9 @@ public:
 	bool HasSuperArmor() const { return ActiveGameplayTags.HasTag(LSTags::TAG_State_SuperArmor); }
 
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USpringArmComponent> CameraBoom;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULSCameraComponent> CameraComponent;
 	

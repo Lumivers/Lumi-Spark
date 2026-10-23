@@ -74,3 +74,11 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+
+_RawAssets/
+Assets/
+*.fbx
+*.blend
+*.pmx
+
+UI_Specs/

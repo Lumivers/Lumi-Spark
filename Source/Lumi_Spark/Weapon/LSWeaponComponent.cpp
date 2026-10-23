@@ -42,9 +42,28 @@ void ULSWeaponComponent::AttachWeaponToSocket(ALSWeaponBase* Weapon, FName Socke
 	ACharacter* Char = Cast<ACharacter>(GetOwner());
 	if (!Weapon || !Char || !Char->GetMesh()) return;
 	
-	//吸附到骨骼插槽，保留原始缩放
-	Weapon->AttachToComponent(Char->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+	// 彻底防止手持武器的物理碰撞体反推、挤压角色自身胶囊体
+	Char->MoveIgnoreActorAdd(Weapon);
+
+
+	// 确立武器的所有权与施加者归属
+	Weapon->SetOwner(Char);
+	Weapon->SetInstigator(Char);
+
+	// 优先寻找专门调整过抵肩旋转与握把偏移的 WeaponSocket，如果未配置或不存在则尝试保底
+	FName TargetSocket = SocketName;
+	if (TargetSocket.IsNone() || TargetSocket == FName("hand_r"))
+	{
+		if (Char->GetMesh()->DoesSocketExist(FName("WeaponSocket")))
+		{
+			TargetSocket = FName("WeaponSocket");
+		}
+	}
+
+	// 吸附到骨骼插槽，保留原始缩放
+	Weapon->AttachToComponent(Char->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TargetSocket);
 }
+
 
 void ULSWeaponComponent::StartFire()
 {

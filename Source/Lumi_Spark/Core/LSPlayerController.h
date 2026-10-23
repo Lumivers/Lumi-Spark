@@ -58,6 +58,9 @@ public:
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
 	TObjectPtr<UInputAction> IA_ToggleView; //v切换FPS/TPS
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
+	TObjectPtr<UInputAction> IA_Zoom; // 滚轮缩放第三人称视角臂长 (Axis1D)
 	
 	//3，武器与射击战斗Input Actions
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
@@ -249,7 +252,13 @@ protected:
 	void HandleSwitchToSlot2();
 	void HandleSwitchToSlot3();
 	void HandleCycleCharacter(const struct FInputActionValue& Value);
+	
+	// 滚轮视角缩放
+	void HandleZoom(const struct FInputActionValue& Value);
+	void HandleZoomIn();
+	void HandleZoomOut();
 
 private:
+
 	bool bIsAiming = false;
 };

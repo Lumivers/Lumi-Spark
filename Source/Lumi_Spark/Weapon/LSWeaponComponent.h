@@ -21,9 +21,9 @@ public:
 	//获取当前手持武器
 	FORCEINLINE ALSWeaponBase* GetCurrentWeapon() const { return CurrentWeapon; }
 	
-	//插槽名称配置
+	//插槽名称配置（优先使用经过旋转对齐的专用武器插槽 WeaponSocket）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Socket")
-	FName HandSocketName = FName("hand_r");
+	FName HandSocketName = FName("WeaponSocket");
 	
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	

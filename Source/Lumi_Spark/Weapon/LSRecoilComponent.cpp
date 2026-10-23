@@ -7,15 +7,16 @@ ULSRecoilComponent::ULSRecoilComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 	
-	//默认提供一组经典突击步枪弹道模式
+	//默认提供一组经典突击步枪弹道模式（前几发强上抬，中段衰减，第8发垂直归零仅水平晃动）
 	RecoilPattern = {
-		FVector2D(0.0f,   0.8f),
-		FVector2D(0.05f,  0.75f),
-		FVector2D(-0.06f, 0.7f),
-		FVector2D(0.10f,  0.65f),
-		FVector2D(0.15f,  0.6f),
-		FVector2D(-0.12f, 0.55f),
-		FVector2D(0.20f,  0.5f)
+		FVector2D(0.00f,  0.80f), // 第1发：强垂直初动
+		FVector2D(0.04f,  0.70f), // 第2发：稳定上抬
+		FVector2D(-0.06f, 0.55f), // 第3发：开始向左微偏，上抬减缓
+		FVector2D(0.08f,  0.40f), // 第4发：向右折返
+		FVector2D(-0.10f, 0.25f), // 第5发：继续衰减
+		FVector2D(0.12f,  0.15f), // 第6发：接近顶部
+		FVector2D(-0.14f, 0.05f), // 第7发：垂直几乎见顶
+		FVector2D(0.15f,  0.00f)  // 第8发：垂直彻底封顶，只在水平横向拉扯
 	};
 }
 
@@ -66,29 +67,56 @@ void ULSRecoilComponent::ApplyRecoil(bool bIsADS)
 {
 	if (RecoilPattern.IsEmpty()) return;
 	
-	//1，获取当前发数的基础弹道偏移（超出数组长度后循环最后一发）
-	const int32 SafeIndex = FMath::Clamp(CurrentPatternIndex, 0, RecoilPattern.Num() - 1);
-	FVector2D ShotOffset = RecoilPattern[SafeIndex];
+	// 1. 获取当前发数的基础弹道偏移：
+	FVector2D ShotOffset;
+	if (CurrentPatternIndex < RecoilPattern.Num())
+	{
+		ShotOffset = RecoilPattern[CurrentPatternIndex];
+	}
+	else
+	{
+		// 超过预设弹道（全自动连射中后段）：垂直上抬彻底归零，仅保留水平横向拉扯
+		const float HorizontalJitter = FMath::FRandRange(-0.16f, 0.16f);
+		ShotOffset = FVector2D(HorizontalJitter, 0.0f);
+	}
 	
-	//2，叠加随机散步扰动（保留可记忆弹道的同时避免机械宏
+	// 2. 叠加随机散布扰动（保留可记忆弹道的同时避免机械宏）
 	const float RandomYaw = FMath::FRandRange(-RandomSpreadFactor, RandomSpreadFactor);
-	const float RandomPitch = FMath::FRandRange(-RandomSpreadFactor * 0.5f, RandomSpreadFactor * 0.5f); //垂直扰动较小
+	// 垂直已近封顶时，不再产生向上的正随机扰动，避免突破天花板
+	const float RandomPitch = (ShotOffset.Y > 0.0f)
+		? FMath::FRandRange(-RandomSpreadFactor * 0.3f, RandomSpreadFactor * 0.3f)
+		: FMath::FRandRange(-RandomSpreadFactor * 0.2f, 0.0f);
 	ShotOffset += FVector2D(RandomYaw, RandomPitch);
 	
-	//3，计算最终倍率（开镜时降低后坐力）
+	// 3. 计算最终倍率（开镜时降低后坐力）
 	float FinalMultiplier = RecoilMultiplier;
 	if (bIsADS)
 	{
 		FinalMultiplier *= ADSRecoilMultiplier;
 	}
 	ShotOffset *= FinalMultiplier;
+
+	// 4. 垂直后坐力天花板强制硬封顶（防御蓝图/热重载零值陷阱）：
+	const float EffectiveMaxPitch = (MaxVerticalPitch > 0.5f) ? MaxVerticalPitch : 8.0f;
+	if (AccumulatedRecoil.Y >= EffectiveMaxPitch)
+	{
+		ShotOffset.Y = 0.0f; // 垂直彻底锁死，不再继续往上推
+	}
+	else if (AccumulatedRecoil.Y + ShotOffset.Y > EffectiveMaxPitch)
+	{
+		ShotOffset.Y = FMath::Max(0.0f, EffectiveMaxPitch - AccumulatedRecoil.Y); // 削减超限部分
+	}
 	
-	//4, 将后坐力施加到玩家控制器
-	ApplyInputToController(-ShotOffset.Y, ShotOffset.X); //Pitch向上抬，Yaw左右偏
+	// 5. 将后坐力施加到玩家控制器（Pitch 向上抬，Yaw 左右偏）
+	ApplyInputToController(-ShotOffset.Y, ShotOffset.X);
 	
-	//5, 累加到回正池中并推进连射序列
+	// 6. 累加到回正池中并推进连射发数
 	AccumulatedRecoil += ShotOffset;
 	CurrentPatternIndex++;
+
+	GEngine->AddOnScreenDebugMessage(9999, 0.4f, FColor::Orange, 
+		FString::Printf(TEXT("💥 [后坐力] 第%d发 | 垂直抬升=%.2f, 水平偏转=%.2f | 累计=%.2f/%.2f"), 
+			CurrentPatternIndex, ShotOffset.Y, ShotOffset.X, AccumulatedRecoil.Y, EffectiveMaxPitch));
 }
 
 void ULSRecoilComponent::ProcessRecovery(float DeltaTime)
@@ -114,7 +142,7 @@ APlayerController* ULSRecoilComponent::GetPlayerController() const
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor) return nullptr;
 	
-	//兼容挂载在Pawn自身或挂在Weapon Actor上的层级关系
+	// 1. 兼容挂载在Pawn自身、Weapon Actor、或通过组件Attach的层级关系
 	APawn* OwnerPawn = Cast<APawn>(OwnerActor);
 	if (!OwnerPawn)
 	{
@@ -124,8 +152,23 @@ APlayerController* ULSRecoilComponent::GetPlayerController() const
 	{
 		OwnerPawn = OwnerActor->GetInstigator<APawn>();
 	}
+	if (!OwnerPawn)
+	{
+		OwnerPawn = Cast<APawn>(OwnerActor->GetAttachParentActor());
+	}
 	
-	return OwnerPawn ? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
+	if (OwnerPawn && OwnerPawn->GetController())
+	{
+		return Cast<APlayerController>(OwnerPawn->GetController());
+	}
+
+	// 2. 本地后坐力终极兜底（直接抓取本地首位 PlayerController）
+	if (UWorld* World = GetWorld())
+	{
+		return World->GetFirstPlayerController();
+	}
+
+	return nullptr;
 }
 
 void ULSRecoilComponent::ApplyInputToController(float PitchDelta, float YawDelta)
@@ -134,5 +177,9 @@ void ULSRecoilComponent::ApplyInputToController(float PitchDelta, float YawDelta
 	{
 		PC->AddPitchInput(PitchDelta);
 		PC->AddYawInput(YawDelta);
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("❌ [后坐力] 获取 PlayerController 失败！"));
 	}
 }

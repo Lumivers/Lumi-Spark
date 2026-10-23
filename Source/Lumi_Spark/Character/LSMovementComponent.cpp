@@ -12,8 +12,10 @@ ULSMovementComponent::ULSMovementComponent()
 	MaxWalkSpeedCrouched = 300.f;
 	BrakingFrictionFactor = 2.f;
 	bUseControllerDesiredRotation = false;
-	bOrientRotationToMovement = false;
+	bOrientRotationToMovement = true; // 角色移动时平滑转向移动方向
+	RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 }
+
 
 void ULSMovementComponent::BeginPlay()
 {

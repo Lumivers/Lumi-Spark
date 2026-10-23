@@ -17,15 +17,29 @@ void ULSCameraComponent::BeginPlay()
 
 	PrimaryComponentTick.SetTickFunctionEnable(true);
 
-	// 【自愈防空指针】：如果蓝图缓存导致 SpringArm 为空，主动在 Owner 身上抓取！
-	if (!SpringArm && GetOwner())
+	// 【安全获取弹簧臂】：优先使用父级（C++原生CameraBoom），备选通过Owner查找
+	if (!SpringArm)
 	{
-		SpringArm = GetOwner()->FindComponentByClass<USpringArmComponent>();
+		SpringArm = Cast<USpringArmComponent>(GetAttachParent());
+		if (!SpringArm && GetOwner())
+		{
+			SpringArm = GetOwner()->FindComponentByClass<USpringArmComponent>();
+		}
 	}
 
 	if (SpringArm)
 	{
-		AttachToComponent(SpringArm, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		// 仅当摄像机尚未挂载在弹簧臂下时才执行 Attach，避免破坏原生装配树
+		if (GetAttachParent() != SpringArm)
+		{
+			AttachToComponent(SpringArm, FAttachmentTransformRules::SnapToTargetNotIncludingScale, USpringArmComponent::SocketName);
+		}
+		SetRelativeLocation(FVector::ZeroVector);
+		SetRelativeRotation(FRotator::ZeroRotator);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[LSCameraComponent] 未检测到 SpringArm 组件！当前依附父级: %s"), GetAttachParent() ? *GetAttachParent()->GetName() : TEXT("None"));
 	}
 
 	SetCameraMode(CurrentMode);
@@ -49,26 +63,30 @@ void ULSCameraComponent::SetCameraMode(ELSCameraMode NewMode)
 
 	if (SpringArm)
 	{
+		SpringArm->bUsePawnControlRotation = true;
 		if (CurrentMode == ELSCameraMode::FirstPerson)
 		{
 			// 第一人称：臂长 0，无偏移，关碰撞
 			TargetArmLength = 0.0f;
 			TargetSocketOffset = FVector::ZeroVector;
 			SpringArm->bDoCollisionTest = false;
+			TargetFov = FPSFov;
 		}
 		else if (CurrentMode == ELSCameraMode::ThirdPerson)
 		{
-			// 第三人称：臂长 300，右肩偏 (0, 50, 15)，开物理防穿墙！
-			TargetArmLength = 300.0f;
-			TargetSocketOffset = FVector(0.0f, 50.0f, 15.0f);
+			// 第三人称：恢复玩家滚轮设置的臂长，右肩偏 (0, 50, 65)
+			TargetArmLength = CustomTPSArmLength;
+			TargetSocketOffset = FVector(0.0f, 50.0f, 65.0f);
 			SpringArm->bDoCollisionTest = true;
+			TargetFov = TPSFov;
 		}
 		else if (CurrentMode == ELSCameraMode::OverShoulder)
 		{
-			// 过肩瞄准：臂长 120，右肩偏 (0, 60, 10)
-			TargetArmLength = 120.0f;
-			TargetSocketOffset = FVector(0.0f, 60.0f, 10.0f);
+			// 过肩瞄准：臂长 140，右肩偏 (0, 65, 65)，视线越过右肩瞄准
+			TargetArmLength = 140.0f;
+			TargetSocketOffset = FVector(0.0f, 65.0f, 65.0f);
 			SpringArm->bDoCollisionTest = true;
+			TargetFov = ShoulderFov;
 		}
 	}
 
@@ -96,10 +114,18 @@ void ULSCameraComponent::EnterADS()
 	PreADSMode = CurrentMode;
 	TargetFov = ShoulderFov;
 	
-	if (CurrentMode == ELSCameraMode::ThirdPerson)
+	// 开镜瞄准：身体正对准星，指哪打哪
+	if (ALSCharacterBase* Char = Cast<ALSCharacterBase>(GetOwner()))
 	{
-		SetCameraMode(ELSCameraMode::OverShoulder);
+		Char->bUseControllerRotationYaw = true;
+		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
+		{
+			MoveComp->bOrientRotationToMovement = false;
+		}
 	}
+
+	// 无论之前是第一人称还是第三人称，瞄准均切入过肩瞄准
+	SetCameraMode(ELSCameraMode::OverShoulder);
 }
 
 void ULSCameraComponent::ExitADS()
@@ -107,6 +133,16 @@ void ULSCameraComponent::ExitADS()
 	if (!bIsInADS) return;
 	bIsInADS = false;
 	
+	// 退出瞄准：解绑视角，镜头可 360 度自由旋转观察角色
+	if (ALSCharacterBase* Char = Cast<ALSCharacterBase>(GetOwner()))
+	{
+		Char->bUseControllerRotationYaw = false;
+		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
+		{
+			MoveComp->bOrientRotationToMovement = true;
+		}
+	}
+
 	if (PreADSMode == ELSCameraMode::FirstPerson)
 	{
 		TargetFov = FPSFov;
@@ -117,6 +153,7 @@ void ULSCameraComponent::ExitADS()
 		SetCameraMode(ELSCameraMode::ThirdPerson);
 	}
 }
+
 
 void ULSCameraComponent::UpdateCameraInterpolation(float DeltaTime)
 {
@@ -151,6 +188,7 @@ void ULSCameraComponent::UpdateCameraInterpolation(float DeltaTime)
 	
 	// 摄像机始终固定在弹簧臂末端
 	SetRelativeLocation(FVector::ZeroVector);
+	SetRelativeRotation(FRotator::ZeroRotator);
 }
 
 void ULSCameraComponent::UpdateMeshVisibility()
@@ -176,3 +214,16 @@ void ULSCameraComponent::UpdateMeshVisibility()
 		if (ArmsMesh) ArmsMesh->SetVisibility(false);
 	}
 }
+
+void ULSCameraComponent::AdjustCameraZoom(float ZoomDelta)
+{
+	if (!bIsInADS)
+	{
+		CustomTPSArmLength = FMath::Clamp(CustomTPSArmLength - (ZoomDelta * ZoomStep), MinArmLength, MaxArmLength);
+		TargetArmLength = CustomTPSArmLength;
+		if (SpringArm)
+		{
+			GEngine->AddOnScreenDebugMessage(54321, 1.5f, FColor::Yellow, FString::Printf(TEXT("🔭 [Camera] 臂长已调整: %.0f (范围: %.0f~%.0f)"), TargetArmLength, MinArmLength, MaxArmLength));
+		}
+	}
+}
