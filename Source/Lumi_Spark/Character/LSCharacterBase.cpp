@@ -59,9 +59,63 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
 	ThrowableComponent = CreateDefaultSubobject<ULSThrowableComponent>(TEXT("ThrowableComponent"));
 }
 
+void ALSCharacterBase::SetCombatFacing(bool bEnable)
+{
+	if (bAlwaysOrientToControlRotation)
+	{
+		bUseControllerRotationYaw = true;
+		if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+		{
+			MoveComp->bOrientRotationToMovement = false;
+			MoveComp->bUseControllerDesiredRotation = true;
+		}
+		SetALSRotationMode(2); // 模式 2 = Aiming (端枪抵肩瞄准)
+		return;
+	}
+
+	bUseControllerRotationYaw = bEnable;
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->bOrientRotationToMovement = !bEnable;
+		MoveComp->bUseControllerDesiredRotation = bEnable;
+		MoveComp->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
+	}
+
+	// 核心修复：战斗开火/瞄准时必须切换为模式 2 (Aiming，进入 Rifle Aiming 状态端枪抵肩对准准星)；退出后恢复模式 0 (VelocityDirection 放松提枪跑动)
+	SetALSRotationMode(bEnable ? 2 : 0);
+}
+
+void ALSCharacterBase::SetALSRotationMode(uint8 InRotationMode)
+{
+	// 1. 直接同步反射属性，确保 ALS 蓝图内部变量立即响应
+	if (FByteProperty* ModeProp = CastField<FByteProperty>(GetClass()->FindPropertyByName(FName("RotationMode"))))
+	{
+		ModeProp->SetPropertyValue_InContainer(this, InRotationMode);
+	}
+	if (FByteProperty* DesiredProp = CastField<FByteProperty>(GetClass()->FindPropertyByName(FName("DesiredRotationMode"))))
+	{
+		DesiredProp->SetPropertyValue_InContainer(this, InRotationMode);
+	}
+
+	// 2. 派发 ALS 原生蓝图接口事件驱动状态机与动画过渡
+	static const FName FuncName(TEXT("BPI_Set_RotationMode"));
+	if (UFunction* Func = FindFunction(FuncName))
+	{
+		struct FParams
+		{
+			uint8 NewRotationMode;
+		} Params;
+		Params.NewRotationMode = InRotationMode;
+		ProcessEvent(Func, &Params);
+	}
+}
+
 void ALSCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 初始化战斗朝向
+	SetCombatFacing(bAlwaysOrientToControlRotation);
 
 	// 监听生命组件的死亡事件驱动小队顺切或倒地
 	if (HealthComponent)

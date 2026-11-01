@@ -54,6 +54,18 @@ public:
 	FORCEINLINE ULSEnergyComponent* GetEnergyComponent() const { return EnergyComponent; }
 	FORCEINLINE ULSThrowableComponent* GetThrowableComponent() const { return ThrowableComponent; }
 
+	// 战斗/射击模式：角色是否始终正对准星（指哪转哪，扫射步法）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Rotation")
+	bool bAlwaysOrientToControlRotation = false;
+
+	// 动态切换战斗朝向模式（开火或瞄准时锁定准星并通知动画系统进入 Strafe 模式；退出后恢复自由跑动）
+	UFUNCTION(BlueprintCallable, Category = "Character|Rotation")
+	virtual void SetCombatFacing(bool bEnable);
+
+	// 向底层动画/状态机（如 ALS 蓝图接口）派发旋转模式指令 (0: VelocityDirection, 1: LookingDirection, 2: Aiming)
+	UFUNCTION(BlueprintCallable, Category = "Character|Rotation")
+	void SetALSRotationMode(uint8 InRotationMode);
+
 	// 角色固有元素属性（供同色微粒判定）
 	UFUNCTION(BlueprintPure, Category = "Character|Identity")
 	FGameplayTag GetCharacterElementTag() const { return CharacterElementTag; }

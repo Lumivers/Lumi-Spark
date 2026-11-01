@@ -258,7 +258,11 @@ protected:
 	void HandleZoomIn();
 	void HandleZoomOut();
 
+	// 战斗朝向集中仲裁更新（综合开火、瞄准与常态设置）
+	void UpdateCombatFacing();
+
 private:
 
 	bool bIsAiming = false;
+	bool bIsFiring = false;
 };

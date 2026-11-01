@@ -133,13 +133,17 @@ void ULSCameraComponent::ExitADS()
 	if (!bIsInADS) return;
 	bIsInADS = false;
 	
-	// 退出瞄准：解绑视角，镜头可 360 度自由旋转观察角色
+	// 退出瞄准：若角色未开启始终对齐准星，才解绑视角恢复自由漫游
 	if (ALSCharacterBase* Char = Cast<ALSCharacterBase>(GetOwner()))
 	{
-		Char->bUseControllerRotationYaw = false;
-		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
+		if (!Char->bAlwaysOrientToControlRotation)
 		{
-			MoveComp->bOrientRotationToMovement = true;
+			Char->bUseControllerRotationYaw = false;
+			if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
+			{
+				MoveComp->bOrientRotationToMovement = true;
+				MoveComp->bUseControllerDesiredRotation = false;
+			}
 		}
 	}
 
@@ -226,4 +230,4 @@ void ULSCameraComponent::AdjustCameraZoom(float ZoomDelta)
 			GEngine->AddOnScreenDebugMessage(54321, 1.5f, FColor::Yellow, FString::Printf(TEXT("🔭 [Camera] 臂长已调整: %.0f (范围: %.0f~%.0f)"), TargetArmLength, MinArmLength, MaxArmLength));
 		}
 	}
-}
+}

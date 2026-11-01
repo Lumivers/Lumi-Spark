@@ -76,16 +76,25 @@ void ULSAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bIsAiming = false;
 	}
 
+	// 8. 武器开火与左手 IK 状态预提取
+	bIsFiring = false;
+	if (ULSWeaponComponent* WeaponComp = Character->GetWeaponComponent())
+	{
+		if (ALSWeaponBase* CurrentWeapon = WeaponComp->GetCurrentWeapon())
+		{
+			bIsFiring = CurrentWeapon->IsFiring();
+		}
+	}
+
 	const FRotator AimRotation = Character->GetBaseAimRotation();
 	const FRotator DeltaRot = UKismetMathLibrary::NormalizedDeltaRotator(AimRotation, ActorRotation);
-	// 核心改进：仅在按住右键开镜瞄准 (bIsAiming) 时才触发身体与脊椎俯仰；自由观察视角下平滑归零保持挺拔身姿
-	const float TargetPitch = bIsAiming ? DeltaRot.Pitch : 0.0f;
-	const float TargetYaw = bIsAiming ? DeltaRot.Yaw : 0.0f;
+	// 战斗对齐：无论是右键开镜瞄准 (bIsAiming) 还是左键开火射击 (bIsFiring)，均激活身体与脊椎俯仰对齐准星！
+	const bool bCombatActive = bIsAiming || bIsFiring;
+	const float TargetPitch = bCombatActive ? DeltaRot.Pitch : 0.0f;
+	const float TargetYaw = bCombatActive ? DeltaRot.Yaw : 0.0f;
 	AimPitch = FMath::FInterpTo(AimPitch, TargetPitch, DeltaSeconds, 15.0f);
 	AimYaw = FMath::FInterpTo(AimYaw, TargetYaw, DeltaSeconds, 15.0f);
 
-	// 8. 武器状态与左手 IK 吸附位置提取
-	bIsFiring = false;
 	bool bFoundLeftHandSocket = false;
 	if (Character)
 	{
