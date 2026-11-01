@@ -122,17 +122,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
 	TObjectPtr<UAnimMontage> CharacterFireMontage;
 	
-	//第一人称手臂开火动作蒙太奇
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TObjectPtr<UAnimMontage> FPArmsFireMontage;
-	
 	//角色全身换弹动作蒙太奇
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
 	TObjectPtr<UAnimMontage> CharacterReloadMontage;
-	
-	//第一人称手臂换弹动作蒙太奇
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TObjectPtr<UAnimMontage> FPArmsReloadMontage;
 	
 	//音效与开火表现
 	

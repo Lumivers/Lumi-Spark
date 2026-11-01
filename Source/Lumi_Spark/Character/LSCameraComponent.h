@@ -7,19 +7,18 @@
 #include "LSCameraComponent.generated.h"
 
 class USpringArmComponent;
-/** 视角模式枚举 */
+
+/** 第三人称视角模式枚举 */
 UENUM(BlueprintType)
 enum class ELSCameraMode : uint8
 {
-	FirstPerson     UMETA(DisplayName = "First Person"),    // 第一人称（默认）
-	ThirdPerson     UMETA(DisplayName = "Third Person"),    // 第三人称
-	OverShoulder    UMETA(DisplayName = "Over Shoulder")    // 过肩瞄准
+	ThirdPerson     UMETA(DisplayName = "Third Person"),    // 第三人称自由漫游（默认）
+	OverShoulder    UMETA(DisplayName = "Over Shoulder")    // 过肩瞄准 (ADS)
 };
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class LUMI_SPARK_API ULSCameraComponent : public UCameraComponent
 {
-	
 	GENERATED_BODY()
 	
 public:
@@ -29,19 +28,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Mode")
 	ELSCameraMode CurrentMode = ELSCameraMode::ThirdPerson;
 	
-	// ═══ 视角参数配置 ═══
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|FPS")
-	FVector FPSOffset = FVector(0.f, 0.f, 70.f); // 相对角色眼部高度
-	
-	UPROPERTY(EditDefaultsOnly, Category = "Camera|FPS")
-	float FPSFov = 90.f;
-	
+	// ═══ 第三人称自由视角参数配置 ═══
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|TPS")
 	float TPSArmLength = 300.f; // 第三人称弹簧臂距离
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|TPS")
 	float TPSFov = 80.f;
 	
+	// ═══ 过肩瞄准参数配置 ═══
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Shoulder")
 	FVector ShoulderOffset = FVector(0.f, 60.f, 60.f); // 右肩偏移
 	
@@ -54,9 +48,6 @@ public:
 	// ═══ 控制接口（供 Controller / Character 调用） ═══
 	UFUNCTION(BlueprintCallable, Category="Camera")
 	void SetCameraMode(ELSCameraMode NewMode);
-	
-	UFUNCTION(BlueprintCallable, Category="Camera")
-	void ToggleCameraMode();//循环切换一三人称
 
 	// 滚轮缩放第三人称视角臂长
 	UFUNCTION(BlueprintCallable, Category="Camera")
@@ -71,27 +62,23 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|TPS")
 	float ZoomStep = 35.f;
 
+	UFUNCTION(BlueprintCallable, Category="Camera")
+	void EnterADS(); // 开镜/进入过肩瞄准
 	
 	UFUNCTION(BlueprintCallable, Category="Camera")
-	void EnterADS();//开镜/进入过肩瞄准
-	
-	UFUNCTION(BlueprintCallable, Category="Camera")
-	void ExitADS();//退出开镜
+	void ExitADS(); // 退出开镜
 	
 	UFUNCTION(BlueprintCallable, Category="Camera")
 	FORCEINLINE bool IsADS() const { return bIsInADS; }
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Camera")
-	TObjectPtr<USpringArmComponent> SpringArm; // 弹簧臂组件，用于第三人称和过肩瞄准模式
-	
+	TObjectPtr<USpringArmComponent> SpringArm;
+
 protected:
 	virtual void BeginPlay() override;
 	
 public:
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-	
-	// 根据当前模式更新角色全身Mesh和第一人称手臂的显隐
-	void UpdateMeshVisibility();
 	
 private:
 	ELSCameraMode PreADSMode = ELSCameraMode::ThirdPerson;

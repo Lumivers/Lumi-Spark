@@ -134,12 +134,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Visuals")
 	TSoftObjectPtr<UAnimMontage> CharacterReloadMontage;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Visuals")
-	TSoftObjectPtr<UAnimMontage> FPArmsFireMontage;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Visuals")
-	TSoftObjectPtr<UAnimMontage> FPArmsReloadMontage;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Audio")
 	TSoftObjectPtr<USoundBase> FireSound;
 

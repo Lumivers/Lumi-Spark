@@ -227,13 +227,6 @@ void ALSWeaponBase::PlayLocalFireEffects(bool bIsADS)
 			OwnerChar->PlayAnimMontage(CharacterFireMontage);
 		}
 		
-		if (FPArmsFireMontage && OwnerChar->GetFPArmsMesh())
-		{
-			if (UAnimInstance* ArmsAnimInst = OwnerChar->GetFPArmsMesh()->GetAnimInstance())
-			{
-				ArmsAnimInst->Montage_Play(FPArmsFireMontage);
-			}
-		}
 	}
 	
 	// 触发枪身程序化机械后坐力回冲与枪口上跳抖动！
@@ -470,13 +463,6 @@ void ALSWeaponBase::Reload()
 		if (CharacterReloadMontage && OwnerChar->GetMesh())
 		{
 			OwnerChar->PlayAnimMontage(CharacterReloadMontage, AnimSpeed);
-		}
-		if (FPArmsReloadMontage && OwnerChar->GetFPArmsMesh())
-		{
-			if (UAnimInstance* ArmsAnimInst = OwnerChar->GetFPArmsMesh()->GetAnimInstance())
-			{
-				ArmsAnimInst->Montage_Play(FPArmsReloadMontage, AnimSpeed);
-			}
 		}
 	}
 	

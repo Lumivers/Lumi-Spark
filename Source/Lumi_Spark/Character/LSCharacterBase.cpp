@@ -27,7 +27,7 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-	// 弹簧臂组件装配（原生驱动第三人称与过肩瞄准臂长及偏移）
+	// 弹簧臂组件装配（驱动第三人称与过肩瞄准臂长及偏移）
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(GetCapsuleComponent());
 	CameraBoom->TargetArmLength = 300.0f;
@@ -41,11 +41,6 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
 	CameraComponent->bUsePawnControlRotation = false; // 自身不自转，随弹簧臂
 	CameraComponent->SpringArm = CameraBoom;
 	
-	FPArmsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FPArmsMesh"));
-	FPArmsMesh->SetupAttachment(CameraComponent);
-	FPArmsMesh->SetOnlyOwnerSee(true);
-	FPArmsMesh->SetCastShadow(false);
-	FPArmsMesh->SetCollisionProfileName(TEXT("NoCollision"));
 
 	// 玩法业务组件
 	WeaponComponent = CreateDefaultSubobject<ULSWeaponComponent>(TEXT("LSWeaponComp"));

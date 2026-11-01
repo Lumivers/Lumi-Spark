@@ -44,7 +44,6 @@ public:
 	// ─── 统一组件访问器 ───
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	FORCEINLINE ULSCameraComponent* GetCameraComponent() const { return CameraComponent; }
-	FORCEINLINE USkeletalMeshComponent* GetFPArmsMesh() const { return FPArmsMesh; }
 	FORCEINLINE ULSMovementComponent* GetLSMovementComponent() const { return Cast<ULSMovementComponent>(GetCharacterMovement()); }
 	FORCEINLINE ULSWeaponComponent* GetWeaponComponent() const { return WeaponComponent; }
 	FORCEINLINE ULSElementComponent* GetElementComponent() const { return ElementComponent; }
@@ -116,9 +115,6 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULSCameraComponent> CameraComponent;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<USkeletalMeshComponent> FPArmsMesh;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULSMovementComponent> LSMovementComponent;

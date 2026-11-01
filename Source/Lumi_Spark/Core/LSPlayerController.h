@@ -55,9 +55,6 @@ public:
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
 	TObjectPtr<UInputAction> IA_Crouch;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
-	TObjectPtr<UInputAction> IA_ToggleView; //v切换FPS/TPS
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
 	TObjectPtr<UInputAction> IA_Zoom; // 滚轮缩放第三人称视角臂长 (Axis1D)
@@ -232,7 +229,6 @@ protected:
 	void HandleDash();
 	void HandleCrouchStarted();
 	void HandleCrouchCompleted();
-	void HandleToggleView();
 	
 	void HandleFireStarted();
 	void HandleFireCompleted();
