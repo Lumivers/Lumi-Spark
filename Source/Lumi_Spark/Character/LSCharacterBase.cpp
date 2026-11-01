@@ -105,6 +105,31 @@ void ALSCharacterBase::SetALSRotationMode(uint8 InRotationMode)
 	}
 }
 
+void ALSCharacterBase::SetALSDesiredGait(uint8 InGait)
+{
+	// 1. 同步反射属性 DesiredGait 与 SprintHeld (InGait == 2 代表冲刺)
+	if (FByteProperty* GaitProp = CastField<FByteProperty>(GetClass()->FindPropertyByName(FName("DesiredGait"))))
+	{
+		GaitProp->SetPropertyValue_InContainer(this, InGait);
+	}
+	if (FBoolProperty* SprintProp = CastField<FBoolProperty>(GetClass()->FindPropertyByName(FName("SprintHeld"))))
+	{
+		SprintProp->SetPropertyValue_InContainer(this, InGait == 2);
+	}
+
+	// 2. 派发 ALS 原生蓝图接口 BPI_Set_Gait 事件驱动状态机与动画过渡
+	static const FName FuncName(TEXT("BPI_Set_Gait"));
+	if (UFunction* Func = FindFunction(FuncName))
+	{
+		struct FParams
+		{
+			uint8 NewGait;
+		} Params;
+		Params.NewGait = InGait;
+		ProcessEvent(Func, &Params);
+	}
+}
+
 void ALSCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();

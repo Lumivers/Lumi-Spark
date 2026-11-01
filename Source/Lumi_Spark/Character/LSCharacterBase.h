@@ -65,6 +65,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Character|Rotation")
 	void SetALSRotationMode(uint8 InRotationMode);
 
+	// 向底层动画/状态机（如 ALS 蓝图接口）派发步态指令 (0: Walking, 1: Running, 2: Sprinting)
+	UFUNCTION(BlueprintCallable, Category = "Character|Gait")
+	void SetALSDesiredGait(uint8 InGait);
+
 	// 角色固有元素属性（供同色微粒判定）
 	UFUNCTION(BlueprintPure, Category = "Character|Identity")
 	FGameplayTag GetCharacterElementTag() const { return CharacterElementTag; }
