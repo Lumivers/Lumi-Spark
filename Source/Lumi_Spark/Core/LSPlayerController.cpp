@@ -1,4 +1,4 @@
-#include "LSPlayerController.h"
+﻿#include "LSPlayerController.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
@@ -34,6 +34,14 @@ void ALSPlayerController::BeginPlay()
 	//默认进入纯游戏战斗输入模式
 	SwitchToGameInputMode();
 	
+	if (IsLocalController() && GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(1100, 8.0f, FColor::Green, 
+			FString::Printf(TEXT("🎮 [LumiSpark] 控制器就绪 | IA_Crouch: %s | IA_Dash: %s | IMC: %s"), 
+				IA_Crouch ? TEXT("已配置") : TEXT("❌未配置(NULL)"), 
+				IA_Dash ? TEXT("已配置") : TEXT("❌未配置(NULL)"),
+				DefaultMappingContext ? TEXT("已配置") : TEXT("❌未配置(NULL)")));
+	}
 	if (IsLocalController())
 	{
 		// 如果蓝图没配，C++ 自动去把刚才做好的 WBP_LSUHD 加载出来！
@@ -246,6 +254,7 @@ void ALSPlayerController::HandleSprintStarted()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
+		GEngine->AddOnScreenDebugMessage(1101, 1.5f, FColor::Cyan, TEXT("🏃 [EnhancedInput] 触发了疾跑 (Sprint Started)！"));
 		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent()) MoveComp->StartSprint();
 	}
 }
@@ -262,7 +271,32 @@ void ALSPlayerController::HandleDash()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent()) MoveComp->TryDash();
+		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
+		{
+			const float CurrentSpd = MoveComp->Velocity.Size2D();
+			const bool bSprint = MoveComp->IsSprinting();
+
+			GEngine->AddOnScreenDebugMessage(1109, 2.0f, FColor::Cyan, 
+				FString::Printf(TEXT("🎮 [Ctrl 按下] 触发滑铲/下蹲！当前速度: %.1f, 疾跑: %s"), 
+					CurrentSpd, bSprint ? TEXT("TRUE") : TEXT("FALSE")));
+
+			// 只要有移动动量或处于疾跑，直接滑铲！否则原地切换下蹲/站立
+			if (bSprint || CurrentSpd > 200.f)
+			{
+				MoveComp->StartSlide();
+			}
+			else
+			{
+				if (Char->bIsCrouched)
+				{
+					Char->UnCrouch();
+				}
+				else
+				{
+					Char->Crouch();
+				}
+			}
+		}
 	}
 }
 
@@ -272,7 +306,16 @@ void ALSPlayerController::HandleCrouchStarted()
 	{
 		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
 		{
-			if (MoveComp->IsSprinting()) MoveComp->StartSlide();
+			const bool bSprint = MoveComp->IsSprinting();
+			const float CurrentSpd = MoveComp->Velocity.Size2D();
+			GEngine->AddOnScreenDebugMessage(1103, 2.0f, FColor::Cyan, 
+				FString::Printf(TEXT("🎮 [HandleCrouchStarted] 按下下蹲！IsSprinting: %s, 速度: %.1f"), 
+					bSprint ? TEXT("TRUE") : TEXT("FALSE"), CurrentSpd));
+
+			if (bSprint || CurrentSpd > 450.f)
+			{
+				MoveComp->StartSlide();
+			}
 			else Char->Crouch();
 		}
 	}
@@ -284,7 +327,15 @@ void ALSPlayerController::HandleCrouchCompleted()
 	{
 		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
 		{
-			if (MoveComp->IsSliding()) MoveComp->StopSlide();
+			GEngine->AddOnScreenDebugMessage(1104, 1.5f, FColor::Silver, 
+				FString::Printf(TEXT("🛑 [HandleCrouchCompleted] 松开下蹲键！IsSliding: %s"), 
+					MoveComp->IsSliding() ? TEXT("TRUE") : TEXT("FALSE")));
+
+			// 如果正在滑铲中，不要因为松开键瞬间打断滑铲！让它由摩擦力物理自然滑完
+			if (MoveComp->IsSliding())
+			{
+				return;
+			}
 		}
 		Char->UnCrouch();
 	}
@@ -420,6 +471,7 @@ void ALSPlayerController::HandleReload()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
+		GEngine->AddOnScreenDebugMessage(1102, 1.5f, FColor::Yellow, TEXT("🔄 [EnhancedInput] 触发了换弹 (Reload)！"));
 		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent()) WeaponComp->Reload();
 	}
 }

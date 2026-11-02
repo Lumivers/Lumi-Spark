@@ -1,9 +1,10 @@
-#include "LSMovementComponent.h"
+﻿#include "LSMovementComponent.h"
 #include "LSCharacterBase.h"
 #include "Character/LSStaminaComponent.h"
 #include "GameFramework/Character.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "Animation/AnimMontage.h"
 
 ULSMovementComponent::ULSMovementComponent()
 {
@@ -58,12 +59,14 @@ void ULSMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds
 
 void ULSMovementComponent::StartSprint()
 {
-	//开镜或下蹲状态下无法冲刺
+	// 开镜或下蹲状态下无法冲刺
 	if (bIsAiming || IsCrouching()) return;
 
 	bWantsToSprint = true;
+	MaxWalkSpeed = SprintSpeed;
 	if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
 	{
+		LSChar->SetALSRotationMode(LSChar->bAlwaysOrientToControlRotation ? 1 : 0);
 		LSChar->SetALSDesiredGait(2); // 2 = Sprinting
 	}
 }
@@ -71,32 +74,42 @@ void ULSMovementComponent::StartSprint()
 void ULSMovementComponent::StopSprint()
 {
 	bWantsToSprint = false;
+	MaxWalkSpeed = WalkSpeed;
 	if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
 	{
 		LSChar->SetALSDesiredGait(1); // 1 = Running
+		LSChar->SetALSRotationMode(bIsAiming ? 2 : 1);
 	}
 }
 
 void ULSMovementComponent::SetAiming(bool IsAiming)
 {
 	bIsAiming = IsAiming;
-	//开镜状态下无法冲刺
 	if (bIsAiming)
 	{
 		bWantsToSprint = false;
-	if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
-	{
-		LSChar->SetALSDesiredGait(1); // 1 = Running
+		MaxWalkSpeed = WalkSpeed;
+		if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
+		{
+			LSChar->SetALSDesiredGait(1); // 1 = Running
+			LSChar->SetALSRotationMode(2);
+		}
 	}
+	else
+	{
+		if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
+		{
+			LSChar->SetALSRotationMode(LSChar->bAlwaysOrientToControlRotation ? 1 : 0);
+		}
 	}
 }
 
 bool ULSMovementComponent::TryDash()
 {
-	//检查冷却和角色有效性
+	// 检查冷却和角色有效性
 	if (!bCanDash || !CharacterOwner || bIsDashing) return false;
 
-	//接入体力校验
+	// 接入体力校验
 	if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
 	{
 		if (ULSStaminaComponent* StaminaComp = LSChar->GetStaminaComponent())
@@ -108,23 +121,26 @@ bool ULSMovementComponent::TryDash()
 		}
 	}
 	
-	//1，获取闪避方向，优先使用当前移动输入方向，若静止则character朝向为闪避方向
+	// 1. 获取闪避方向，优先使用当前移动输入方向，若静止则 character 朝向为闪避方向
 	FVector DashDirection = Velocity.GetSafeNormal2D();
 	if (DashDirection.IsNearlyZero())
 	{
 		DashDirection = CharacterOwner->GetActorForwardVector();
 	}
 
-	//2,进入闪避状态并施加水平冲量
+	// 2. 进入闪避状态并施加水平冲量
 	bIsDashing = true;
 	bCanDash = false;
 	bIsInvincible = true;
 	OnInvincibilityChanged.Broadcast(true);
 
-	//清理原有垂直速度，直接水平爆发
+	// 清理原有垂直速度，直接水平爆发
 	Velocity = DashDirection * DashImpulse;
 
-	//3，启动无敌帧和冷却计时器
+	GEngine->AddOnScreenDebugMessage(1110, 2.5f, FColor::Purple, 
+		FString::Printf(TEXT("💨 [TryDash] 闪避爆发冲刺！冲量: %.1f"), DashImpulse));
+
+	// 3. 启动无敌帧和冷却计时器
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().SetTimer(TimerHandle_DashIFrame, this, &ULSMovementComponent::OnDashIFrameFinished, DashIFrameDuration, false);
@@ -148,41 +164,64 @@ void ULSMovementComponent::OnDashCooldownFinished()
 
 void ULSMovementComponent::StartSlide()
 {
-	// 只有在冲刺且在地面的时候才能滑铲
-	if (!bWantsToSprint || !IsMovingOnGround() || bIsSliding)
+	// 1. 地面检测
+	if (!IsMovingOnGround())
 	{
+		GEngine->AddOnScreenDebugMessage(1105, 2.0f, FColor::Red, TEXT("❌ [StartSlide] 失败：角色不在地面上！"));
+		return;
+	}
+
+	// 2. 已经在滑铲中
+	if (bIsSliding)
+	{
+		return;
+	}
+
+	// 3. 速度判定：只要在移动（速度 > 100）或正在疾跑，即可进入滑铲
+	if (Velocity.Size2D() < 100.f && !bWantsToSprint)
+	{
+		GEngine->AddOnScreenDebugMessage(1105, 2.0f, FColor::Red, TEXT("❌ [StartSlide] 原地静止无法滑铲！"));
 		return;
 	}
 
 	bIsSliding = true;
 	bWantsToSprint = false;
+	MaxWalkSpeed = WalkSpeed;
 	if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
 	{
-		LSChar->SetALSDesiredGait(1); // 1 = Running
+		LSChar->SetALSDesiredGait(1);
+		LSChar->SetALSRotationMode(bIsAiming ? 2 : 1);
 	}
 
-	// 1. 下蹲身位
+	// 4. 下蹲身位
 	if (CharacterOwner)
 	{
 		CharacterOwner->Crouch();
 	}
 
-	// 2. 切断动力推进（核心！禁止 W 键马达继续输出），纯靠物理惯性滑行
+	// 5. 切断动力推进，直接应用在 UE 细节面板配置的摩擦力与减速度
 	MaxAcceleration = 0.f;
 	GroundFriction = SlideFriction;
 	BrakingDecelerationWalking = SlideBrakingDeceleration;
 
-	// 3. 继承当前冲刺动量并赋予适度爆发初动量
+	// 6. 方向与初速度：直接使用 UE 细节面板里填的 SlideSpeed，不做任何隐藏公式计算！
 	FVector SlideDirection = Velocity.GetSafeNormal2D();
 	if (SlideDirection.IsNearlyZero())
 	{
-		SlideDirection = CharacterOwner->GetActorForwardVector();
+		SlideDirection = CharacterOwner ? CharacterOwner->GetActorForwardVector() : FVector::ForwardVector;
 	}
-	const float CurrentSpeed2D = Velocity.Size2D();
-	const float TargetSlideSpeed = FMath::Clamp(CurrentSpeed2D * 1.15f, WalkSpeed + 150.f, SlideSpeed);
-	Velocity = SlideDirection * TargetSlideSpeed;
+	Velocity = SlideDirection * SlideSpeed;
+
+	GEngine->AddOnScreenDebugMessage(1106, 2.5f, FColor::Green, 
+		FString::Printf(TEXT("🛷 [StartSlide] 成功进入滑铲！初速度: %.1f | 摩擦阻尼: %.2f | 减速度: %.1f"), SlideSpeed, SlideFriction, SlideBrakingDeceleration));
+
+	// 7. 播放滑铲动作蒙太奇
+	if (SlideMontage && CharacterOwner)
+	{
+		CharacterOwner->PlayAnimMontage(SlideMontage);
+	}
 	
-	// 4. 开启最大保护计时器（防止特殊卡死）
+	// 8. 开启最大保护计时器（直接使用 UE 细节面板里的 SlideDuration）
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().SetTimer(TimerHandle_Slide, this, &ULSMovementComponent::StopSlide, SlideDuration, false);
@@ -193,18 +232,24 @@ void ULSMovementComponent::StopSlide()
 {
 	if (!bIsSliding) return;
 	
+	GEngine->AddOnScreenDebugMessage(1108, 1.5f, FColor::Yellow, TEXT("🏁 [StopSlide] 滑铲结束，起身恢复常规步态"));
+
 	bIsSliding = false;
 	
 	// 1. 滑铲结束站起来
 	if (CharacterOwner)
 	{
 		CharacterOwner->UnCrouch();
+		if (SlideMontage)
+		{
+			CharacterOwner->StopAnimMontage(SlideMontage);
+		}
 	}
 	
 	// 2. 彻底恢复物理马达动力、地面摩擦力和减速度
 	MaxAcceleration = DefaultMaxAcceleration;
 	GroundFriction = DefaultGroundFriction;
-	BrakingDecelerationWalking = DefaultBrakingDeceleration
+	BrakingDecelerationWalking = DefaultBrakingDeceleration;
 
 	if (UWorld* World = GetWorld())
 	{
@@ -238,7 +283,7 @@ void ULSMovementComponent::UpdateMovementState()
 
 float ULSMovementComponent::GetMaxSpeed() const
 {
-	//重写底层速度，让引擎各个移动逻辑自动读取当前状态对应的速度
+	// 重写底层速度，让引擎各个移动逻辑自动读取当前状态对应的速度
 	switch (CurrentMovementState)
 	{
 	case ELSMovementState::Aiming:

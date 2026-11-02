@@ -17,6 +17,8 @@ enum class ELSMovementState : uint8
 //闪避/受击无敌委托
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInvincibilityChanged, bool, bIsInvincible);
 
+class UAnimMontage;
+
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class LUMI_SPARK_API ULSMovementComponent : public UCharacterMovementComponent
 {
@@ -35,8 +37,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Movement|Speed")
 	float ADSSpeed = 300.f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Movement|Speed")
-	float SlideSpeed = 1100.f;
 
 	//闪避参数（DASH）
 	UPROPERTY(EditDefaultsOnly, Category = "Movement|Dash")
@@ -48,18 +48,24 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Movement|Dash")
 	float DashIFrameDuration = 0.2f; //闪避无敌时间
 
-	//滑铲参数（SLIDE）
-	UPROPERTY(EditDefaultsOnly, Category = "Movement|Slide")
-	float SlideDuration = 1.0f; // 滑铲最大保护时间（超时强制结束）
+	// 滑铲参数（在 UE 细节面板 Movement | Slide 中直接修改，不在 C++ 里写任何隐藏计算）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide")
+	float SlideSpeed = 1200.f; // 滑铲初速度（你在 UE 细节面板填多少就是多少）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide")
+	float SlideDuration = 1.2f; // 滑铲最大保护时间（超时强制结束）
 
-	UPROPERTY(EditDefaultsOnly, Category = "Movement|Slide")
-	float SlideFriction = 1.3f; // 滑铲阻尼摩擦力（1.2~1.5 最顺滑）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide")
+	float SlideFriction = 0.4f; // 滑铲阻尼摩擦力（0.3~0.5 像抹了黄油一样丝滑）
 	
-	UPROPERTY(EditDefaultsOnly, Category = "Movement|Slide")
-	float SlideBrakingDeceleration = 600.f; // 滑铲制动减速度
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide")
+	float SlideBrakingDeceleration = 150.f; // 滑铲制动减速度
 
-	UPROPERTY(EditDefaultsOnly, Category = "Movement|Slide")
-	float SlideMinSpeedToEnd = 280.f; // 速度衰减低于该值时自然起身结束滑铲
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide")
+	float SlideMinSpeedToEnd = 400.f; // 速度自然衰减至该值时平滑起身
+
+	// 滑铲动作蒙太奇
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide")
+	TObjectPtr<UAnimMontage> SlideMontage;
 
 	//无敌状态变更事件
 	UPROPERTY(BlueprintAssignable, Category = "Movement|Events")

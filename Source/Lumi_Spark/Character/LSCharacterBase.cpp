@@ -16,6 +16,59 @@
 #include "TimerManager.h"
 #include "Weapon/LSThrowableComponent.h"
 
+namespace
+{
+	static void SetALSPropertyByteOrEnum(UObject* Target, FName PropName, uint8 Value)
+	{
+		if (!Target) return;
+		if (FProperty* Prop = Target->GetClass()->FindPropertyByName(PropName))
+		{
+			if (FEnumProperty* EnumProp = CastField<FEnumProperty>(Prop))
+			{
+				if (FNumericProperty* Underlying = EnumProp->GetUnderlyingProperty())
+				{
+					void* ValuePtr = EnumProp->ContainerPtrToValuePtr<void>(Target);
+					Underlying->SetIntPropertyValue(ValuePtr, static_cast<int64>(Value));
+					UE_LOG(LogTemp, Log, TEXT("[SetALSProperty] SUCCESS: %s.%s = %d (FEnumProperty)"), *Target->GetName(), *PropName.ToString(), Value);
+					return;
+				}
+			}
+			else if (FByteProperty* ByteProp = CastField<FByteProperty>(Prop))
+			{
+				ByteProp->SetPropertyValue_InContainer(Target, Value);
+				UE_LOG(LogTemp, Log, TEXT("[SetALSProperty] SUCCESS: %s.%s = %d (FByteProperty)"), *Target->GetName(), *PropName.ToString(), Value);
+				return;
+			}
+			UE_LOG(LogTemp, Warning, TEXT("[SetALSProperty] FAIL: %s.%s 找到但既非 Enum 也非 Byte!"), *Target->GetName(), *PropName.ToString());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[SetALSProperty] NOT FOUND: %s 上未找到名为 %s 的属性!"), *Target->GetName(), *PropName.ToString());
+		}
+	}
+
+	static uint8 GetALSPropertyByteOrEnum(const UObject* Target, FName PropName)
+	{
+		if (!Target) return 255;
+		if (FProperty* Prop = Target->GetClass()->FindPropertyByName(PropName))
+		{
+			if (FEnumProperty* EnumProp = CastField<FEnumProperty>(Prop))
+			{
+				if (FNumericProperty* Underlying = EnumProp->GetUnderlyingProperty())
+				{
+					const void* ValuePtr = EnumProp->ContainerPtrToValuePtr<void>(Target);
+					return static_cast<uint8>(Underlying->GetSignedIntPropertyValue(ValuePtr));
+				}
+			}
+			else if (FByteProperty* ByteProp = CastField<FByteProperty>(Prop))
+			{
+				return ByteProp->GetPropertyValue_InContainer(Target);
+			}
+		}
+		return 255;
+	}
+}
+
 ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
@@ -58,38 +111,40 @@ void ALSCharacterBase::SetCombatFacing(bool bEnable)
 {
 	if (bAlwaysOrientToControlRotation)
 	{
-		bUseControllerRotationYaw = true;
+		bUseControllerRotationYaw = false;
 		if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
 		{
 			MoveComp->bOrientRotationToMovement = false;
-			MoveComp->bUseControllerDesiredRotation = true;
+			MoveComp->bUseControllerDesiredRotation = false;
 		}
 		SetALSRotationMode(2); // 模式 2 = Aiming (端枪抵肩瞄准)
 		return;
 	}
 
-	bUseControllerRotationYaw = bEnable;
+	bUseControllerRotationYaw = false;
 	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
 	{
-		MoveComp->bOrientRotationToMovement = !bEnable;
-		MoveComp->bUseControllerDesiredRotation = bEnable;
+		MoveComp->bOrientRotationToMovement = false;
+		MoveComp->bUseControllerDesiredRotation = false;
 		MoveComp->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 	}
 
 	// 核心修复：战斗开火/瞄准时必须切换为模式 2 (Aiming，进入 Rifle Aiming 状态端枪抵肩对准准星)；退出后恢复模式 0 (VelocityDirection 放松提枪跑动)
-	SetALSRotationMode(bEnable ? 2 : 0);
+	SetALSRotationMode(bEnable ? 2 : 1);
 }
 
 void ALSCharacterBase::SetALSRotationMode(uint8 InRotationMode)
 {
 	// 1. 直接同步反射属性，确保 ALS 蓝图内部变量立即响应
-	if (FByteProperty* ModeProp = CastField<FByteProperty>(GetClass()->FindPropertyByName(FName("RotationMode"))))
+	SetALSPropertyByteOrEnum(this, FName("RotationMode"), InRotationMode);
+	// unused
 	{
-		ModeProp->SetPropertyValue_InContainer(this, InRotationMode);
+
 	}
-	if (FByteProperty* DesiredProp = CastField<FByteProperty>(GetClass()->FindPropertyByName(FName("DesiredRotationMode"))))
+	SetALSPropertyByteOrEnum(this, FName("DesiredRotationMode"), InRotationMode);
+	// unused
 	{
-		DesiredProp->SetPropertyValue_InContainer(this, InRotationMode);
+
 	}
 
 	// 2. 派发 ALS 原生蓝图接口事件驱动状态机与动画过渡
@@ -108,10 +163,7 @@ void ALSCharacterBase::SetALSRotationMode(uint8 InRotationMode)
 void ALSCharacterBase::SetALSDesiredGait(uint8 InGait)
 {
 	// 1. 同步反射属性 DesiredGait 与 SprintHeld (InGait == 2 代表冲刺)
-	if (FByteProperty* GaitProp = CastField<FByteProperty>(GetClass()->FindPropertyByName(FName("DesiredGait"))))
-	{
-		GaitProp->SetPropertyValue_InContainer(this, InGait);
-	}
+	SetALSPropertyByteOrEnum(this, FName("DesiredGait"), InGait);
 	if (FBoolProperty* SprintProp = CastField<FBoolProperty>(GetClass()->FindPropertyByName(FName("SprintHeld"))))
 	{
 		SprintProp->SetPropertyValue_InContainer(this, InGait == 2);
@@ -130,12 +182,71 @@ void ALSCharacterBase::SetALSDesiredGait(uint8 InGait)
 	}
 }
 
+void ALSCharacterBase::SetALSOverlayState(uint8 InOverlayState)
+{
+	UE_LOG(LogTemp, Warning, TEXT("🎯 [SetALSOverlayState] 收到调用，修改 OverlayState: %d -> %d"),
+		GetALSPropertyByteOrEnum(this, FName("OverlayState")), InOverlayState);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Orange,
+			FString::Printf(TEXT("🎯 [SetALSOverlayState] 修改 OverlayState 为 %d"), InOverlayState));
+	}
+	// 1. 设置 Character 自身的 OverlayState 反射变量
+	SetALSPropertyByteOrEnum(this, FName("OverlayState"), InOverlayState);
+
+	// 2. 同步设置 AnimInstance (ALS_AnimBP) 上的 OverlayState 变量
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+		{
+			SetALSPropertyByteOrEnum(AnimInst, FName("OverlayState"), InOverlayState);
+		}
+	}
+
+	// 3. 派发 ALS 原生蓝图接口 BPI_Set_OverlayState
+	static const FName FuncName(TEXT("BPI_Set_OverlayState"));
+	if (UFunction* Func = FindFunction(FuncName))
+	{
+		struct FParams
+		{
+			uint8 NewOverlayState;
+		} Params;
+		Params.NewOverlayState = InOverlayState;
+		ProcessEvent(Func, &Params);
+	}
+}
+
 void ALSCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+
 	// 初始化战斗朝向
-	SetCombatFacing(bAlwaysOrientToControlRotation);
+	// 仅在明确启用准星锁定时才强制覆盖朝向，否则保留蓝图资产自身配置的默认旋转模式
+	if (bAlwaysOrientToControlRotation)
+	{
+		SetCombatFacing(true);
+	}
+
+	// 🔍 [Debug 监测] 打印出生时蓝图读取到的初始状态
+	const uint8 InitOverlay = GetALSPropertyByteOrEnum(this, FName("OverlayState"));
+	const uint8 InitRotMode = GetALSPropertyByteOrEnum(this, FName("RotationMode"));
+	const uint8 InitGait = GetALSPropertyByteOrEnum(this, FName("DesiredGait"));
+	UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	const uint8 AnimOverlay = AnimInst ? GetALSPropertyByteOrEnum(AnimInst, FName("OverlayState")) : 255;
+	const FString AnimClassName = AnimInst ? AnimInst->GetClass()->GetName() : TEXT("None");
+
+	UE_LOG(LogTemp, Warning, TEXT("================ [ALS 出生雷达] ================"));
+	UE_LOG(LogTemp, Warning, TEXT("角色: %s | 初始 OverlayState: %d | RotationMode: %d | DesiredGait: %d"), *GetName(), InitOverlay, InitRotMode, InitGait);
+	UE_LOG(LogTemp, Warning, TEXT("动画蓝图: %s | 初始 Anim_OverlayState: %d"), *AnimClassName, AnimOverlay);
+	UE_LOG(LogTemp, Warning, TEXT("================================================"));
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Yellow,
+			FString::Printf(TEXT("🌟 [出生状态] 角色Overlay: %d | 动画Overlay: %d | 旋转模式: %d | 动画蓝图: %s"),
+				InitOverlay, AnimOverlay, InitRotMode, *AnimClassName));
+	}
 
 	// 监听生命组件的死亡事件驱动小队顺切或倒地
 	if (HealthComponent)
@@ -147,6 +258,22 @@ void ALSCharacterBase::BeginPlay()
 void ALSCharacterBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// 实时在屏幕左上角打印 ALS 状态监测雷达（覆盖刷新，不刷屏）
+	if (GEngine && IsLocallyControlled())
+	{
+		const uint8 CharOverlay = GetALSPropertyByteOrEnum(this, FName("OverlayState"));
+		const uint8 CharRotMode = GetALSPropertyByteOrEnum(this, FName("RotationMode"));
+		const uint8 CharGait = GetALSPropertyByteOrEnum(this, FName("DesiredGait"));
+		
+		UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+		const uint8 AnimOverlay = AnimInst ? GetALSPropertyByteOrEnum(AnimInst, FName("OverlayState")) : 255;
+		const FString AnimClassName = AnimInst ? AnimInst->GetClass()->GetName() : TEXT("None");
+
+		GEngine->AddOnScreenDebugMessage(9999, 0.0f, FColor::Cyan,
+			FString::Printf(TEXT("📊 [ALS实时雷达] 角色Overlay=%d | 动画BP_Overlay=%d | 旋转模式=%d | 步态Gait=%d | 动画蓝图=%s"),
+				CharOverlay, AnimOverlay, CharRotMode, CharGait, *AnimClassName));
+	}
 }
 
 void ALSCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

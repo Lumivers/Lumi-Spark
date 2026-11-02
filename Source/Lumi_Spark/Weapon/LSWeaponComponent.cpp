@@ -1,6 +1,7 @@
 #include "LSWeaponComponent.h"
 #include "Weapon/LSWeaponBase.h"
 #include "GameFramework/Character.h"
+#include "Character/LSCharacterBase.h"
 #include "Net/UnrealNetwork.h"
 
 ULSWeaponComponent::ULSWeaponComponent()
@@ -17,6 +18,7 @@ void ULSWeaponComponent::BeginPlay()
 	if (DefaultPrimaryClass)
 	{
 		CurrentWeapon = SpawnWeapon(DefaultPrimaryClass);
+		UE_LOG(LogTemp, Log, TEXT("🔫 [LSWeaponComponent] 默认武器生成: %s"), *GetNameSafe(CurrentWeapon));
 	}
 	if (CurrentWeapon)
 	{
@@ -93,6 +95,8 @@ void ULSWeaponComponent::AttachWeaponToSocket(ALSWeaponBase* Weapon, FName Socke
 
 	// 吸附到骨骼插槽，保留原始缩放
 	Weapon->AttachToComponent(Char->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TargetSocket);
+	UE_LOG(LogTemp, Warning, TEXT("🔫 [LSWeaponComponent] 武器 %s 已吸附至插槽: %s"),
+		*Weapon->GetName(), *TargetSocket.ToString());
 }
 
 void ULSWeaponComponent::StartFire()

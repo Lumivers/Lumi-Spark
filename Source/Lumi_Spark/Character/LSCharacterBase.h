@@ -69,6 +69,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Character|Gait")
 	void SetALSDesiredGait(uint8 InGait);
 
+	// 向底层动画/状态机（如 ALS 蓝图接口）派发覆层姿态指令 (0: Default, 1: Rifle, 2: Bow, 3: Pistol 1H, etc.)
+	UFUNCTION(BlueprintCallable, Category = "Character|Overlay")
+	void SetALSOverlayState(uint8 InOverlayState);
+
 	// 角色固有元素属性（供同色微粒判定）
 	UFUNCTION(BlueprintPure, Category = "Character|Identity")
 	FGameplayTag GetCharacterElementTag() const { return CharacterElementTag; }

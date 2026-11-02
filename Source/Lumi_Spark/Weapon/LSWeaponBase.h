@@ -313,7 +313,7 @@ protected:
 	
 	// 是否开启枪身随镜头仰俯动态对齐
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Aim")
-	bool bEnableProceduralAimPitch = true;
+	bool bEnableProceduralAimPitch = false;
 
 	// 向上抬枪倍率（负数纠正手部骨骼轴向，控制抬头仰角幅度，默认 -0.8）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Aim")
