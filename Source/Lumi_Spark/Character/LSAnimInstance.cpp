@@ -59,7 +59,6 @@ void ULSAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	// 4. 战术动作状态（从自定义移动组件提取）
 	bIsCrouching = MovementComponent->IsCrouching();
 	bIsSprinting = MovementComponent->IsSprinting();
-	bIsSliding = MovementComponent->IsSliding();
 	bIsDashing = MovementComponent->IsDashing();
 
 	// 7. 提取开镜瞄准状态 (ADS)
@@ -104,16 +103,20 @@ void ULSAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 			{
 				bIsFiring = CurrentWeapon->IsFiring();
 
-				FTransform WeaponLeftHandWorldTransform;
-				if (CurrentWeapon->GetLeftHandSocketTransform(WeaponLeftHandWorldTransform))
+				// 换弹过程中左手需要离开护木拔插弹匣，必须禁用左手 IK
+				if (!CurrentWeapon->IsReloading())
 				{
-					if (USkeletalMeshComponent* CharMesh = Character->GetMesh())
+					FTransform WeaponLeftHandWorldTransform;
+					if (CurrentWeapon->GetLeftHandSocketTransform(WeaponLeftHandWorldTransform))
 					{
-						// 转换至角色网格体的组件空间 (Component Space)
-						LeftHandIKTransform = WeaponLeftHandWorldTransform.GetRelativeTransform(CharMesh->GetComponentTransform());
-						LeftHandIKLocation = LeftHandIKTransform.GetLocation();
-						LeftHandIKRotation = LeftHandIKTransform.Rotator();
-						bFoundLeftHandSocket = true;
+						if (USkeletalMeshComponent* CharMesh = Character->GetMesh())
+						{
+							// 转换至角色网格体的组件空间 (Component Space)
+							LeftHandIKTransform = WeaponLeftHandWorldTransform.GetRelativeTransform(CharMesh->GetComponentTransform());
+							LeftHandIKLocation = LeftHandIKTransform.GetLocation();
+							LeftHandIKRotation = LeftHandIKTransform.Rotator();
+							bFoundLeftHandSocket = true;
+						}
 					}
 				}
 			}

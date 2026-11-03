@@ -1,4 +1,4 @@
-﻿#include "LSPlayerController.h"
+#include "LSPlayerController.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
@@ -233,14 +233,6 @@ void ALSPlayerController::HandleJumpStarted()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		// 若正在滑铲中起跳（战术滑铲跳），立即平滑打断滑铲并起跳
-		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
-		{
-			if (MoveComp->IsSliding())
-			{
-				MoveComp->StopSlide();
-			}
-		}
 		Char->Jump();
 	}
 }
@@ -273,29 +265,7 @@ void ALSPlayerController::HandleDash()
 	{
 		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
 		{
-			const float CurrentSpd = MoveComp->Velocity.Size2D();
-			const bool bSprint = MoveComp->IsSprinting();
-
-			GEngine->AddOnScreenDebugMessage(1109, 2.0f, FColor::Cyan, 
-				FString::Printf(TEXT("🎮 [Ctrl 按下] 触发滑铲/下蹲！当前速度: %.1f, 疾跑: %s"), 
-					CurrentSpd, bSprint ? TEXT("TRUE") : TEXT("FALSE")));
-
-			// 只要有移动动量或处于疾跑，直接滑铲！否则原地切换下蹲/站立
-			if (bSprint || CurrentSpd > 200.f)
-			{
-				MoveComp->StartSlide();
-			}
-			else
-			{
-				if (Char->bIsCrouched)
-				{
-					Char->UnCrouch();
-				}
-				else
-				{
-					Char->Crouch();
-				}
-			}
+			MoveComp->TryDash();
 		}
 	}
 }
@@ -304,20 +274,7 @@ void ALSPlayerController::HandleCrouchStarted()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
-		{
-			const bool bSprint = MoveComp->IsSprinting();
-			const float CurrentSpd = MoveComp->Velocity.Size2D();
-			GEngine->AddOnScreenDebugMessage(1103, 2.0f, FColor::Cyan, 
-				FString::Printf(TEXT("🎮 [HandleCrouchStarted] 按下下蹲！IsSprinting: %s, 速度: %.1f"), 
-					bSprint ? TEXT("TRUE") : TEXT("FALSE"), CurrentSpd));
-
-			if (bSprint || CurrentSpd > 450.f)
-			{
-				MoveComp->StartSlide();
-			}
-			else Char->Crouch();
-		}
+		Char->Crouch();
 	}
 }
 
@@ -325,18 +282,6 @@ void ALSPlayerController::HandleCrouchCompleted()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
-		{
-			GEngine->AddOnScreenDebugMessage(1104, 1.5f, FColor::Silver, 
-				FString::Printf(TEXT("🛑 [HandleCrouchCompleted] 松开下蹲键！IsSliding: %s"), 
-					MoveComp->IsSliding() ? TEXT("TRUE") : TEXT("FALSE")));
-
-			// 如果正在滑铲中，不要因为松开键瞬间打断滑铲！让它由摩擦力物理自然滑完
-			if (MoveComp->IsSliding())
-			{
-				return;
-			}
-		}
 		Char->UnCrouch();
 	}
 }

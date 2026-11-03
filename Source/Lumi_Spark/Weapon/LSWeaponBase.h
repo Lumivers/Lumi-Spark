@@ -87,6 +87,7 @@ public:
 	FORCEINLINE float GetMaxSpread() const { return MaxSpread; }
 	FORCEINLINE float GetBaseDamage() const { return BaseDamage; }
 	FORCEINLINE bool IsFiring() const { return bIsFiring; }
+	FORCEINLINE bool IsReloading() const { return bIsReloading; }
 	
 	FORCEINLINE float GetSpreadRatio() const 
 	{ 

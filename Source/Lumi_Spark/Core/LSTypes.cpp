@@ -7,7 +7,6 @@ namespace LSTags
 	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Moving,     "State.Moving");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Sprinting,  "State.Sprinting");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Dashing,    "State.Dashing");
-	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Sliding,    "State.Sliding");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_State_ADS,        "State.ADS");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Invincible, "State.Invincible");
 	UE_DEFINE_GAMEPLAY_TAG(TAG_State_Dead,       "State.Dead");

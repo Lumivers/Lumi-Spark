@@ -58,10 +58,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bIsSprinting = false;
 
-	// 是否处于滑铲状态
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
-	bool bIsSliding = false;
-
 	//是否处于闪避无敌帧状态
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
 	bool bIsDashing = false;
