@@ -1,4 +1,4 @@
-﻿#include "LSSniperRifle.h"
+#include "LSSniperRifle.h"
 #include "Character/LSCharacterBase.h"
 #include "Character/LSCameraComponent.h"
 #include "Core/LSTypes.h"
@@ -7,7 +7,6 @@
 #include "Core/LSEventBus.h"
 #include "Engine/DamageEvents.h"
 #include "Core/LSPlayerController.h"
-#include "Equipment/ULSDriveCoreComponent.h"
 
 ALSSniperRifle::ALSSniperRifle()
 {
@@ -116,16 +115,6 @@ void ALSSniperRifle::ProcessHit(const FHitResult& Hit)
 	AttackerStats.ElementalMastery = 0.0f;
 	AttackerStats.Level = 90;
 
-	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
-	{
-		if (ALSPlayerController* PC = Cast<ALSPlayerController>(OwnerChar->GetController()))
-		{
-			if (ULSDriveCoreComponent* DriveCore = PC->GetDriveCoreComponent())
-			{
-				AttackerStats = DriveCore->BuildAttackerStats(OwnerChar);
-			}
-		}
-	}
 
 	// 狙击枪核心机制 1：蓄力倍率直接放大攻击力
 	AttackerStats.Attack *= LastFiredChargeMultiplier;

@@ -91,8 +91,17 @@ void ULSAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	const bool bCombatActive = bIsAiming || bIsFiring;
 	const float TargetPitch = bCombatActive ? DeltaRot.Pitch : 0.0f;
 	const float TargetYaw = bCombatActive ? DeltaRot.Yaw : 0.0f;
-	AimPitch = FMath::FInterpTo(AimPitch, TargetPitch, DeltaSeconds, 15.0f);
-	AimYaw = FMath::FInterpTo(AimYaw, TargetYaw, DeltaSeconds, 15.0f);
+	if (bIsFiring)
+	{
+		// 开火时极速对齐准星，消灭脊椎仰俯滞后
+		AimPitch = TargetPitch;
+		AimYaw = TargetYaw;
+	}
+	else
+	{
+		AimPitch = FMath::FInterpTo(AimPitch, TargetPitch, DeltaSeconds, 15.0f);
+		AimYaw = FMath::FInterpTo(AimYaw, TargetYaw, DeltaSeconds, 15.0f);
+	}
 
 	bool bFoundLeftHandSocket = false;
 	if (Character)
@@ -126,5 +135,46 @@ void ULSAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	// 平滑插值 Alpha（切枪或收枪时平滑过渡）
 	const float TargetAlpha = bFoundLeftHandSocket ? 1.0f : 0.0f;
 	LeftHandIKAlpha = FMath::FInterpTo(LeftHandIKAlpha, TargetAlpha, DeltaSeconds, 15.0f);
+
+	// 9. 脊椎开火受力后坐力数据同步与回正
+	if (Character)
+	{
+		SpineRecoilRotation = Character->SpineRecoilRotation;
+		SpineRecoilLocation = Character->SpineRecoilLocation;
+	}
+	else
+	{
+		SpineRecoilRotation = FMath::RInterpTo(SpineRecoilRotation, FRotator::ZeroRotator, DeltaSeconds, RecoilSpineRecoverySpeed);
+		SpineRecoilLocation = FMath::VInterpTo(SpineRecoilLocation, FVector::ZeroVector, DeltaSeconds, RecoilSpineRecoverySpeed);
+	}
+}
+
+void ULSAnimInstance::AddRecoilKick(float Multiplier)
+{
+	if (Character)
+	{
+		Character->AddSpineRecoilKick(Multiplier);
+		SpineRecoilRotation = Character->SpineRecoilRotation;
+		SpineRecoilLocation = Character->SpineRecoilLocation;
+		return;
+	}
+
+	if (Multiplier <= 0.0f)
+	{
+		return;
+	}
+
+	const float PitchDelta = RecoilSpinePitch * Multiplier;
+	SpineRecoilRotation.Pitch = FMath::Clamp(SpineRecoilRotation.Pitch + PitchDelta, -MaxRecoilSpinePitch, MaxRecoilSpinePitch);
+
+	const float YawDelta = FMath::FRandRange(RecoilSpineYaw * 0.5f, RecoilSpineYaw) * Multiplier;
+	SpineRecoilRotation.Yaw = FMath::Clamp(SpineRecoilRotation.Yaw + YawDelta, -3.0f, 3.0f);
+
+	const float RollDelta = FMath::FRandRange(-RecoilSpineRoll, RecoilSpineRoll) * Multiplier;
+	SpineRecoilRotation.Roll = FMath::Clamp(SpineRecoilRotation.Roll + RollDelta, -2.0f, 2.0f);
+
+	const float BackDelta = RecoilSpineBack * Multiplier;
+	SpineRecoilLocation.X = FMath::Clamp(SpineRecoilLocation.X - BackDelta, -MaxRecoilSpineBack, 0.0f);
+	SpineRecoilLocation.Z = FMath::Clamp(SpineRecoilLocation.Z + (BackDelta * 0.2f), -1.0f, 1.0f);
 }
 

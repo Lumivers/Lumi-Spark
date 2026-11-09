@@ -10,8 +10,6 @@ class UInputMappingContext;
 class UInputAction;
 struct FInputActionValue;
 class ALSCharacterBase;
-class ULSTeamSwitchComponent;
-class ULSDriveCoreComponent;
 class ULSBackpackComponent;
 class ULSCorrosionComponent;
 
@@ -107,15 +105,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Sensitivity")
 	float ADSSensitivityMultiplier = 0.6f;//开镜灵敏度衰减倍率
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Team", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<ULSTeamSwitchComponent> TeamSwitchComponent;
-
-	// 待命副角色类型配置（Slot 1, Slot 2），在 OnPossess 时由服务端权威静默拉起
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Team|Classes")
-	TArray<TSubclassOf<class ALSCharacterBase>> StandbyCharacterClasses;
-
-	FORCEINLINE ULSTeamSwitchComponent* GetTeamSwitchComponent() const { return TeamSwitchComponent; }
-	
 	//6，模式切换接口
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SwitchToGameInputMode();
@@ -126,19 +115,6 @@ public:
 	//服务端权威交互完成RPC
 	UFUNCTION(Server, Reliable)
 	void Server_CompleteInteract(AActor* TargetActor);
-	
-	UFUNCTION(BlueprintPure, Category = "Equipment")
-	ULSDriveCoreComponent* GetDriveCoreComponent() const { return DriveCoreComponent; }
-	
-	// ═══ 控制台测试与打靶指令 ═══
-	
-	// 控制台一键装备 4+2 预设（按 ~ 键输入: LS.EquipSet Resonance 或 LS.EquipSet Marksman） 
-	UFUNCTION(Exec, Category = "DriveCore|Debug")
-	void LSEquipSet(const FString& SetName);
-	
-	// 控制台在屏幕上打印当前小队全量战力属性（输入: LS.PrintStats） 
-	UFUNCTION(Exec, Category = "DriveCore|Debug")
-	void LSPrintStats();
 	
 	UFUNCTION(BlueprintPure, Category = "Extraction")
 	ULSBackpackComponent* GetBackpackComponent() const { return BackpackComponent; }
@@ -201,9 +177,6 @@ public:
 protected:
 	//当前交互目标（由 ILSInteractableInterface 接口提供）
 	TWeakObjectPtr<AActor> CurrentInteractTarget;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<ULSDriveCoreComponent> DriveCoreComponent;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Extraction", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULSBackpackComponent> BackpackComponent;

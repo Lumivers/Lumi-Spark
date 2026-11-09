@@ -9,6 +9,7 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
+#include "Camera/CameraShakeBase.h"
 #include "DrawDebugHelpers.h"
 #include "Kismet/GameplayStatics.h"
 #include "Particles/ParticleSystemComponent.h"
@@ -22,7 +23,6 @@
 #include "Character/LSCameraComponent.h"
 #include "Weapon/LSWeaponDataAsset.h"
 #include "Core/LSPlayerController.h"
-#include "Equipment/ULSDriveCoreComponent.h"
 #include "Enemy/LSEnemyBase.h"
 #include "Enemy/LSEnemyDataAsset.h"
 
@@ -226,7 +226,19 @@ void ALSWeaponBase::PlayLocalFireEffects(bool bIsADS)
 		{
 			OwnerChar->PlayAnimMontage(CharacterFireMontage);
 		}
-		
+
+		// 触发持枪角色躯干与脊椎开火受力抖动（人枪合一，开镜瞄准阻尼衰减）
+		const float BodyKickMultiplier = bIsADS ? 0.6f : 1.0f;
+		OwnerChar->AddSpineRecoilKick(BodyKickMultiplier);
+
+		// 触发开火镜头微震颤 (Camera Shake)
+		if (FireCameraShakeClass)
+		{
+			if (APlayerController* PC = Cast<APlayerController>(OwnerChar->GetController()))
+			{
+				PC->ClientStartCameraShake(FireCameraShakeClass);
+			}
+		}
 	}
 	
 	// 触发枪身程序化机械后坐力回冲与枪口上跳抖动！
@@ -295,6 +307,12 @@ void ALSWeaponBase::Multicast_FireEffects_Implementation(const FVector_NetQuanti
 		{
 			return;
 		}
+	}
+
+	// 远端观察者同步播放角色身体与脊椎受力后坐抖动
+	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
+	{
+		OwnerChar->AddSpineRecoilKick(1.0f);
 	}
 	
 	// 其他远端客户端播放枪声与火光
@@ -431,17 +449,6 @@ void ALSWeaponBase::Client_HitConfirm_Implementation(bool bIsHeadshot, float Fin
 
 float ALSWeaponBase::GetReloadSpeedMultiplier() const
 {
-	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
-	{
-		if (ALSPlayerController* PC = Cast<ALSPlayerController>(OwnerChar->GetController()))
-		{
-			if (ULSDriveCoreComponent* DriveCore = PC->GetDriveCoreComponent())
-			{
-				const FLSCombatAttributes Attr = DriveCore->CalculateCombatAttributes(OwnerChar);
-				return 1.0f + Attr.ReloadSpeedBonus;
-			}
-		}
-	}
 	return 1.0f;
 }
 

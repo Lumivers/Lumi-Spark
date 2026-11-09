@@ -1,4 +1,4 @@
-#include "Combat/LSDamageCalculator.h"
+﻿#include "Combat/LSDamageCalculator.h"
 #include "Core/LSTypes.h"
 
 FLSDamageResult ULSDamageCalculator::CalculateDamage(

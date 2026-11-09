@@ -14,16 +14,35 @@ void ULSWeaponComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	// 客户端严禁自行 Spawn 武器，必须由服务端生成并通过引擎复制给客户端
-	if (DefaultPrimaryClass)
+	// 服务端或单机环境下统一实例化默认主副武器
+	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		CurrentWeapon = SpawnWeapon(DefaultPrimaryClass);
-		UE_LOG(LogTemp, Log, TEXT("🔫 [LSWeaponComponent] 默认武器生成: %s"), *GetNameSafe(CurrentWeapon));
-	}
-	if (CurrentWeapon)
-	{
-		AttachWeaponToSocket(CurrentWeapon, HandSocketName);
-		OnWeaponChanged.Broadcast(CurrentWeapon);
+		if (DefaultPrimaryClass)
+		{
+			PrimaryWeapon = SpawnWeapon(DefaultPrimaryClass);
+			UE_LOG(LogTemp, Log, TEXT("🔫 [LSWeaponComponent] 默认主武器生成: %s"), *GetNameSafe(PrimaryWeapon));
+		}
+		if (DefaultSecondaryClass)
+		{
+			SecondaryWeapon = SpawnWeapon(DefaultSecondaryClass);
+			UE_LOG(LogTemp, Log, TEXT("🔫 [LSWeaponComponent] 默认副武器生成: %s"), *GetNameSafe(SecondaryWeapon));
+		}
+
+		if (PrimaryWeapon)
+		{
+			CurrentWeapon = PrimaryWeapon;
+			CurrentWeaponIndex = 0;
+			AttachWeaponToSocket(PrimaryWeapon, HandSocketName);
+		}
+		if (SecondaryWeapon)
+		{
+			AttachWeaponToSocket(SecondaryWeapon, BackSocketName);
+		}
+
+		if (CurrentWeapon)
+		{
+			OnWeaponChanged.Broadcast(CurrentWeapon);
+		}
 	}
 }
 
@@ -56,31 +75,40 @@ void ULSWeaponComponent::AttachWeaponToSocket(ALSWeaponBase* Weapon, FName Socke
 	FName TargetSocket = SocketName;
 	if (!Char->GetMesh()->DoesSocketExist(TargetSocket))
 	{
-		if (GEngine)
+		// 如果是背部插槽不存在，按优先级寻找后背骨骼保底挂载
+		if (SocketName == BackSocketName)
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Yellow,
-				FString::Printf(TEXT("⚠️ [LSWeaponComponent] 骨骼未找到配置的插槽 '%s'！请检查角色蓝图细节面板的 HandSocketName 配置。"), *TargetSocket.ToString()));
+			if (Char->GetMesh()->DoesSocketExist(FName("Weapon_Back")))
+			{
+				TargetSocket = FName("Weapon_Back");
+			}
+			else if (Char->GetMesh()->DoesSocketExist(FName("spine_05")))
+			{
+				TargetSocket = FName("spine_05");
+			}
+			else if (Char->GetMesh()->DoesSocketExist(FName("spine_03")))
+			{
+				TargetSocket = FName("spine_03");
+			}
+			else if (Char->GetMesh()->DoesSocketExist(FName("spine_02")))
+			{
+				TargetSocket = FName("spine_02");
+			}
 		}
-
-		// 仅在指定插槽完全不存在时，进行健壮性保底回退（防止武器掉在世界原点）
-		if (Char->GetMesh()->DoesSocketExist(FName("WeaponSocket")))
-		{
-			TargetSocket = FName("WeaponSocket");
-		}
-		else if (Char->GetMesh()->DoesSocketExist(FName("hand_r")))
-		{
-			TargetSocket = FName("hand_r");
-		}
-		else if (Char->GetMesh()->DoesSocketExist(FName("hand_attach_r")))
-		{
-			TargetSocket = FName("hand_attach_r");
-		}
+		// 手部插槽保底
 		else
 		{
-			if (GEngine)
+			if (Char->GetMesh()->DoesSocketExist(FName("WeaponSocket")))
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Red,
-					TEXT("❌ [LSWeaponComponent] 角色骨骼网格体上未找到任何可用的手部骨骼或插槽！"));
+				TargetSocket = FName("WeaponSocket");
+			}
+			else if (Char->GetMesh()->DoesSocketExist(FName("hand_r")))
+			{
+				TargetSocket = FName("hand_r");
+			}
+			else if (Char->GetMesh()->DoesSocketExist(FName("hand_attach_r")))
+			{
+				TargetSocket = FName("hand_attach_r");
 			}
 		}
 	}
@@ -122,6 +150,93 @@ void ULSWeaponComponent::Reload()
 	if (CurrentWeapon) CurrentWeapon->Reload();
 }
 
+void ULSWeaponComponent::SwitchWeapon(int32 SlotIndex)
+{
+	if (SlotIndex == CurrentWeaponIndex) return;
+	if (SlotIndex == 0)
+	{
+		EquipPrimaryWeapon();
+	}
+	else if (SlotIndex == 1)
+	{
+		EquipSecondaryWeapon();
+	}
+}
+
+void ULSWeaponComponent::EquipPrimaryWeapon()
+{
+	if (!PrimaryWeapon || CurrentWeapon == PrimaryWeapon) return;
+	StopFire();
+
+	// 将副武器挂回背部
+	if (SecondaryWeapon)
+	{
+		AttachWeaponToSocket(SecondaryWeapon, BackSocketName);
+	}
+
+	// 将主武器持于手中
+	AttachWeaponToSocket(PrimaryWeapon, HandSocketName);
+
+	CurrentWeapon = PrimaryWeapon;
+	CurrentWeaponIndex = 0;
+	OnWeaponChanged.Broadcast(CurrentWeapon);
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(5512, 2.0f, FColor::Orange, TEXT("🔫 已切换至主武器 [1 号位]"));
+	}
+}
+
+void ULSWeaponComponent::EquipSecondaryWeapon()
+{
+	if (!SecondaryWeapon || CurrentWeapon == SecondaryWeapon) return;
+	StopFire();
+
+	// 将主武器挂回背部
+	if (PrimaryWeapon)
+	{
+		AttachWeaponToSocket(PrimaryWeapon, BackSocketName);
+	}
+
+	// 将副武器持于手中
+	AttachWeaponToSocket(SecondaryWeapon, HandSocketName);
+
+	CurrentWeapon = SecondaryWeapon;
+	CurrentWeaponIndex = 1;
+	OnWeaponChanged.Broadcast(CurrentWeapon);
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(5512, 2.0f, FColor::Cyan, TEXT("🔫 已切换至副武器 [2 号位]"));
+	}
+}
+
+void ULSWeaponComponent::ToggleWeapon()
+{
+	if (CurrentWeaponIndex == 0)
+	{
+		EquipSecondaryWeapon();
+	}
+	else
+	{
+		EquipPrimaryWeapon();
+	}
+}
+
+void ULSWeaponComponent::OnRep_CurrentWeaponIndex()
+{
+	if (CurrentWeaponIndex == 0)
+	{
+		if (SecondaryWeapon) AttachWeaponToSocket(SecondaryWeapon, BackSocketName);
+		if (PrimaryWeapon) AttachWeaponToSocket(PrimaryWeapon, HandSocketName);
+	}
+	else
+	{
+		if (PrimaryWeapon) AttachWeaponToSocket(PrimaryWeapon, BackSocketName);
+		if (SecondaryWeapon) AttachWeaponToSocket(SecondaryWeapon, HandSocketName);
+	}
+}
+
 // 客户端接收服务端同步：将手上的枪换到手上
 void ULSWeaponComponent::OnRep_CurrentWeapon(ALSWeaponBase* OldWeapon)
 {
@@ -132,9 +247,12 @@ void ULSWeaponComponent::OnRep_CurrentWeapon(ALSWeaponBase* OldWeapon)
 	OnWeaponChanged.Broadcast(CurrentWeapon);
 }
 
-//注册同步属性
+// 注册同步属性
 void ULSWeaponComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ULSWeaponComponent, PrimaryWeapon);
+	DOREPLIFETIME(ULSWeaponComponent, SecondaryWeapon);
 	DOREPLIFETIME(ULSWeaponComponent, CurrentWeapon);
+	DOREPLIFETIME(ULSWeaponComponent, CurrentWeaponIndex);
 }

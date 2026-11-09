@@ -2,7 +2,6 @@
 #include "LSPlayerController.h"
 #include "LSGameState.h"
 #include "Character/LSCharacterBase.h"
-#include "Character/LSTeamSwitchComponent.h"
 #include "Core/LSEventBus.h"
 #include "Extraction/LSExtractionTypes.h"
 #include "Kismet/GameplayStatics.h"
@@ -58,15 +57,7 @@ void ALumi_SparkGameMode::CheckRaidWipeCondition()
 		
 		TotalActivePlayers++;
 		
-		ALSCharacterBase* ActiveChar = nullptr;
-		if (ULSTeamSwitchComponent* TeamComp = PC->GetTeamSwitchComponent())
-		{
-			ActiveChar = TeamComp->GetActiveCharacter();
-		}
-		else
-		{
-			ActiveChar = PC->GetPawn<ALSCharacterBase>();
-		}
+		ALSCharacterBase* ActiveChar = PC->GetPawn<ALSCharacterBase>();
 		
 		if (!ActiveChar || ActiveChar->IsDead() || ActiveChar->ActorHasTag(TEXT("State.Downed")))
 		{

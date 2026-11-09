@@ -1,6 +1,8 @@
 #include "LSMovementComponent.h"
 #include "LSCharacterBase.h"
 #include "Character/LSStaminaComponent.h"
+#include "Weapon/LSWeaponComponent.h"
+#include "Weapon/LSWeaponBase.h"
 #include "GameFramework/Character.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -48,8 +50,21 @@ void ULSMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds
 
 void ULSMovementComponent::StartSprint()
 {
-	// 开镜或下蹲状态下无法冲刺
+	// 开镜、下蹲、或正在开火状态下无法进入冲刺
 	if (bIsAiming || IsCrouching()) return;
+	if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
+	{
+		if (ULSWeaponComponent* WeaponComp = LSChar->GetWeaponComponent())
+		{
+			if (ALSWeaponBase* CurWeapon = WeaponComp->GetCurrentWeapon())
+			{
+				if (CurWeapon->IsFiring())
+				{
+					return;
+				}
+			}
+		}
+	}
 
 	bWantsToSprint = true;
 	MaxWalkSpeed = SprintSpeed;
@@ -66,30 +81,43 @@ void ULSMovementComponent::StopSprint()
 	MaxWalkSpeed = WalkSpeed;
 	if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
 	{
-		LSChar->SetALSDesiredGait(1); // 1 = Running
-		LSChar->SetALSRotationMode(bIsAiming ? 2 : 1);
+		// 若当前仍在开镜或正在开火，必须维持端枪姿势 2 (Aiming)
+		bool bCombatActive = bIsAiming;
+		if (ULSWeaponComponent* WeaponComp = LSChar->GetWeaponComponent())
+		{
+			if (ALSWeaponBase* CurWeapon = WeaponComp->GetCurrentWeapon())
+			{
+				if (CurWeapon->IsFiring())
+				{
+					bCombatActive = true;
+				}
+			}
+		}
+
+		// 核心：战术射击游戏非冲刺状态永远是 Gait 0（持枪稳定，绝不进入 Gait 1 奔跑甩手动画）！
+		LSChar->SetALSDesiredGait(0);
+		LSChar->SetALSRotationMode(bCombatActive ? 2 : (LSChar->bAlwaysOrientToControlRotation ? 1 : 0));
 	}
 }
 
 void ULSMovementComponent::SetAiming(bool IsAiming)
 {
 	bIsAiming = IsAiming;
+	if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
+	{
+		// 无论腰射还是开镜，常态步态全部锁死为 0 (Walking 战术端枪)，彻底关掉 Run_F_Arms 跑动甩枪！
+		LSChar->SetALSDesiredGait(0);
+		LSChar->SetALSRotationMode(bIsAiming ? 2 : (LSChar->bAlwaysOrientToControlRotation ? 1 : 0));
+	}
+
 	if (bIsAiming)
 	{
 		bWantsToSprint = false;
-		MaxWalkSpeed = WalkSpeed;
-		if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
-		{
-			LSChar->SetALSDesiredGait(1); // 1 = Running
-			LSChar->SetALSRotationMode(2);
-		}
+		MaxWalkSpeed = ADSSpeed;
 	}
 	else
 	{
-		if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(CharacterOwner))
-		{
-			LSChar->SetALSRotationMode(LSChar->bAlwaysOrientToControlRotation ? 1 : 0);
-		}
+		MaxWalkSpeed = WalkSpeed;
 	}
 }
 

@@ -11,6 +11,7 @@ class USkeletalMeshComponent;
 class ULSRecoilComponent;
 class ULSWeaponDataAsset;
 class UNiagaraSystem;
+class UCameraShakeBase;
 
 //武器通用委托
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLSAmmoChanged, int32, CurrentAmmo, int32, MagazineSize, int32, ReserveAmmo);
@@ -129,6 +130,10 @@ protected:
 	
 	//音效与开火表现
 	
+	// 开火镜头微震颤效果类 (Camera Shake)
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	TSubclassOf<UCameraShakeBase> FireCameraShakeClass;
+
 	//开火音效
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
 	TObjectPtr<USoundBase> FireSound;

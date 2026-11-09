@@ -7,22 +7,17 @@
 #include "LSMovementComponent.h"
 #include "Weapon/LSWeaponComponent.h"
 #include "Blueprint/UserWidget.h"
-#include "Character/LSTeamSwitchComponent.h"
 #include "Character/LSSkillComponent.h"
 #include "Weapon/LSGrenadeBase.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "UI/LSUHDWidget.h"
 #include "Weapon/LSThrowableComponent.h"
-#include "Equipment/ULSDriveCoreComponent.h"
 #include "Extraction/ULSBackpackComponent.h"
 #include "Extraction/LSExtractionTypes.h"
 #include "Extraction/ULSCorrosionComponent.h"
-#include "Equipment/ULSDriveDiscDataAsset.h"
 ALSPlayerController::ALSPlayerController()
 {
 	bShowMouseCursor = false;
-	TeamSwitchComponent = CreateDefaultSubobject<ULSTeamSwitchComponent>(TEXT("TeamSwitchComponent"));
-	DriveCoreComponent = CreateDefaultSubobject<ULSDriveCoreComponent>(TEXT("DriveCoreComponent"));
 	BackpackComponent = CreateDefaultSubobject<ULSBackpackComponent>(TEXT("BackpackComponent"));
 	CorrosionComponent = CreateDefaultSubobject<ULSCorrosionComponent>(TEXT("CorrosionComponent"));
 }
@@ -85,18 +80,6 @@ void ALSPlayerController::OnPossess(APawn* InPawn)
 			if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(InPawn))
 			{
 				HUD->BindToCharacter(LSChar);
-			}
-		}
-	}
-
-	// 仅在服务端权威且小队未初始化时，静默拉起小队待命副角色
-	if (HasAuthority() && TeamSwitchComponent)
-	{
-		if (ALSCharacterBase* LSChar = Cast<ALSCharacterBase>(InPawn))
-		{
-			if (TeamSwitchComponent->GetActiveCharacter() == nullptr)
-			{
-				TeamSwitchComponent->SetupTeam(LSChar, StandbyCharacterClasses);
 			}
 		}
 	}
@@ -255,7 +238,12 @@ void ALSPlayerController::HandleSprintCompleted()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{ 
-		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent()) MoveComp->StopSprint(); 
+		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
+		{
+			MoveComp->StopSprint();
+		}
+		// 关键防护：冲刺松开时重新仲裁战斗姿态，若正在开火或开镜，绝对不退出 Aiming 端枪姿态
+		UpdateCombatFacing();
 	}
 }
 
@@ -328,14 +316,8 @@ void ALSPlayerController::UpdateCombatFacing()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		const bool bCombatActive = bIsAiming || bIsFiring || Char->bAlwaysOrientToControlRotation;
-		Char->SetCombatFacing(bCombatActive);
-
-		// 若处于开镜瞄准状态，进一步将 ALS 旋转模式切换为 Aiming(2)
-		if (bIsAiming)
-		{
-			Char->SetALSRotationMode(2); // Aiming
-		}
+		const bool bIsActiveCombat = bIsAiming || bIsFiring;
+		Char->SetCombatFacing(bIsActiveCombat);
 	}
 }
 
@@ -346,10 +328,11 @@ void ALSPlayerController::HandleFireStarted()
 
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		// 1. 开火瞬间立即打断冲刺
+		// 1. 开火瞬间立即打断冲刺并切入瞄准战术步态
 		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
 		{
 			MoveComp->StopSprint();
+			MoveComp->SetAiming(true);
 		}
 
 		// 2. 开火瞬间：角色身形水平立即对齐当前视线朝向，消除转向延迟
@@ -357,7 +340,7 @@ void ALSPlayerController::HandleFireStarted()
 		NewRot.Yaw = GetControlRotation().Yaw;
 		Char->SetActorRotation(NewRot);
 
-		// 3. 激活战斗朝向锁定（进入 LookingDirection 战术扫射模式）
+		// 3. 激活战斗朝向锁定与 Aiming(2) 极速端枪姿态
 		UpdateCombatFacing();
 
 		// 4. 触发武器组件开火
@@ -377,6 +360,15 @@ void ALSPlayerController::HandleFireCompleted()
 		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent())
 		{
 			WeaponComp->StopFire();
+		}
+
+		// 停火后，若未按住右键开镜，则退出瞄准移动步态
+		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
+		{
+			if (!bIsAiming)
+			{
+				MoveComp->SetAiming(false);
+			}
 		}
 
 		// 停止开火后，根据是否仍处于瞄准状态动态仲裁朝向
@@ -482,34 +474,54 @@ void ALSPlayerController::HandleThrowGrenadeCompleted()
 
 void ALSPlayerController::HandleSwitchCharacter()
 {
-	if (TeamSwitchComponent)
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		TeamSwitchComponent->CycleNextCharacter(true);
+		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent())
+		{
+			WeaponComp->ToggleWeapon();
+		}
 	}
 }
 
 void ALSPlayerController::HandleSwitchToSlot1()
 {
-	if (TeamSwitchComponent) TeamSwitchComponent->SwitchTo(0);
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent())
+		{
+			WeaponComp->EquipPrimaryWeapon();
+		}
+	}
 }
 
 void ALSPlayerController::HandleSwitchToSlot2()
 {
-	if (TeamSwitchComponent) TeamSwitchComponent->SwitchTo(1);
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent())
+		{
+			WeaponComp->EquipSecondaryWeapon();
+		}
+	}
 }
 
 void ALSPlayerController::HandleSwitchToSlot3()
 {
-	if (TeamSwitchComponent) TeamSwitchComponent->SwitchTo(2);
+	// 预留战术槽位
 }
 
 void ALSPlayerController::HandleCycleCharacter(const FInputActionValue& Value)
 {
-	if (!TeamSwitchComponent) return;
 	const float AxisVal = Value.Get<float>();
 	if (FMath::IsNearlyZero(AxisVal)) return;
-	// 滚轮向上 (>0) 顺切，滚轮向下 (<0) 逆切
-	TeamSwitchComponent->CycleNextCharacter(AxisVal > 0.0f);
+
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent())
+		{
+			WeaponComp->ToggleWeapon();
+		}
+	}
 }
 
 void ALSPlayerController::Tick(float DeltaSeconds)
@@ -590,85 +602,6 @@ void ALSPlayerController::Server_CompleteInteract_Implementation(AActor* TargetA
 	}
 }
 
-void ALSPlayerController::LSEquipSet(const FString& SetName)
-{
-	if (!DriveCoreComponent) return;
-	
-	FGameplayTag FourPieceTag;
-	FGameplayTag TwoPieceTag;
-
-	if (SetName.Equals(TEXT("Resonance"), ESearchCase::IgnoreCase) || SetName.Equals(TEXT("Cascade"), ESearchCase::IgnoreCase))
-	{
-		FourPieceTag = LSTags::TAG_DriveSet_ElementalResonance; // 4 元素共振
-		TwoPieceTag = LSTags::TAG_DriveSet_TacticalSwap;        // 2 战术连携
-	}
-	else if (SetName.Equals(TEXT("Marksman"), ESearchCase::IgnoreCase))
-	{
-		FourPieceTag = LSTags::TAG_DriveSet_PrecisionMarksman;  // 4 精准射手
-		TwoPieceTag = LSTags::TAG_DriveSet_ElementalResonance;  // 2 元素共振
-	}
-	else if (SetName.Equals(TEXT("Blitz"), ESearchCase::IgnoreCase) || SetName.Equals(TEXT("Assault"), ESearchCase::IgnoreCase))
-	{
-		FourPieceTag = LSTags::TAG_DriveSet_MobileAssault;      // 4 机动突击
-		TwoPieceTag = LSTags::TAG_DriveSet_PrecisionMarksman;   // 2 精准射手
-	}
-	else if (SetName.Equals(TEXT("Bastion"), ESearchCase::IgnoreCase))
-	{
-		FourPieceTag = LSTags::TAG_DriveSet_HeavyBastion;       // 4 重装阵线
-		TwoPieceTag = LSTags::TAG_DriveSet_TacticalSwap;        // 2 战术连携
-	}
-	else
-	{
-		// 默认穿 4 战术连携 + 2 元素共振
-		FourPieceTag = LSTags::TAG_DriveSet_TacticalSwap;
-		TwoPieceTag = LSTags::TAG_DriveSet_ElementalResonance;
-	}
-
-	DriveCoreComponent->EquipPresetLoadout(FourPieceTag, TwoPieceTag, ELSDriveDiscRarity::Classified);
-	UE_LOG(LogTemp, Warning, TEXT("[DriveCore] 成功为全队装配 4+2 绝密级套装: %s"), *SetName);
-	LSPrintStats();
-}
-
-void ALSPlayerController::LSPrintStats()
-{
-	ALSCharacterBase* ActiveChar = Cast<ALSCharacterBase>(GetPawn());
-	if (!ActiveChar || !DriveCoreComponent)
-	{
-		UE_LOG(LogTemp, Error, TEXT("[DriveCore] 无法打印属性：ActiveCharacter 或 DriveCoreComponent 为空！"));
-		return;
-	}
-
-	const FLSCombatAttributes Attr = DriveCoreComponent->CalculateCombatAttributes(ActiveChar);
-
-	FString StatSummary = FString::Printf(
-		TEXT("\n═════════════ Lumi-Spark 驱动核心全队战力面板 ═════════════\n")
-		TEXT("• 当前角色: %s\n")
-		TEXT("• 总攻击力: %.1f\n")
-		TEXT("• 最大生命: %.1f\n")
-		TEXT("• 能量护盾: %.1f (护盾强效: +%.1f%%)\n")
-		TEXT("• 防御力:   %.1f (元素抗性: %.1f%%)\n")
-		TEXT("• 暴击率:   %.1f%%  |  暴击伤害: %.1f%%\n")
-		TEXT("• 元素精通: %.0f    |  反应增伤: +%.1f%%\n")
-		TEXT("• 穿透率:   %.1f%%  |  换弹加速: +%.1f%%\n")
-		TEXT("• 充能效率: %.1f%%  |  战技CDR:  -%.1f%%\n")
-		TEXT("═══════════════════════════════════════════════════════════"),
-		*ActiveChar->GetName(),
-		Attr.TotalAttack,
-		Attr.TotalMaxHealth,
-		Attr.TotalShield, Attr.ShieldStrength * 100.0f,
-		Attr.TotalDefense, Attr.ElementalResistance * 100.0f,
-		Attr.TotalCritRate * 100.0f, Attr.TotalCritDamage * 100.0f,
-		Attr.TotalElementalMastery, Attr.ReactionDamageBonus * 100.0f,
-		Attr.PenetrationRate * 100.0f, Attr.ReloadSpeedBonus * 100.0f,
-		Attr.EnergyRecharge * 100.0f, Attr.SkillCooldownReduction * 100.0f
-	);
-
-	UE_LOG(LogTemp, Warning, TEXT("%s"), *StatSummary);
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Cyan, StatSummary);
-	}
-}
 
 void ALSPlayerController::LSAddLoot(const FString& LootType)
 {

@@ -97,5 +97,48 @@ protected:
 	// 是否激活左手 IK 权重（当前武器有 LeftHandSocket 则平滑为 1.0，否则为 0.0）
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "IK")
 	float LeftHandIKAlpha = 0.0f;
+
+	// ═══ 角色身体开火受力抖动 (Procedural Spine Recoil) ═══
+
+	// 当前计算得到的脊椎受力后坐旋转偏移（连入 AnimGraph 的 Transform Bone）
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Recoil")
+	FRotator SpineRecoilRotation = FRotator::ZeroRotator;
+
+	// 当前计算得到的脊椎受力后挫位移偏移（连入 AnimGraph 的 Transform Bone）
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Recoil")
+	FVector SpineRecoilLocation = FVector::ZeroVector;
+
+	// 单发后坐躯干后仰仰角冲量基础值（度）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Recoil|Settings")
+	float RecoilSpinePitch = 2.0f;
+
+	// 单发后坐右肩后抗产生的偏航扭矩基础值（度）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Recoil|Settings")
+	float RecoilSpineYaw = 0.6f;
+
+	// 单发后坐侧倾扰动随机范围（度）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Recoil|Settings")
+	float RecoilSpineRoll = 0.3f;
+
+	// 单发后坐躯干后挫位移冲量（cm）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Recoil|Settings")
+	float RecoilSpineBack = 0.8f;
+
+	// 连续开火时脊椎最大累积仰角
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Recoil|Settings")
+	float MaxRecoilSpinePitch = 5.0f;
+
+	// 连续开火时脊椎最大后挫位移（cm）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Recoil|Settings")
+	float MaxRecoilSpineBack = 2.0f;
+
+	// 开火后坐弹性平滑回正速率
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Recoil|Settings")
+	float RecoilSpineRecoverySpeed = 24.0f;
+
+public:
+	// 触发一次开火后坐力受力脉冲
+	UFUNCTION(BlueprintCallable, Category = "Recoil")
+	void AddRecoilKick(float Multiplier = 1.0f);
 };
 

@@ -5,7 +5,6 @@
 #include "Character/LSHealthComponent.h"
 #include "Character/LSStaminaComponent.h"
 #include "Character/LSEnergyComponent.h"
-#include "Character/LSTeamSwitchComponent.h"
 #include "Core/LSPlayerController.h"
 #include "Weapon/LSWeaponComponent.h"
 #include "Element/LSElementComponent.h"
@@ -15,6 +14,11 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "TimerManager.h"
 #include "Weapon/LSThrowableComponent.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "HAL/PlatformFileManager.h"
+
+#define LS_DLL_BUILD_TIMESTAMP TEXT(__DATE__ " " __TIME__)
 
 namespace
 {
@@ -67,6 +71,45 @@ namespace
 		}
 		return 255;
 	}
+
+	static void SetALSPropertyInt(UObject* Target, FName PropName, int32 Value)
+	{
+		if (!Target) return;
+		if (FProperty* Prop = Target->GetClass()->FindPropertyByName(PropName))
+		{
+			if (FIntProperty* IntProp = CastField<FIntProperty>(Prop))
+			{
+				IntProp->SetPropertyValue_InContainer(Target, Value);
+				UE_LOG(LogTemp, Log, TEXT("[SetALSPropertyInt] SUCCESS: %s.%s = %d (FIntProperty)"), *Target->GetName(), *PropName.ToString(), Value);
+				return;
+			}
+			else if (FNumericProperty* NumProp = CastField<FNumericProperty>(Prop))
+			{
+				void* ValuePtr = NumProp->ContainerPtrToValuePtr<void>(Target);
+				NumProp->SetIntPropertyValue(ValuePtr, static_cast<int64>(Value));
+				UE_LOG(LogTemp, Log, TEXT("[SetALSPropertyInt] SUCCESS: %s.%s = %d (FNumericProperty)"), *Target->GetName(), *PropName.ToString(), Value);
+				return;
+			}
+		}
+	}
+
+	static int32 GetALSPropertyInt(const UObject* Target, FName PropName)
+	{
+		if (!Target) return -1;
+		if (FProperty* Prop = Target->GetClass()->FindPropertyByName(PropName))
+		{
+			if (FIntProperty* IntProp = CastField<FIntProperty>(Prop))
+			{
+				return IntProp->GetPropertyValue_InContainer(Target);
+			}
+			else if (FNumericProperty* NumProp = CastField<FNumericProperty>(Prop))
+			{
+				const void* ValuePtr = NumProp->ContainerPtrToValuePtr<void>(Target);
+				return static_cast<int32>(NumProp->GetSignedIntPropertyValue(ValuePtr));
+			}
+		}
+		return -1;
+	}
 }
 
 ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
@@ -105,6 +148,9 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
 	StaminaComponent = CreateDefaultSubobject<ULSStaminaComponent>(TEXT("LSStaminaComp"));
 	EnergyComponent = CreateDefaultSubobject<ULSEnergyComponent>(TEXT("LSEnergyComp"));
 	ThrowableComponent = CreateDefaultSubobject<ULSThrowableComponent>(TEXT("ThrowableComponent"));
+
+	// 战术射击模式默认启用
+	bAlwaysOrientToControlRotation = true;
 }
 
 void ALSCharacterBase::SetCombatFacing(bool bEnable)
@@ -117,35 +163,29 @@ void ALSCharacterBase::SetCombatFacing(bool bEnable)
 			MoveComp->bOrientRotationToMovement = false;
 			MoveComp->bUseControllerDesiredRotation = false;
 		}
-		SetALSRotationMode(2); // 模式 2 = Aiming (端枪抵肩瞄准)
+		// 战术射击模式：瞄准/开火进入模式 2 (Aiming 端枪抵肩)；平时走动保持模式 1 (LookingDirection 战术巡逻横移，正对准星上半身稳定)
+		SetALSRotationMode(bEnable ? 2 : 1);
 		return;
 	}
 
 	bUseControllerRotationYaw = false;
 	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
 	{
-		MoveComp->bOrientRotationToMovement = false;
+		// 自由冒险模式：战斗时锁定准星横移，非战斗时允许角色面向移动方向自由走跑
+		MoveComp->bOrientRotationToMovement = !bEnable;
 		MoveComp->bUseControllerDesiredRotation = false;
 		MoveComp->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 	}
 
-	// 核心修复：战斗开火/瞄准时必须切换为模式 2 (Aiming，进入 Rifle Aiming 状态端枪抵肩对准准星)；退出后恢复模式 0 (VelocityDirection 放松提枪跑动)
-	SetALSRotationMode(bEnable ? 2 : 1);
+	// 自由冒险模式下：战斗为 2 (Aiming)，平时恢复 0 (VelocityDirection)
+	SetALSRotationMode(bEnable ? 2 : 0);
 }
 
 void ALSCharacterBase::SetALSRotationMode(uint8 InRotationMode)
 {
 	// 1. 直接同步反射属性，确保 ALS 蓝图内部变量立即响应
 	SetALSPropertyByteOrEnum(this, FName("RotationMode"), InRotationMode);
-	// unused
-	{
-
-	}
 	SetALSPropertyByteOrEnum(this, FName("DesiredRotationMode"), InRotationMode);
-	// unused
-	{
-
-	}
 
 	// 2. 派发 ALS 原生蓝图接口事件驱动状态机与动画过渡
 	static const FName FuncName(TEXT("BPI_Set_RotationMode"));
@@ -216,17 +256,81 @@ void ALSCharacterBase::SetALSOverlayState(uint8 InOverlayState)
 	}
 }
 
+void ALSCharacterBase::SetALSOverlayOverrideState(int32 InOverrideState)
+{
+	// 1. 同步 Character 自身的反射属性
+	SetALSPropertyInt(this, FName("OverlayOverrideState"), InOverrideState);
+
+	static const FName FuncName(TEXT("BPI_SetOverlayOverrideState"));
+	if (UFunction* CharFunc = FindFunction(FuncName))
+	{
+		struct FParams
+		{
+			int32 State;
+		} Params;
+		Params.State = InOverrideState;
+		ProcessEvent(CharFunc, &Params);
+	}
+
+	// 2. 同步 AnimInstance (ALS_AnimBP) 上的 OverlayOverrideState 并触发动画接口事件
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+		{
+			SetALSPropertyInt(AnimInst, FName("OverlayOverrideState"), InOverrideState);
+
+			if (UFunction* AnimFunc = AnimInst->FindFunction(FuncName))
+			{
+				struct FParams
+				{
+					int32 State;
+				} Params;
+				Params.State = InOverrideState;
+				AnimInst->ProcessEvent(AnimFunc, &Params);
+				UE_LOG(LogTemp, Log, TEXT("🎯 [SetALSOverlayOverrideState] 成功派发 BPI_SetOverlayOverrideState(%d) 至 %s"),
+					InOverrideState, *AnimInst->GetName());
+			}
+		}
+	}
+}
+
+void ALSCharacterBase::AddSpineRecoilKick(float Multiplier)
+{
+	if (Multiplier <= 0.0f)
+	{
+		return;
+	}
+
+	// 1. 真实枪械后坐力解算：
+	// Pitch (向上仰角受力) + 微量 Yaw (微弱随机左右偏摆) + Roll (微弱侧倾)
+	const float PitchKick = RecoilSpinePitch * Multiplier;
+	const float YawKick = FMath::FRandRange(-RecoilSpineYaw, RecoilSpineYaw) * Multiplier;
+	const float RollKick = FMath::FRandRange(-RecoilSpineRoll, RecoilSpineRoll) * Multiplier;
+	const float BackKick = RecoilSpineBack * Multiplier;
+
+	SpineRecoilRotation.Pitch = FMath::Clamp(SpineRecoilRotation.Pitch + PitchKick, -6.0f, 6.0f);
+	SpineRecoilRotation.Yaw = FMath::Clamp(SpineRecoilRotation.Yaw + YawKick, -2.5f, 2.5f);
+	SpineRecoilRotation.Roll = FMath::Clamp(SpineRecoilRotation.Roll + RollKick, -1.5f, 1.5f);
+
+	// 2. 躯干向后抵肩受力位移 (Location.X 微退)
+	SpineRecoilLocation.X = FMath::Clamp(SpineRecoilLocation.X - BackKick, -2.5f, 0.0f);
+
+	// 屏幕调试提示：实时监测开火冲量触发
+	if (GEngine && IsLocallyControlled())
+	{
+		GEngine->AddOnScreenDebugMessage(8877, 0.4f, FColor::Yellow,
+			FString::Printf(TEXT("💥 [后坐冲量爆发] 仰角=%.1f° | 偏摆=%.1f°"), SpineRecoilRotation.Pitch, SpineRecoilRotation.Yaw));
+	}
+}
+
 void ALSCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
 
-
-	// 初始化战斗朝向
-	// 仅在明确启用准星锁定时才强制覆盖朝向，否则保留蓝图资产自身配置的默认旋转模式
-	if (bAlwaysOrientToControlRotation)
-	{
-		SetCombatFacing(true);
-	}
+	// 战术射击游戏：初始化即进入战术朝向模式（平时 LookingDirection(1) 巡逻横移，开火/瞄准 Aiming(2) 抵肩瞄准）
+	bAlwaysOrientToControlRotation = true;
+	SetCombatFacing(false);
+	SetALSDesiredGait(0); // 核心修复：出生直接锁定为 Gait 0（战术持枪慢步），彻底消除 Gait 1 奔跑甩枪动画！
 
 	// 🔍 [Debug 监测] 打印出生时蓝图读取到的初始状态
 	const uint8 InitOverlay = GetALSPropertyByteOrEnum(this, FName("OverlayState"));
@@ -234,18 +338,41 @@ void ALSCharacterBase::BeginPlay()
 	const uint8 InitGait = GetALSPropertyByteOrEnum(this, FName("DesiredGait"));
 	UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
 	const uint8 AnimOverlay = AnimInst ? GetALSPropertyByteOrEnum(AnimInst, FName("OverlayState")) : 255;
+	const int32 AnimOverride = AnimInst ? GetALSPropertyInt(AnimInst, FName("OverlayOverrideState")) : -1;
 	const FString AnimClassName = AnimInst ? AnimInst->GetClass()->GetName() : TEXT("None");
 
+	// 记录会话日志与 DLL 构建版本
+	const FString FullLogPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectLogDir() / TEXT("Lumi_Spark.log"));
+	const FString SessionDir = FPaths::ProjectSavedDir() / TEXT("SessionLogs");
+	IFileManager::Get().MakeDirectory(*SessionDir, true);
+	const FString TimeStr = FDateTime::Now().ToString(TEXT("%Y-%m-%d %H:%M:%S"));
+	const FString FileTimeStr = FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"));
+	const FString SessionInfo = FString::Printf(TEXT("========================================\n"
+		"会话启动时间: %s\n"
+		"DLL 构建时间: %s\n"
+		"引擎日志路径: %s\n"
+		"角色: %s | 初始步态: %d | 旋转模式: %d\n"
+		"========================================\n"),
+		*TimeStr, LS_DLL_BUILD_TIMESTAMP, *FullLogPath, *GetName(), InitGait, InitRotMode);
+	FFileHelper::SaveStringToFile(SessionInfo, *(SessionDir / TEXT("Latest_Session.txt")));
+	FFileHelper::SaveStringToFile(SessionInfo, *(SessionDir / FString::Printf(TEXT("Session_%s.txt"), *FileTimeStr)));
+
 	UE_LOG(LogTemp, Warning, TEXT("================ [ALS 出生雷达] ================"));
+	UE_LOG(LogTemp, Warning, TEXT("📦 [DLL 构建版本] %s"), LS_DLL_BUILD_TIMESTAMP);
+	UE_LOG(LogTemp, Warning, TEXT("📁 [日志文件路径] %s"), *FullLogPath);
 	UE_LOG(LogTemp, Warning, TEXT("角色: %s | 初始 OverlayState: %d | RotationMode: %d | DesiredGait: %d"), *GetName(), InitOverlay, InitRotMode, InitGait);
-	UE_LOG(LogTemp, Warning, TEXT("动画蓝图: %s | 初始 Anim_OverlayState: %d"), *AnimClassName, AnimOverlay);
+	UE_LOG(LogTemp, Warning, TEXT("动画蓝图: %s | 初始 Anim_OverlayState: %d | OverrideState: %d"), *AnimClassName, AnimOverlay, AnimOverride);
 	UE_LOG(LogTemp, Warning, TEXT("================================================"));
 
-	if (GEngine)
+	if (GEngine && IsLocallyControlled())
 	{
+		GEngine->AddOnScreenDebugMessage(9997, 15.0f, FColor::Emerald,
+			FString::Printf(TEXT("📦 [DLL 构建版本] %s"), LS_DLL_BUILD_TIMESTAMP));
+		GEngine->AddOnScreenDebugMessage(9996, 12.0f, FColor::Green,
+			FString::Printf(TEXT("📁 [当前日志] %s"), *FullLogPath));
 		GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Yellow,
-			FString::Printf(TEXT("🌟 [出生状态] 角色Overlay: %d | 动画Overlay: %d | 旋转模式: %d | 动画蓝图: %s"),
-				InitOverlay, AnimOverlay, InitRotMode, *AnimClassName));
+			FString::Printf(TEXT("🌟 [出生状态] 角色Overlay: %d | 动画Overlay: %d | 手臂锁定Override: %d | 旋转模式: %d"),
+				InitOverlay, AnimOverlay, AnimOverride, InitRotMode));
 	}
 
 	// 监听生命组件的死亡事件驱动小队顺切或倒地
@@ -259,6 +386,11 @@ void ALSCharacterBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// 平滑弹性回正躯干脊椎开火后坐力抖动
+	const float EffectiveRecovery = 14.0f;
+	SpineRecoilRotation = FMath::RInterpTo(SpineRecoilRotation, FRotator::ZeroRotator, DeltaTime, EffectiveRecovery);
+	SpineRecoilLocation = FMath::VInterpTo(SpineRecoilLocation, FVector::ZeroVector, DeltaTime, EffectiveRecovery);
+
 	// 实时在屏幕左上角打印 ALS 状态监测雷达（覆盖刷新，不刷屏）
 	if (GEngine && IsLocallyControlled())
 	{
@@ -268,11 +400,12 @@ void ALSCharacterBase::Tick(float DeltaTime)
 		
 		UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
 		const uint8 AnimOverlay = AnimInst ? GetALSPropertyByteOrEnum(AnimInst, FName("OverlayState")) : 255;
+		const int32 AnimOverride = AnimInst ? GetALSPropertyInt(AnimInst, FName("OverlayOverrideState")) : -1;
 		const FString AnimClassName = AnimInst ? AnimInst->GetClass()->GetName() : TEXT("None");
 
 		GEngine->AddOnScreenDebugMessage(9999, 0.0f, FColor::Cyan,
-			FString::Printf(TEXT("📊 [ALS实时雷达] 角色Overlay=%d | 动画BP_Overlay=%d | 旋转模式=%d | 步态Gait=%d | 动画蓝图=%s"),
-				CharOverlay, AnimOverlay, CharRotMode, CharGait, *AnimClassName));
+			FString::Printf(TEXT("📊 [雷达|DLL:%s] Overlay=%d | 锁臂=%d | 旋转=%d | 步态Gait=%d"),
+				LS_DLL_BUILD_TIMESTAMP, CharOverlay, AnimOverride, CharRotMode, CharGait));
 	}
 }
 
@@ -314,38 +447,7 @@ float ALSCharacterBase::TakeDamage(float DamageAmount, struct FDamageEvent const
 
 void ALSCharacterBase::HandleHealthComponentDeath()
 {
-	// 当血量扣尽触发死亡时：
-	if (bIsDowned)
-	{
-		// 倒地状态下受到致命重创 -> 彻底死亡！
-		Die(nullptr);
-	}
-	else
-	{
-		// 检查三人小队是否有存活备用队友顺切救场
-		bool bCanSwitchStandby = false;
-		if (ALSPlayerController* PC = Cast<ALSPlayerController>(GetController()))
-		{
-			if (ULSTeamSwitchComponent* TeamComp = PC->GetTeamSwitchComponent())
-			{
-				for (int32 i = 0; i < 3; ++i)
-				{
-					if (TeamComp->CanSwitchToIndex(i))
-					{
-						TeamComp->SwitchTo(i);
-						bCanSwitchStandby = true;
-						break;
-					}
-				}
-			}
-		}
-
-		// 无备用队友（或联机中） -> 进入倒地匍匐状态等待救援
-		if (!bCanSwitchStandby)
-		{
-			EnterDownedState(nullptr);
-		}
-	}
+	Die(nullptr);
 }
 
 void ALSCharacterBase::Die(AActor* Killer)

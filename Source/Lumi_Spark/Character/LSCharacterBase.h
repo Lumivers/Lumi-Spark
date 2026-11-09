@@ -55,7 +55,7 @@ public:
 
 	// 战斗/射击模式：角色是否始终正对准星（指哪转哪，扫射步法）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Rotation")
-	bool bAlwaysOrientToControlRotation = false;
+	bool bAlwaysOrientToControlRotation = true;
 
 	// 动态切换战斗朝向模式（开火或瞄准时锁定准星并通知动画系统进入 Strafe 模式；退出后恢复自由跑动）
 	UFUNCTION(BlueprintCallable, Category = "Character|Rotation")
@@ -72,6 +72,56 @@ public:
 	// 向底层动画/状态机（如 ALS 蓝图接口）派发覆层姿态指令 (0: Default, 1: Rifle, 2: Bow, 3: Pistol 1H, etc.)
 	UFUNCTION(BlueprintCallable, Category = "Character|Overlay")
 	void SetALSOverlayState(uint8 InOverlayState);
+
+	// 向底层动画蓝图派发覆层覆盖状态指令 (0: 默认摆臂, 1: 锁死手臂无晃动稳固姿态 Poses_NoCurves, 2: 全身锁定)
+	UFUNCTION(BlueprintCallable, Category = "Character|Overlay")
+	void SetALSOverlayOverrideState(int32 InOverrideState);
+
+	// 是否在平时走动时也保持手臂稳固（避免走路时步枪像大钟摆一样夸张摇晃）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Combat")
+	bool bLockArmSwayDuringWalk = true;
+
+	// ═══ 战术开火：角色躯干与脊椎程序化受力后坐 (Spine Procedural Recoil) ═══
+
+	// 当前帧计算出的脊椎后坐旋转偏移（直接连入 AnimGraph 骨骼变换节点）
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Recoil")
+	FRotator SpineRecoilRotation = FRotator::ZeroRotator;
+
+	// 当前帧计算出的脊椎后坐位移偏移
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Recoil")
+	FVector SpineRecoilLocation = FVector::ZeroVector;
+
+	// 单发开火身体后仰角度冲量（Pitch，度）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
+	float RecoilSpinePitch = 2.0f;
+
+	// 单发开火右肩后挫偏航扭矩（Yaw，度）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
+	float RecoilSpineYaw = 0.6f;
+
+	// 单发开火身体侧倾扰动随机范围（Roll，度）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
+	float RecoilSpineRoll = 0.3f;
+
+	// 单发开火躯干后挫位移冲量（cm）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
+	float RecoilSpineBack = 0.8f;
+
+	// 连续开火最大累计仰角限制（防止全自动连续射击时仰角过大）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
+	float MaxRecoilSpinePitch = 5.0f;
+
+	// 连续开火最大累计后挫位移限制（cm）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
+	float MaxRecoilSpineBack = 2.0f;
+
+	// 躯干后坐力平滑弹性回正阻尼速率
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
+	float RecoilSpineRecoverySpeed = 24.0f;
+
+	// 触发一次躯干受力脉冲（由武器开火或技能调用）
+	UFUNCTION(BlueprintCallable, Category = "Combat|Recoil")
+	void AddSpineRecoilKick(float Multiplier = 1.0f);
 
 	// 角色固有元素属性（供同色微粒判定）
 	UFUNCTION(BlueprintPure, Category = "Character|Identity")
