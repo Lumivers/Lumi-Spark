@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
@@ -61,6 +61,10 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Drops")
 	float EnergyPerParticle = 6.0f;
+
+	// 击杀该敌人给击杀者回退的地脉侵蚀度（默认 20 点/20%）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Drops", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float DroppedCorrosionReduction = 20.0f;
 
 	// ─── 挂接的行为树资产 ───
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI")

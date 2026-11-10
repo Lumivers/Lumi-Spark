@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -39,9 +39,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Extraction")
 	ELSHazardDifficulty ZoneHazard = ELSHazardDifficulty::Medium;
 
-	/** 成功撤离所需留在区域内的读条时长（秒，默认 5 秒） */
+	/** 成功撤离所需留在区域内的读条时长（秒，默认 15 秒战术防守） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Extraction", meta = (ClampMin = "1.0", UIMin = "1.0"))
-	float ExtractionDuration = 5.0f;
+	float ExtractionDuration = 15.0f;
 
 	/** 是否处于激活可用状态（支持关卡机关、拉闸通电开启） */
 	UPROPERTY(ReplicatedUsing = OnRep_IsActive, EditAnywhere, BlueprintReadWrite, Category = "Extraction")

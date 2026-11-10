@@ -13,6 +13,9 @@ ULSThrowableComponent::ULSThrowableComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false; // 初始休眠，按住 G 才激活 Tick
 	SetIsReplicatedByDefault(true);
+
+	// 战术道具默认装配：引力涡流聚怪手雷 (ALSGrenade_Anemo)
+	DefaultGrenadeClass = ALSGrenade_Anemo::StaticClass();
 }
 
 void ULSThrowableComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -164,6 +167,10 @@ void ULSThrowableComponent::UpdateTrajectoryPrediction()
 
 TSubclassOf<ALSGrenadeBase> ULSThrowableComponent::ResolveGrenadeClass() const
 {
+	if (DefaultGrenadeClass)
+	{
+		return DefaultGrenadeClass;
+	}
 	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
 	{
 		const FGameplayTag ElemTag = OwnerChar->GetCharacterElementTag();
@@ -173,11 +180,7 @@ TSubclassOf<ALSGrenadeBase> ULSThrowableComponent::ResolveGrenadeClass() const
 		if (ElemTag == LSTags::TAG_Element_Electro) return ALSGrenade_Electro::StaticClass();
 		if (ElemTag == LSTags::TAG_Element_Anemo) return ALSGrenade_Anemo::StaticClass();
 	}
-	if (DefaultGrenadeClass)
-	 	{
-	 		return DefaultGrenadeClass;
-	 	}
-	return ALSGrenade_Pyro::StaticClass();
+	return ALSGrenade_Anemo::StaticClass();
 }
 
 void ULSThrowableComponent::Server_ThrowGrenade_Implementation(FVector LaunchOrigin, FVector LaunchVelocity)

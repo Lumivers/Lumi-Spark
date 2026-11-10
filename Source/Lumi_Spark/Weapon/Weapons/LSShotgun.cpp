@@ -1,4 +1,4 @@
-﻿#include "LSShotgun.h"
+#include "LSShotgun.h"
 #include "Weapon/LSRecoilComponent.h"
 #include "Character/LSCharacterBase.h"
 #include "Character/LSCameraComponent.h"
@@ -7,8 +7,10 @@
 
 ALSShotgun::ALSShotgun()
 {
-	WeaponDisplayName = FText::FromString(TEXT("破片重型霰弹枪"));
+	WeaponDisplayName = FText::FromString(TEXT("寒霜重型霰弹枪"));
 	WeaponTypeTag = LSTags::TAG_Weapon_Type_Shotgun;
+	ElementTag = LSTags::TAG_Element_Cryo;
+	ElementGauge = ELSElementGauge::Heavy; // 2U 强冰，命中带火敌人引爆 2.0x 融化暴击
 
 	FireMode = ELSFireMode::SemiAuto;
 	FireRate = 100.0f;                  // 100 RPM 泵动/半自动节拍

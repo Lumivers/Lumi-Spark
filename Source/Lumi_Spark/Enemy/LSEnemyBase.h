@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
@@ -113,4 +113,13 @@ protected:
 	float BackstabMaxDistance = 230.0f;
 
 	bool bIsDead = false;
+
+	// 记录最后攻击该怪物的施加者（用于击杀判定与侵蚀度结算）
+	UPROPERTY()
+	TWeakObjectPtr<AActor> LastDamageCauser;
+
+	UPROPERTY()
+	TWeakObjectPtr<AController> LastDamageInstigator;
+
+	void ApplyCorrosionReductionToKiller(AActor* Killer);
 };

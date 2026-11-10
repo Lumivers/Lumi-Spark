@@ -294,6 +294,56 @@ void ALSCharacterBase::SetALSOverlayOverrideState(int32 InOverrideState)
 	}
 }
 
+void ALSCharacterBase::ALSJumpAction(bool bPressed)
+{
+	// 屏幕与日志调试输出，毫秒级验证按键到达与 Pawn 类型
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(8841, 2.0f, bPressed ? FColor::Cyan : FColor::Silver,
+			FString::Printf(TEXT("🦘 [ALSJumpAction] bPressed=%d | Pawn=%s"), bPressed, *GetName()));
+	}
+	UE_LOG(LogTemp, Warning, TEXT("🦘 [ALSJumpAction] bPressed=%d | Pawn=%s"), bPressed, *GetName());
+
+	// 1. 优先尝试派发蓝图中的 ALS_JumpAction(bool bPressed) 自定义事件
+	static const FName FuncName(TEXT("ALS_JumpAction"));
+	if (UFunction* Func = FindFunction(FuncName))
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(8842, 2.0f, FColor::Green,
+				FString::Printf(TEXT("✅ 命中蓝图 ALS_JumpAction，已派发 ProcessEvent！")));
+		}
+		UE_LOG(LogTemp, Warning, TEXT("✅ 命中蓝图 ALS_JumpAction，已派发 ProcessEvent！"));
+
+		struct { bool bInPressed; } Params{ bPressed };
+		ProcessEvent(Func, &Params);
+		return;
+	}
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(8842, 2.0f, FColor::Red,
+			FString::Printf(TEXT("❌ 未找到蓝图 ALS_JumpAction！执行保底 Jump()")));
+	}
+	UE_LOG(LogTemp, Warning, TEXT("❌ 未找到蓝图 ALS_JumpAction！执行保底 Jump()"));
+
+	// 2. 兼容模式：检查是否有老版 JumpAction 无参事件
+	if (bPressed)
+	{
+		static const FName LegacyFuncName(TEXT("JumpAction"));
+		if (UFunction* Func = FindFunction(LegacyFuncName))
+		{
+			ProcessEvent(Func, nullptr);
+			return;
+		}
+		Jump();
+	}
+	else
+	{
+		StopJumping();
+	}
+}
+
 void ALSCharacterBase::AddSpineRecoilKick(float Multiplier)
 {
 	if (Multiplier <= 0.0f)

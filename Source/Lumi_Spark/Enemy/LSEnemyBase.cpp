@@ -1,4 +1,4 @@
-﻿#include "LSEnemyBase.h"
+#include "LSEnemyBase.h"
 #include "LSEnemyDataAsset.h"
 #include "Character/LSHealthComponent.h"
 #include "Element/LSElementComponent.h"
@@ -7,6 +7,8 @@
 #include "Character/LSEnergyComponent.h"
 #include "Character/LSCharacterBase.h"
 #include "Core/LSEventBus.h"
+#include "Core/LSPlayerController.h"
+#include "Extraction/ULSCorrosionComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/DamageEvents.h"
@@ -163,6 +165,9 @@ float ALSEnemyBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
 {
 	if (bIsDead || DamageAmount <= 0.0f) return 0.0f;
 
+	LastDamageCauser = DamageCauser;
+	LastDamageInstigator = EventInstigator;
+
 	// 1. 解析伤害中的元素属性并应用元素抗性减免
 	float AdjustedDamage = DamageAmount;
 	// 默认假定无元素，若有命中上下文可在后续集成
@@ -208,7 +213,12 @@ void ALSEnemyBase::SetCombatMovementSpeed(bool bInCombat)
 
 void ALSEnemyBase::HandleHealthComponentDeath()
 {
-	OnDeath(nullptr);
+	AActor* Killer = LastDamageCauser.IsValid() ? LastDamageCauser.Get() : nullptr;
+	if (!Killer && LastDamageInstigator.IsValid())
+	{
+		Killer = LastDamageInstigator->GetPawn();
+	}
+	OnDeath(Killer);
 }
 
 void ALSEnemyBase::OnDeath(AActor* Killer)
@@ -218,16 +228,42 @@ void ALSEnemyBase::OnDeath(AActor* Killer)
 
 	ActiveGameplayTags.AddTag(LSTags::TAG_State_Dead);
 
-	// 掉落元素能量微粒
+	// 1. 战术正向解压：击杀变异体回退玩家地脉侵蚀度
+	ApplyCorrosionReductionToKiller(Killer);
+
+	// 2. 掉落元素能量微粒
 	SpawnEnergyParticles(Killer);
 
-	// 停止移动与碰撞
+	// 3. 停止移动与碰撞
 	GetCharacterMovement()->StopMovementImmediately();
 	GetCharacterMovement()->DisableMovement();
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	// 延时销毁或执行布娃娃（Ragdoll）
 	SetLifeSpan(3.0f);
+}
+
+void ALSEnemyBase::ApplyCorrosionReductionToKiller(AActor* Killer)
+{
+	if (!Killer) return;
+
+	ALSCharacterBase* PlayerChar = Cast<ALSCharacterBase>(Killer);
+	if (!PlayerChar && Killer->GetOwner())
+	{
+		PlayerChar = Cast<ALSCharacterBase>(Killer->GetOwner());
+	}
+
+	if (PlayerChar)
+	{
+		if (ALSPlayerController* PC = Cast<ALSPlayerController>(PlayerChar->GetController()))
+		{
+			if (ULSCorrosionComponent* CorrosionComp = PC->GetCorrosionComponent())
+			{
+				const float Reduction = EnemyDataAsset ? EnemyDataAsset->DroppedCorrosionReduction : 20.0f;
+				CorrosionComp->ReduceCorrosion(Reduction);
+			}
+		}
+	}
 }
 
 void ALSEnemyBase::SpawnEnergyParticles(AActor* Killer)

@@ -77,6 +77,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Character|Overlay")
 	void SetALSOverlayOverrideState(int32 InOverrideState);
 
+	// 触发 ALS 原生跳跃与 Mantle（翻越/攀爬）状态机联动 (true: 按下开始, false: 松开结束)
+	UFUNCTION(BlueprintCallable, Category = "Character|ALS")
+	void ALSJumpAction(bool bPressed);
+
 	// 是否在平时走动时也保持手臂稳固（避免走路时步枪像大钟摆一样夸张摇晃）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Combat")
 	bool bLockArmSwayDuringWalk = true;

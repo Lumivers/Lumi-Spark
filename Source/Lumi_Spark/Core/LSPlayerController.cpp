@@ -91,14 +91,16 @@ void ALSPlayerController::SetupInputComponent()
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
-		//1，移动与视角
+		// 1. 移动与视角
 		if (IA_Move) EnhancedInputComponent->BindAction(IA_Move, ETriggerEvent::Triggered, this, &ALSPlayerController::HandleMove);
 		if (IA_Look) EnhancedInputComponent->BindAction(IA_Look, ETriggerEvent::Triggered, this, &ALSPlayerController::HandleLook);
-		if (IA_Jump)
-		{
-			EnhancedInputComponent->BindAction(IA_Jump, ETriggerEvent::Started, this, &ALSPlayerController::HandleJumpStarted);
-			EnhancedInputComponent->BindAction(IA_Jump, ETriggerEvent::Completed, this, &ALSPlayerController::HandleJumpCompleted);
-		}
+		
+		// 跳跃完全释放还给 ALS 原版系统（由 DefaultInput.ini 的 JumpAction -> SpaceBar 原生事件驱动，避免增强输入拦截）
+		// if (IA_Jump)
+		// {
+		// 	EnhancedInputComponent->BindAction(IA_Jump, ETriggerEvent::Started, this, &ALSPlayerController::HandleJumpStarted);
+		// 	EnhancedInputComponent->BindAction(IA_Jump, ETriggerEvent::Completed, this, &ALSPlayerController::HandleJumpCompleted);
+		// }
 		if (IA_Sprint)
 		{
 			EnhancedInputComponent->BindAction(IA_Sprint, ETriggerEvent::Started, this, &ALSPlayerController::HandleSprintStarted);
@@ -216,13 +218,21 @@ void ALSPlayerController::HandleJumpStarted()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		Char->Jump();
+		Char->ALSJumpAction(true);
+	}
+	else
+	{
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("❌ [HandleJumpStarted] Pawn 不是 ALSCharacterBase！"));
+		UE_LOG(LogTemp, Error, TEXT("❌ [HandleJumpStarted] Pawn 不是 ALSCharacterBase！"));
 	}
 }
 
 void ALSPlayerController::HandleJumpCompleted()
 {
-	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>()) Char->StopJumping();
+	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
+	{
+		Char->ALSJumpAction(false);
+	}
 }
 
 void ALSPlayerController::HandleSprintStarted()
