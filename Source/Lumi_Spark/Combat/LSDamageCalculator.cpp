@@ -1,4 +1,4 @@
-﻿#include "Combat/LSDamageCalculator.h"
+#include "Combat/LSDamageCalculator.h"
 #include "Core/LSTypes.h"
 
 FLSDamageResult ULSDamageCalculator::CalculateDamage(
@@ -125,28 +125,24 @@ float ULSDamageCalculator::GetAmplifyingReactionBaseMultiplier(const FGameplayTa
 {
 	OutReactionTag = FGameplayTag();
 
-	// 1. 蒸发反应 (水 + 火)
+	// 1. 融化反应 (火 + 冰)：黄金三角单体攻坚爆发，双向统一定死 2.0x 暴击倍率
+	if ((TriggerElement == LSTags::TAG_Element_Pyro && AuraElement == LSTags::TAG_Element_Cryo) ||
+		(TriggerElement == LSTags::TAG_Element_Cryo && AuraElement == LSTags::TAG_Element_Pyro))
+	{
+		OutReactionTag = LSTags::TAG_Reaction_Melt;
+		return 2.0f; // 步枪挂火 + 副手冰击，或者反向触发，均稳定 2.0x 巨额爆发
+	}
+
+	// 2. 蒸发反应 (水 + 火，兼容保底)
 	if (TriggerElement == LSTags::TAG_Element_Hydro && AuraElement == LSTags::TAG_Element_Pyro)
 	{
 		OutReactionTag = LSTags::TAG_Reaction_Vaporize;
-		return 2.0f; // 水打火：顺向蒸发 2.0x
+		return 2.0f;
 	}
 	if (TriggerElement == LSTags::TAG_Element_Pyro && AuraElement == LSTags::TAG_Element_Hydro)
 	{
 		OutReactionTag = LSTags::TAG_Reaction_Vaporize;
-		return 1.5f; // 火打水：反向蒸发 1.5x
-	}
-
-	// 2. 融化反应 (火 + 冰)
-	if (TriggerElement == LSTags::TAG_Element_Pyro && AuraElement == LSTags::TAG_Element_Cryo)
-	{
-		OutReactionTag = LSTags::TAG_Reaction_Melt;
-		return 2.0f; // 火打冰：顺向融化 2.0x
-	}
-	if (TriggerElement == LSTags::TAG_Element_Cryo && AuraElement == LSTags::TAG_Element_Pyro)
-	{
-		OutReactionTag = LSTags::TAG_Reaction_Melt;
-		return 1.5f; // 冰打火：反向融化 1.5x
+		return 1.5f;
 	}
 
 	return 1.0f;
@@ -164,14 +160,10 @@ float ULSDamageCalculator::CalculateTransformativeReactionDamage(
 
 	// 2. 剧变反应类型系数
 	float ReactionCoeff = 1.0f;
-	if (ReactionTag == LSTags::TAG_Reaction_Superconduct)      ReactionCoeff = 0.5f;  // 超导 (冰+雷)
-	else if (ReactionTag == LSTags::TAG_Reaction_Swirl)        ReactionCoeff = 0.6f;  // 扩散 (风+元素)
+	if (ReactionTag == LSTags::TAG_Reaction_Superconduct)      ReactionCoeff = 1.5f;  // 超导 (冰+雷: 破甲与易伤)
+	else if (ReactionTag == LSTags::TAG_Reaction_Overload)     ReactionCoeff = 2.0f;  // 超载 (火+雷: 范围爆破冲击)
+	else if (ReactionTag == LSTags::TAG_Reaction_Shatter)      ReactionCoeff = 1.5f;  // 碎裂 (极性破冻)
 	else if (ReactionTag == LSTags::TAG_Reaction_ElectroCharged)ReactionCoeff = 1.2f; // 感电 (水+雷)
-	else if (ReactionTag == LSTags::TAG_Reaction_Shatter)      ReactionCoeff = 1.5f;  // 碎冰
-	else if (ReactionTag == LSTags::TAG_Reaction_Overload)     ReactionCoeff = 2.0f;  // 超载 (火+雷)
-	else if (ReactionTag == LSTags::TAG_Reaction_Bloom)        ReactionCoeff = 2.0f;  // 原绽放
-	else if (ReactionTag == LSTags::TAG_Reaction_Burgeon)      ReactionCoeff = 3.0f;  // 烈绽放 (火引爆种子)
-	else if (ReactionTag == LSTags::TAG_Reaction_Hyperbloom)   ReactionCoeff = 3.0f;  // 超绽放 (雷引爆种子)
 
 	// 3. 元素精通提升系数
 	const float EMBonus = CalculateTransformativeReactionBonus(ElementalMastery);

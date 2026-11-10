@@ -1,4 +1,4 @@
-﻿#include "UI/LSDamagePopWidget.h"
+#include "UI/LSDamagePopWidget.h"
 #include "Core/LSEventBus.h"
 #include "GameFramework/PlayerController.h"
 
@@ -142,7 +142,6 @@ FLinearColor ULSDamagePopWidget::GetColorForElement(const FGameplayTag& ElementT
 	if (ElementTag == LSTags::TAG_Element_Hydro)     return FLinearColor(0.1f, 0.6f, 1.0f);   // 湛蓝
 	if (ElementTag == LSTags::TAG_Element_Electro)   return FLinearColor(0.75f, 0.3f, 1.0f);  // 紫晶
 	if (ElementTag == LSTags::TAG_Element_Cryo)      return FLinearColor(0.4f, 0.9f, 1.0f);   // 冰蓝
-	if (ElementTag == LSTags::TAG_Element_Dendro)    return FLinearColor(0.35f, 0.95f, 0.15f);// 荧光草绿
 	if (ElementTag == LSTags::TAG_Element_Anemo)     return FLinearColor(0.3f, 1.0f, 0.8f);   // 青绿
 	if (ElementTag == LSTags::TAG_Element_Geo)       return FLinearColor(1.0f, 0.8f, 0.2f);   // 琥珀金
 
@@ -151,16 +150,13 @@ FLinearColor ULSDamagePopWidget::GetColorForElement(const FGameplayTag& ElementT
 
 FText ULSDamagePopWidget::GetReactionNameText(const FGameplayTag& ReactionTag) const
 {
-	if (ReactionTag == LSTags::TAG_Reaction_Vaporize)       return FText::FromString(TEXT("蒸发"));
 	if (ReactionTag == LSTags::TAG_Reaction_Melt)           return FText::FromString(TEXT("融化"));
 	if (ReactionTag == LSTags::TAG_Reaction_Overload)       return FText::FromString(TEXT("超载"));
 	if (ReactionTag == LSTags::TAG_Reaction_Superconduct)   return FText::FromString(TEXT("超导"));
+	if (ReactionTag == LSTags::TAG_Reaction_Shatter)        return FText::FromString(TEXT("碎裂"));
 	if (ReactionTag == LSTags::TAG_Reaction_ElectroCharged) return FText::FromString(TEXT("感电"));
 	if (ReactionTag == LSTags::TAG_Reaction_Freeze)         return FText::FromString(TEXT("冻结"));
-	if (ReactionTag == LSTags::TAG_Reaction_Bloom)          return FText::FromString(TEXT("绽放"));
-	if (ReactionTag == LSTags::TAG_Reaction_Burgeon)        return FText::FromString(TEXT("烈绽放"));
-	if (ReactionTag == LSTags::TAG_Reaction_Hyperbloom)     return FText::FromString(TEXT("超绽放"));
-	if (ReactionTag == LSTags::TAG_Reaction_Swirl)          return FText::FromString(TEXT("扩散"));
+	if (ReactionTag == LSTags::TAG_Reaction_Vaporize)       return FText::FromString(TEXT("蒸发"));
 
 	return FText::GetEmpty();
 }

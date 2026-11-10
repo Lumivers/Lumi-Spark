@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -106,10 +106,6 @@ private:
 	// ICD 追踪映射表 (攻击者 ID -> 计数记录)
 	TMap<uint32, FLSICDEntry> ICDMap;
 
-	// 感电 / 燃烧持续判定计时器
-	float ElectroChargedTimer = 0.0f;
-	float BurningTimer = 0.0f;
-
 	// ─── 内部仲裁子流程 ───
 
 	// 检查并更新攻击者的 ICD，返回本次攻击是否能成功挂元素
@@ -131,13 +127,7 @@ private:
 	// 广播附着改变
 	void NotifyAuraChanged();
 	
-	// ─── 次生反应内部处理 ───
-	// 触发感电周期跳电 DoT
-	void ProcessElectroChargedTick(float DeltaTime);
-
-	// 触发风系扩散范围传染
-	void TriggerSwirlSpread(AActor* InstigatorActor, const FGameplayTag& AuraToSpread);
-
-	//触发超载范围爆轰与物理击退
+	// ─── 黄金三角反应特化处理 ───
+	// 触发超载范围爆轰与物理击退
 	void TriggerOverloadExplosion(AActor* InstigatorActor);
 };

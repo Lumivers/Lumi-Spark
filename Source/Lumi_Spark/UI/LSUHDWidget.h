@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -28,14 +28,11 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "HUD|Weapon")
 	ALSWeaponBase* GetCurrentWeapon() const { return CurrentBoundWeapon; }
 
-	// 切人时核心重绑入口
+	// 核心角色数据重绑入口
 	UFUNCTION(BlueprintCallable, Category = "HUD")
 	void BindToCharacter(ALSCharacterBase* NewCharacter);
 
 	// ─── 暴露给 UMG 蓝图的表现层事件 ───
-	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Team")
-	void OnActiveCharacterSwitched(ALSCharacterBase* NewCharacter, int32 SlotIndex);
-	
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Interaction")
 	void OnInteractPromptUpdated(bool bIsVisible, const FText& PromptText);
 	

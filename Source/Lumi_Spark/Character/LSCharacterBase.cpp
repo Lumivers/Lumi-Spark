@@ -523,22 +523,6 @@ void ALSCharacterBase::OnRep_IsDowned()
 	}
 }
 
-void ALSCharacterBase::EnterBackgroundMode()
-{
-	SetActorHiddenInGame(true);
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	if (WeaponComponent)
-	{
-		WeaponComponent->StopFire();
-	}
-}
-
-void ALSCharacterBase::ExitBackgroundMode()
-{
-	SetActorHiddenInGame(false);
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-}
-
 bool ALSCharacterBase::CanInteract(AActor* Interactor) const
 {
 	return bIsDowned && !IsDead();

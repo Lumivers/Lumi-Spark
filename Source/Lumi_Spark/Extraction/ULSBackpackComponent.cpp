@@ -1,4 +1,4 @@
-﻿#include "Extraction/ULSBackpackComponent.h"
+#include "Extraction/ULSBackpackComponent.h"
 
 ULSBackpackComponent::ULSBackpackComponent()
 {
@@ -303,80 +303,6 @@ void ULSBackpackComponent::ClearBackpack()
 		Slot = FLSInventoryItem();
 	}
 	OnInventoryChanged.Broadcast();
-}
-
-bool ULSBackpackComponent::LearnBlueprint(FName BlueprintItemID)
-{
-	// 在普通背包中查找该图纸
-	for (int32 i = 0; i < BackpackSlots.Num(); ++i)
-	{
-		const FLSInventoryItem& Item = BackpackSlots[i];
-		if (Item.bIsBlueprint && Item.ItemID == BlueprintItemID)
-		{
-			LearnedBlueprints.Add(BlueprintItemID);
-			// 学习后图纸作为道具消耗掉
-			RemoveFromBackpack(i, 1);
-			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("📘 【图纸学习成功】已掌握配方：%s！可在工厂随时制造。"), *BlueprintItemID.ToString()));
-			return true;
-		}
-	}
-	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("❌ 背包中未找到该图纸！"));
-	return false;
-}
-
-bool ULSBackpackComponent::CraftItemFromRecipe(const FLSCraftingRecipe& Recipe)
-{
-	// 1. 图纸解锁校验
-	if (Recipe.bRequiresBlueprint && !LearnedBlueprints.Contains(Recipe.RequiredBlueprintID))
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("❌ 制造失败：尚未学会图纸【%s】！"), *Recipe.RequiredBlueprintID.ToString()));
-		return false;
-	}
-
-	// 2. 原材料数量预检
-	for (const FLSItemIngredient& Ingredient : Recipe.Ingredients)
-	{
-		int32 FoundCount = 0;
-		for (const FLSInventoryItem& Item : BackpackSlots)
-		{
-			if (Item.ItemID == Ingredient.MaterialID)
-			{
-				FoundCount += Item.Quantity;
-			}
-		}
-		if (FoundCount < Ingredient.Count)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("❌ 制造失败：缺少材料 %s (%d / %d)"), *Ingredient.MaterialID.ToString(), FoundCount, Ingredient.Count));
-			return false;
-		}
-	}
-
-	// 3. 扣除材料（逆序遍历安全扣除）
-	for (const FLSItemIngredient& Ingredient : Recipe.Ingredients)
-	{
-		int32 RemainingToRemove = Ingredient.Count;
-		for (int32 i = BackpackSlots.Num() - 1; i >= 0 && RemainingToRemove > 0; --i)
-		{
-			if (BackpackSlots[i].ItemID == Ingredient.MaterialID)
-			{
-				const int32 Deducted = FMath::Min(BackpackSlots[i].Quantity, RemainingToRemove);
-				BackpackSlots[i].Quantity -= Deducted;
-				RemainingToRemove -= Deducted;
-				if (BackpackSlots[i].Quantity <= 0)
-				{
-					BackpackSlots.RemoveAt(i);
-				}
-			}
-		}
-	}
-
-	// 4. 产出全新满耐久装备并入包
-	FLSInventoryItem NewItem = Recipe.ResultItem;
-	NewItem.CurrentDurability = NewItem.MaxDurability;
-	AddItem(NewItem, true);
-
-	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, FString::Printf(TEXT("🛠️ 【工厂产出】成功制造：%s (耐久: %d/%d)！"), *NewItem.DisplayName.ToString(), NewItem.CurrentDurability, NewItem.MaxDurability));
-	return true;
 }
 
 void ULSBackpackComponent::ProcessFailedExtraction(TArray<FLSInventoryItem>& OutDroppedLoot)

@@ -89,8 +89,8 @@ void ALumi_SparkGameMode::HandlePlayerExtraction(ALSPlayerController* PC, const 
 {
 	if (!PC) return;
 
-	UE_LOG(LogTemp, Display, TEXT("[GameMode] 玩家 %s 撤离成功！带出物品价值: %.0f, 剩余面罩耐久: %d"),
-		*PC->GetName(), Report.TotalExtractedValue, Report.RemainingMaskDurability);
+	UE_LOG(LogTemp, Display, TEXT("[GameMode] 玩家 %s 撤离成功！带出物品价值: %.0f"),
+		*PC->GetName(), Report.TotalExtractedValue);
 
 	// 若全员都已撤离或死亡，可触发全局战局结束
 	CheckRaidWipeCondition();

@@ -1,4 +1,4 @@
-﻿#include "Combat/LSTargetDummy.h"
+#include "Combat/LSTargetDummy.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -62,8 +62,7 @@ float ALSTargetDummy::TakeDamage(float DamageAmount, struct FDamageEvent const& 
 	{
 		// 优先从造成的伤害上下文中提取，或从手雷/枪械提取
 		if (DamageCauser->ActorHasTag(TEXT("Element.Pyro"))) AttackElement = LSTags::TAG_Element_Pyro;
-		else if (DamageCauser->ActorHasTag(TEXT("Element.Dendro"))) AttackElement = LSTags::TAG_Element_Dendro;
-		else if (DamageCauser->ActorHasTag(TEXT("Element.Hydro"))) AttackElement = LSTags::TAG_Element_Hydro;
+		else if (DamageCauser->ActorHasTag(TEXT("Element.Cryo"))) AttackElement = LSTags::TAG_Element_Cryo;
 		else if (DamageCauser->ActorHasTag(TEXT("Element.Electro"))) AttackElement = LSTags::TAG_Element_Electro;
 	}
 

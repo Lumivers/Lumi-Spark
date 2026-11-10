@@ -1,4 +1,4 @@
-﻿#include "LSThrowableComponent.h"
+#include "LSThrowableComponent.h"
 #include "Weapon/LSGrenadeBase.h"
 #include "Character/LSCharacterBase.h"
 #include "Core/LSTypes.h"
@@ -171,7 +171,6 @@ TSubclassOf<ALSGrenadeBase> ULSThrowableComponent::ResolveGrenadeClass() const
 		if (ElemTag == LSTags::TAG_Element_Hydro) return ALSGrenade_Hydro::StaticClass();
 		if (ElemTag == LSTags::TAG_Element_Cryo) return ALSGrenade_Cryo::StaticClass();
 		if (ElemTag == LSTags::TAG_Element_Electro) return ALSGrenade_Electro::StaticClass();
-		if (ElemTag == LSTags::TAG_Element_Dendro) return ALSGrenade_Dendro::StaticClass();
 		if (ElemTag == LSTags::TAG_Element_Anemo) return ALSGrenade_Anemo::StaticClass();
 	}
 	if (DefaultGrenadeClass)

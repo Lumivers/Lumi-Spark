@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
@@ -14,11 +14,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSEnemyKilled, AActor*, Victim, 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLSElementApplied, AActor*, Target, FGameplayTag, ElementTag, ELSElementGauge, Gauge);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnLSElementReactionTriggered, AActor*, Target, FGameplayTag, ReactionTag, float, ReactionDamage, AActor*, Instigator);
 
-//3,角色切换与死亡事件委托
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSCharacterSwitched, int32, OldCharacterIndex, int32, NewCharacterIndex);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLSCharacterDied, AActor*, DeadCharacter);
-
-//4，多人联机与破盾事件委托
+// 3，多人联机与破盾事件委托
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLSPlayerDowned, AActor*, DownedPlayer);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSPlayerRevived, AActor*, RevivedPlayer, AActor*, Reviver);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnLSRaidWiped);
@@ -49,13 +45,6 @@ public:
 	
 	UPROPERTY(BlueprintAssignable, Category = "Events|Element")
 	FOnLSElementReactionTriggered OnElementReactionTriggered;
-	
-	//角色与小队事件流
-	UPROPERTY(BlueprintAssignable, Category = "Events|Team")
-	FOnLSCharacterSwitched OnCharacterSwitched;
-	
-	UPROPERTY(BlueprintAssignable, Category = "Events|Team")
-	FOnLSCharacterDied OnCharacterDied;
 	
 	//多人联机与破盾事件流
 	UPROPERTY(BlueprintAssignable, Category = "Events|Coop")

@@ -1,4 +1,4 @@
-﻿#include "Weapon/LSGrenadeBase.h"
+#include "Weapon/LSGrenadeBase.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -297,18 +297,6 @@ ALSGrenade_Electro::ALSGrenade_Electro()
 	OuterRadius = 580.0f;
 	ExplosionImpulse = 45000.0f;
 	ElementGauge = ELSElementGauge::Heavy; // 2U 强雷
-}
-
-ALSGrenade_Dendro::ALSGrenade_Dendro()
-{
-	ElementTag = LSTags::TAG_Element_Dendro;
-	BaseDamage = 135.0f;
-	MinDamage = 35.0f;
-	InnerRadius = 180.0f;
-	OuterRadius = 620.0f;
-	ExplosionImpulse = 28000.0f;
-	bInwardPull = false;
-	ElementGauge = ELSElementGauge::Heavy; // 2U 强草，底元素储备充足
 }
 
 ALSGrenade_Anemo::ALSGrenade_Anemo()

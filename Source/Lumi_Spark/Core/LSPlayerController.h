@@ -67,17 +67,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
 	TObjectPtr<UInputAction> IA_Reload; // R 换弹
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Team")
-	TObjectPtr<UInputAction> IA_SwitchToSlot1; // 1 键直切角色 1
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Weapon")
+	TObjectPtr<UInputAction> IA_SwitchToSlot1; // 1 键切主武器 (火步枪)
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Team")
-	TObjectPtr<UInputAction> IA_SwitchToSlot2; // 2 键直切角色 2
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Weapon")
+	TObjectPtr<UInputAction> IA_SwitchToSlot2; // 2 键切副武器 (冰霰弹/手枪)
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Team")
-	TObjectPtr<UInputAction> IA_SwitchToSlot3; // 3 键直切角色 3
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Weapon")
+	TObjectPtr<UInputAction> IA_SwitchToSlot3; // 3 键切战术槽
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Team")
-	TObjectPtr<UInputAction> IA_CycleCharacter; // 滚轮顺逆切 (Axis1D)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Weapon")
+	TObjectPtr<UInputAction> IA_CycleCharacter; // 滚轮切枪 (Axis1D)
 	
 	//4，角色机制
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
@@ -148,11 +148,7 @@ public:
 	UFUNCTION(Exec, Category = "Extraction|Debug")
 	void LSUseInjector();
 	
-	// 立即更换滤芯 (LS.InstallFilter 180)
-	UFUNCTION(Exec, Category = "Extraction|Debug")
-	void LSInstallFilter(float Durability);
-	
-	// 打印侵蚀与滤芯状态 (LS.PrintCorrosion)
+	// 打印侵蚀状态 (LS.PrintCorrosion)
 	UFUNCTION(Exec, Category = "Extraction|Debug")
 	void LSPrintCorrosion();
 	

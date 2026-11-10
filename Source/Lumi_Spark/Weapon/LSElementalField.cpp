@@ -1,4 +1,4 @@
-﻿#include "LSElementalField.h"
+#include "LSElementalField.h"
 #include "Components/SphereComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -122,14 +122,6 @@ void ALSElementalField::HandlePeriodicTick()
 				TargetElemComp->ApplyElement(FieldInstigator ? FieldInstigator : this, ElementTag, ELSElementGauge::Light);
 			}
 		}
-		// 5. 草雾领域：持续播撒草反应底
-		else if (ElementTag == LSTags::TAG_Element_Dendro)
-		{
-			if (TargetElemComp)
-			{
-				TargetElemComp->ApplyElement(FieldInstigator ? FieldInstigator : this, ElementTag, ELSElementGauge::Light);
-			}
-		}
 	}
 }
 
@@ -139,6 +131,5 @@ FColor ALSElementalField::GetFieldDebugColor() const
 	if (ElementTag == LSTags::TAG_Element_Hydro) return FColor::Blue;
 	if (ElementTag == LSTags::TAG_Element_Cryo) return FColor::Cyan;
 	if (ElementTag == LSTags::TAG_Element_Electro) return FColor::Purple;
-	if (ElementTag == LSTags::TAG_Element_Dendro) return FColor::Green;
 	return FColor::Yellow;
 }

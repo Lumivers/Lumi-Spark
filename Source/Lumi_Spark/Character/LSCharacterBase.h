@@ -127,13 +127,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Character|Identity")
 	FGameplayTag GetCharacterElementTag() const { return CharacterElementTag; }
 
-	// 进退场与小队状态机
-	UFUNCTION(BlueprintCallable, Category = "Team")
-	virtual void EnterBackgroundMode();
-
-	UFUNCTION(BlueprintCallable, Category = "Team")
-	virtual void ExitBackgroundMode();
-
 	// 存活状态：直接向生命组件查询唯一真相源
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Health")
 	bool IsDead() const;

@@ -1,4 +1,4 @@
-﻿#include "Extraction/ALSExtractionPoint.h"
+#include "Extraction/ALSExtractionPoint.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -216,17 +216,7 @@ void ALSExtractionPoint::CompleteExtractionForPlayer(ALSPlayerController* PC)
 {
 	if (!HasAuthority() || !PC) return;
 
-	// 1. 扣除抗蚀面罩耐久点数（简单-1/中等-1/困难-2/高危-3）
-	ULSCorrosionComponent* CorrComp = PC->GetCorrosionComponent();
-	const int32 PreDurability = CorrComp ? CorrComp->CurrentMaskDurability : 0;
-	if (CorrComp)
-	{
-		CorrComp->ApplyRaidDurabilityDeduction(ZoneHazard);
-	}
-	const int32 PostDurability = CorrComp ? CorrComp->CurrentMaskDurability : 0;
-	const int32 Deducted = PreDurability - PostDurability;
-
-	// 2. 汇总背包与安全箱战利品
+	// 1. 汇总背包与安全箱战利品
 	ULSBackpackComponent* Backpack = PC->GetBackpackComponent();
 	const float TotalValue = Backpack ? Backpack->CalculateTotalLootValue() : 0.0f;
 	TArray<FLSInventoryItem> AllLoot;
@@ -236,17 +226,15 @@ void ALSExtractionPoint::CompleteExtractionForPlayer(ALSPlayerController* PC)
 		AllLoot.Append(Backpack->SecureBoxSlots);
 	}
 
-	// 3. 构建权威战报
+	// 2. 构建权威战报
 	FLSRaidReport Report;
 	Report.Status = ELSExtractionStatus::Extracted;
 	Report.HazardLevel = ZoneHazard;
 	Report.TotalExtractedValue = TotalValue;
 	Report.ExtractedItemCount = AllLoot.Num();
-	Report.DurabilityDeducted = Deducted;
-	Report.RemainingMaskDurability = PostDurability;
 	Report.ExtractedLoot = AllLoot;
 
-	// 4. 事件广播与通知
+	// 3. 事件广播与通知
 	OnExtractionCompleted.Broadcast(PC, Report);
 
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))

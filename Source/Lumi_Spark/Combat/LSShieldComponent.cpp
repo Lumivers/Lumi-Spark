@@ -1,4 +1,4 @@
-﻿#include "Combat/LSShieldComponent.h"
+#include "Combat/LSShieldComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Core/LSEventBus.h"
 #include "GameFramework/Character.h"
@@ -76,10 +76,8 @@ float ULSShieldComponent::CalculateElementalBreakMultiplier(const FGameplayTag& 
 
 	// 高等元素克制矩阵（2.0x 强克制）
 	if (ShieldElement == LSTags::TAG_Element_Cryo && AttackElement == LSTags::TAG_Element_Pyro) return 2.0f;  // 火克冰（融化破盾）
-	if (ShieldElement == LSTags::TAG_Element_Pyro && AttackElement == LSTags::TAG_Element_Hydro) return 2.0f; // 水克火（蒸发破盾）
-	if (ShieldElement == LSTags::TAG_Element_Electro && AttackElement == LSTags::TAG_Element_Dendro) return 2.0f; // 草克雷（激化破盾）
-	if (ShieldElement == LSTags::TAG_Element_Hydro && AttackElement == LSTags::TAG_Element_Electro) return 1.5f;  // 雷克水（感电破盾）
-	if (ShieldElement == LSTags::TAG_Element_Geo && (AttackElement == LSTags::TAG_Element_Geo || AttackElement == LSTags::TAG_Damage_Type_Explosion)) return 3.0f; // 钝击/爆炸克岩盾
+	if (ShieldElement == LSTags::TAG_Element_Electro && (AttackElement == LSTags::TAG_Element_Pyro || AttackElement == LSTags::TAG_Element_Cryo)) return 2.0f; // 火/冰克雷（超载/超导破盾）
+	if (ShieldElement == LSTags::TAG_Element_Pyro && AttackElement == LSTags::TAG_Element_Cryo) return 1.5f;  // 冰打火（融化逆向）
 
 	// 其余普通元素消耗（1.0x 基准消耗）
 	return 1.0f;

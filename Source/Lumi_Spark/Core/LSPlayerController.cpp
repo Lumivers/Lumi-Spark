@@ -643,23 +643,6 @@ void ALSPlayerController::LSAddLoot(const FString& LootType)
 		BackpackComponent->AddItem(Record, true);
 		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("📀 摸到顶级大红收藏品: [初代黄金黑胶唱片]！价值 60000，已自动护送入安全箱！"));
 	}
-	else if (LootType.Equals(TEXT("Disc"), ESearchCase::IgnoreCase))
-	{
-		// 驱动盘装备：Slot4 致命爆发暴击盘
-		FLSDriveDisc Disc;
-		Disc.DiscID = FGuid::NewGuid();
-		Disc.DiscName = FText::FromString(TEXT("精密特化·致命爆发"));
-		Disc.Slot = ELSDriveDiscSlot::Slot4_Critical;
-		Disc.Rarity = ELSDriveDiscRarity::Precision;
-		Disc.Level = 12;
-		Disc.MainStat = FLSDriveDiscStat(ELSDriveStatType::CritRate, 0.311f);
-		Disc.SubStats.Add(FLSDriveDiscStat(ELSDriveStatType::CritDamage, 0.155f));
-		Disc.SubStats.Add(FLSDriveDiscStat(ELSDriveStatType::AttackPercent, 0.082f));
-
-		FLSInventoryItem DiscItem = FLSInventoryItem::CreateDriveDiscItem(Disc);
-		BackpackComponent->AddItem(DiscItem, false);
-		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Purple, FString::Printf(TEXT("💿 摸到驱动盘战利品: [%s]（占 1 格，不可堆叠）"), *Disc.DiscName.ToString()));
-	}
 	else if (LootType.Equals(TEXT("Blueprint"), ESearchCase::IgnoreCase))
 	{
 		// 武器原型图纸（自动入安全箱）
@@ -673,7 +656,7 @@ void ALSPlayerController::LSAddLoot(const FString& LootType)
 	}
 	else
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::White, TEXT("用法: LS.AddLoot [Bearing / Tape / Record / Disc / Blueprint]"));
+		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::White, TEXT("用法: LS.AddLoot [Bearing / Tape / Record / Blueprint]"));
 	}
 }
 
@@ -814,13 +797,7 @@ void ALSPlayerController::HandleInteractStarted()
 void ALSPlayerController::LSAddCorrosion(float Amount)
 {
 	if (!CorrosionComponent) return;
-	CorrosionComponent->CurrentCorrosion = FMath::Clamp(CorrosionComponent->CurrentCorrosion + Amount, 0.0f, CorrosionComponent->MaxCorrosion);
-	if (CorrosionComponent->CurrentCorrosion >= CorrosionComponent->MaxCorrosion && !CorrosionComponent->bIsOverloaded)
-	{
-		CorrosionComponent->bIsOverloaded = true;
-		CorrosionComponent->OnCorrosionOverloadChanged.Broadcast(true);
-	}
-	CorrosionComponent->OnCorrosionUpdated.Broadcast(CorrosionComponent->CurrentCorrosion, CorrosionComponent->MaxCorrosion, CorrosionComponent->CurrentMaskDurability);
+	CorrosionComponent->AddCorrosion(Amount);
 	GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Yellow, FString::Printf(TEXT("🧪 [Debug] 侵蚀度已增加 %.1f -> 当前: %.1f%% (过载: %s)"), Amount, CorrosionComponent->CurrentCorrosion, CorrosionComponent->bIsOverloaded ? TEXT("是") : TEXT("否")));
 }
 
@@ -828,24 +805,19 @@ void ALSPlayerController::LSUseInjector()
 {
 	if (CorrosionComponent)
 	{
-		CorrosionComponent->UsePurificationInjector(100.0f);
-	}
-}
-
-void ALSPlayerController::LSInstallFilter(float Durability)
-{
-	if (CorrosionComponent)
-	{
-		CorrosionComponent->EquipNewMask(FMath::RoundToInt(Durability > 0.0f ? Durability : 10.0f));
+		CorrosionComponent->UsePurificationInjector(20.0f);
 	}
 }
 
 void ALSPlayerController::LSPrintCorrosion()
 {
 	if (!CorrosionComponent) return;
-	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, FString::Printf(TEXT("═══ 地脉侵蚀监控 ═══\n侵蚀度: %.1f / %.1f (%.0f%%)\n面罩耐久: %d / %d 点 (状态: %s)\n过载状态: %s\n暗角强度: %.2f\n生命回复上限: %.0f%%"),
+	const float RemainTime = CorrosionComponent->BaseCorrosionRate > 0.0f 
+		? (CorrosionComponent->MaxCorrosion - CorrosionComponent->CurrentCorrosion) / CorrosionComponent->BaseCorrosionRate 
+		: 0.0f;
+	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, FString::Printf(TEXT("═══ 地脉侵蚀监控 ═══\n侵蚀度: %.1f / %.1f (%.0f%%)\n预计安全剩余时间: %.1f 秒\n过载状态: %s\n暗角强度: %.2f\n生命回复上限: %.0f%%"),
 		CorrosionComponent->CurrentCorrosion, CorrosionComponent->MaxCorrosion, CorrosionComponent->GetCorrosionPercent() * 100.0f,
-		CorrosionComponent->CurrentMaskDurability, CorrosionComponent->GetMaxMaskDurability(), CorrosionComponent->HasActiveMask() ? TEXT("完好防护") : TEXT("已报废/跑刀"),
+		RemainTime,
 		CorrosionComponent->bIsOverloaded ? TEXT("🚨 过载中 (扣血+上限压制)") : TEXT("正常"),
 		CorrosionComponent->GetVignetteIntensity(),
 		CorrosionComponent->GetHealthRecoveryCapPercent() * 100.0f
@@ -872,8 +844,8 @@ void ALSPlayerController::Client_OnExtractionCountdownCanceled_Implementation()
 void ALSPlayerController::Client_OnExtractionSuccess_Implementation(const FLSRaidReport& Report)
 {
 	GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Green,
-		FString::Printf(TEXT("🎉 撤离成功！带出物资估值: %.0f 金币 | 抗蚀耐久: -%d (剩余 %d) | 物品数: %d"),
-			Report.TotalExtractedValue, Report.DurabilityDeducted, Report.RemainingMaskDurability, Report.ExtractedItemCount));
+		FString::Printf(TEXT("🎉 撤离成功！带出物资估值: %.0f 金币 | 物品数: %d"),
+			Report.TotalExtractedValue, Report.ExtractedItemCount));
 
 	SwitchToUIInputMode();
 	if (APawn* ControlledPawn = GetPawn())
@@ -884,21 +856,10 @@ void ALSPlayerController::Client_OnExtractionSuccess_Implementation(const FLSRai
 
 void ALSPlayerController::LSSimulateExtract(const FString& HazardStr)
 {
-	ELSHazardDifficulty Hazard = ELSHazardDifficulty::Medium;
-	if (HazardStr.Equals(TEXT("Low"), ESearchCase::IgnoreCase)) Hazard = ELSHazardDifficulty::Low;
-	else if (HazardStr.Equals(TEXT("Hard"), ESearchCase::IgnoreCase)) Hazard = ELSHazardDifficulty::Hard;
-	else if (HazardStr.Equals(TEXT("Extreme"), ESearchCase::IgnoreCase)) Hazard = ELSHazardDifficulty::Extreme;
-	
-	if (CorrosionComponent)
-	{
-		CorrosionComponent->ApplyRaidDurabilityDeduction(Hazard);
-	}
-
 	const float TotalVal = BackpackComponent ? BackpackComponent->CalculateTotalLootValue() : 0.0f;
 	const int32 ItemCount = BackpackComponent ? (BackpackComponent->BackpackSlots.Num() + BackpackComponent->SecureBoxSlots.Num()) : 0;
-	const int32 RemainingDur = CorrosionComponent ? CorrosionComponent->CurrentMaskDurability : 0;
 
 	GEngine->AddOnScreenDebugMessage(-1, 6.0f, FColor::Green,
-		FString::Printf(TEXT("✅ [模拟撤离] 难度: %s | 估值: %.0f | 剩余面罩耐久: %d | 物品格: %d"),
-			*HazardStr, TotalVal, RemainingDur, ItemCount));
+		FString::Printf(TEXT("✅ [模拟撤离] 难度: %s | 估值: %.0f | 物品格: %d"),
+			*HazardStr, TotalVal, ItemCount));
 }

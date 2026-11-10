@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -182,15 +182,6 @@ class LUMI_SPARK_API ALSGrenade_Electro : public ALSGrenadeBase
 	GENERATED_BODY()
 public:
 	ALSGrenade_Electro();
-};
-
-// 丰饶剧变草雷：施加 2U 强草附着，大范围播撒草系反应底，催生草原核核心
-UCLASS()
-class LUMI_SPARK_API ALSGrenade_Dendro : public ALSGrenadeBase
-{
-	GENERATED_BODY()
-public:
-	ALSGrenade_Dendro();
 };
 
 //涡流引力风雷：超大范围向心聚怪黑洞，施加风元素触发大范围元素扩散
