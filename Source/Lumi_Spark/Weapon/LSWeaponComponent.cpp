@@ -1,5 +1,7 @@
 #include "LSWeaponComponent.h"
 #include "Weapon/LSWeaponBase.h"
+#include "Weapon/Weapons/LSRifle.h"
+#include "Weapon/Weapons/LSShotgun.h"
 #include "GameFramework/Character.h"
 #include "Character/LSCharacterBase.h"
 #include "Net/UnrealNetwork.h"
@@ -8,6 +10,10 @@ ULSWeaponComponent::ULSWeaponComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
+
+	// 默认双枪配置：1 号位脉冲突击步枪（火 Pyro），2 号位寒霜重型霰弹枪（冰 Cryo 2U）
+	DefaultPrimaryClass = ALSRifle::StaticClass();
+	DefaultSecondaryClass = ALSShotgun::StaticClass();
 }
 
 void ULSWeaponComponent::BeginPlay()
@@ -63,65 +69,55 @@ void ULSWeaponComponent::AttachWeaponToSocket(ALSWeaponBase* Weapon, FName Socke
 	ACharacter* Char = Cast<ACharacter>(GetOwner());
 	if (!Weapon || !Char || !Char->GetMesh()) return;
 	
-	// 彻底防止手持武器的物理碰撞体反推、挤压角色自身胶囊体
+	// 彻底防止武器的物理碰撞体反推、挤压角色自身胶囊体
 	Char->MoveIgnoreActorAdd(Weapon);
 
 	// 确立武器的所有权与施加者归属
 	Weapon->SetOwner(Char);
 	Weapon->SetInstigator(Char);
 
-	// 1. 严格遵循数据驱动：完全使用在 UE 蓝图细节面板配置的 HandSocketName
-	// 无论你在蓝图里配 WeaponSocket、PistolSocket 还是任何自定义插槽，C++ 绝不强行越权覆盖！
-	FName TargetSocket = SocketName;
-	if (!Char->GetMesh()->DoesSocketExist(TargetSocket))
+	// 1. 若为副手/背部收纳请求
+	if (SocketName == BackSocketName)
 	{
-		// 如果是背部插槽不存在，按优先级寻找后背骨骼保底挂载
-		if (SocketName == BackSocketName)
+		// 仅当骨骼资产中显式创建了对齐好的背部插槽（如 Weapon_Back）时才吸附挂载
+		// 严禁直接吸附到 spine 骨骼原点，防止武器横向穿胸刺出
+		if (Char->GetMesh()->DoesSocketExist(BackSocketName))
 		{
-			if (Char->GetMesh()->DoesSocketExist(FName("Weapon_Back")))
-			{
-				TargetSocket = FName("Weapon_Back");
-			}
-			else if (Char->GetMesh()->DoesSocketExist(FName("spine_05")))
-			{
-				TargetSocket = FName("spine_05");
-			}
-			else if (Char->GetMesh()->DoesSocketExist(FName("spine_03")))
-			{
-				TargetSocket = FName("spine_03");
-			}
-			else if (Char->GetMesh()->DoesSocketExist(FName("spine_02")))
-			{
-				TargetSocket = FName("spine_02");
-			}
+			Weapon->SetActorHiddenInGame(false);
+			Weapon->AttachToComponent(Char->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, BackSocketName);
 		}
-		// 手部插槽保底
 		else
 		{
-			if (Char->GetMesh()->DoesSocketExist(FName("WeaponSocket")))
-			{
-				TargetSocket = FName("WeaponSocket");
-			}
-			else if (Char->GetMesh()->DoesSocketExist(FName("hand_r")))
-			{
-				TargetSocket = FName("hand_r");
-			}
-			else if (Char->GetMesh()->DoesSocketExist(FName("hand_attach_r")))
-			{
-				TargetSocket = FName("hand_attach_r");
-			}
+			// 无背部专用插槽时，采用现代战术射击标准做法：安全隐藏未持握武器
+			Weapon->SetActorHiddenInGame(true);
+			Weapon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		}
+		return;
+	}
+
+	// 2. 若为主手持握请求：必须显式显示
+	Weapon->SetActorHiddenInGame(false);
+
+	FName HandSocket = SocketName;
+	if (!Char->GetMesh()->DoesSocketExist(HandSocket))
+	{
+		if (Char->GetMesh()->DoesSocketExist(FName("WeaponSocket")))
+		{
+			HandSocket = FName("WeaponSocket");
+		}
+		else if (Char->GetMesh()->DoesSocketExist(FName("hand_rSocket")))
+		{
+			HandSocket = FName("hand_rSocket");
+		}
+		else if (Char->GetMesh()->DoesSocketExist(FName("hand_r")))
+		{
+			HandSocket = FName("hand_r");
 		}
 	}
 
-	// 吸附到骨骼插槽，保留原始缩放
-	Weapon->AttachToComponent(Char->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TargetSocket);
-	UE_LOG(LogTemp, Warning, TEXT("🔫 [LSWeaponComponent] 武器 %s 已吸附至插槽: %s"),
-		*Weapon->GetName(), *TargetSocket.ToString());
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green,
-			FString::Printf(TEXT("🔫 [LSWeaponComponent] 武器已成功吸附至插槽: %s"), *TargetSocket.ToString()));
-	}
+	Weapon->AttachToComponent(Char->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, HandSocket);
+	Weapon->ResetAttachTransformCache();
+	UE_LOG(LogTemp, Log, TEXT("🔫 [LSWeaponComponent] 武器 %s 已手持吸附至插槽: %s 并刷新变换基准"), *Weapon->GetName(), *HandSocket.ToString());
 }
 
 void ULSWeaponComponent::StartFire()

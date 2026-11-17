@@ -56,9 +56,13 @@ public:
 	UFUNCTION(Blueprintable, Category = "Weapon|Ammo")
 	virtual bool CanReload() const;
 
-	//获取武器数据资产
+	// 获取武器数据资产
 	UFUNCTION(BlueprintCallable, Category = "Weapon|Init")
 	virtual void InitializeFromDataAsset(const ULSWeaponDataAsset* InDataAsset);
+
+	// 重置插槽附着基础变换缓存（在切换武器或更换插槽时调用，防止跨插槽变换污染）
+	UFUNCTION(BlueprintCallable, Category = "Weapon|Attach")
+	void ResetAttachTransformCache();
 	
 	//组件获取
 	FORCEINLINE USkeletalMeshComponent* GetWeaponMesh() const { return WeaponMesh; }

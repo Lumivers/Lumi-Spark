@@ -86,17 +86,20 @@ void ALSAIController::OnUnPossess()
 
 void ALSAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
-	if (!Actor || !Blackboard) return;
+	if (!Actor) return;
 
 	if (Stimulus.WasSuccessfullySensed())
 	{
 		// 清除脱失记忆计时
 		GetWorldTimerManager().ClearTimer(LoseSightTimerHandle);
 
-		// 记录感知最后已知坐标
-		Blackboard->SetValueAsVector(LSBlackboardKeys::LastKnownLocation, Stimulus.StimulusLocation);
+		// 记录感知最后已知坐标（若有黑板）
+		if (Blackboard)
+		{
+			Blackboard->SetValueAsVector(LSBlackboardKeys::LastKnownLocation, Stimulus.StimulusLocation);
+		}
 
-		// 若之前没有目标，或被攻击/看到新威胁，重新评定最高仇恨目标
+		// 若之前没有目标，或被攻击/看到新威胁，重新评定最高仇恨目标并立即追击
 		UpdateBestTarget();
 
 		if (ControlledEnemy.IsValid())
@@ -116,8 +119,6 @@ void ALSAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulus S
 
 void ALSAIController::UpdateBestTarget()
 {
-	if (!Blackboard) return;
-
 	AActor* BestTarget = nullptr;
 
 	// 优先查询敌人的仇恨表组件 (ThreatComponent) 获取最高威胁目标
@@ -130,7 +131,7 @@ void ALSAIController::UpdateBestTarget()
 	}
 
 	// 若仇恨表无目标，则从感知已看到的敌人列表中挑选最近目标
-	if (!BestTarget && AIPerceptionComp)
+	if (!BestTarget && AIPerceptionComp && SightConfig)
 	{
 		TArray<AActor*> PerceivedActors;
 		AIPerceptionComp->GetCurrentlyPerceivedActors(SightConfig->GetSenseImplementation(), PerceivedActors);
@@ -154,24 +155,47 @@ void ALSAIController::UpdateBestTarget()
 
 	if (BestTarget)
 	{
-		Blackboard->SetValueAsObject(LSBlackboardKeys::TargetActor, BestTarget);
-		Blackboard->SetValueAsName(LSBlackboardKeys::AIState, FName(TEXT("Combat")));
+		// 1. 视线焦点对准目标（转头/举枪朝向玩家）
+		SetFocus(BestTarget);
 
+		// 2. 写入黑板（若黑板已初始化）
+		if (Blackboard)
+		{
+			Blackboard->SetValueAsObject(LSBlackboardKeys::TargetActor, BestTarget);
+			Blackboard->SetValueAsName(LSBlackboardKeys::AIState, FName(TEXT("Combat")));
+
+			if (ControlledEnemy.IsValid())
+			{
+				const float Dist = FVector::Dist(ControlledEnemy->GetActorLocation(), BestTarget->GetActorLocation());
+				Blackboard->SetValueAsFloat(LSBlackboardKeys::DistanceToTarget, Dist);
+			}
+		}
+
+		// 3. 驱动敌人切换至战斗跑步移速
 		if (ControlledEnemy.IsValid())
 		{
-			const float Dist = FVector::Dist(ControlledEnemy->GetActorLocation(), BestTarget->GetActorLocation());
-			Blackboard->SetValueAsFloat(LSBlackboardKeys::DistanceToTarget, Dist);
+			ControlledEnemy->SetCombatMovementSpeed(true);
+		}
+
+		// 4. 原生战术行为兜底：若未挂接/未运行行为树，直接驱动 MoveToActor 贴身逼近（近战 120cm 距离）
+		if (!BrainComponent || !BrainComponent->IsRunning())
+		{
+			MoveToActor(BestTarget, 120.0f);
 		}
 	}
 }
 
 void ALSAIController::HandleLoseSightExpired()
 {
-	if (!Blackboard) return;
+	ClearFocus(EAIFocusPriority::Gameplay);
+	StopMovement();
 
-	// 5 秒过去依然未看到玩家，放弃锁定并降级为警戒搜寻
-	Blackboard->ClearValue(LSBlackboardKeys::TargetActor);
-	Blackboard->SetValueAsName(LSBlackboardKeys::AIState, FName(TEXT("Alert")));
+	if (Blackboard)
+	{
+		// 5 秒过去依然未看到玩家，放弃锁定并降级为警戒搜寻
+		Blackboard->ClearValue(LSBlackboardKeys::TargetActor);
+		Blackboard->SetValueAsName(LSBlackboardKeys::AIState, FName(TEXT("Alert")));
+	}
 
 	if (ControlledEnemy.IsValid())
 	{
@@ -181,5 +205,9 @@ void ALSAIController::HandleLoseSightExpired()
 
 AActor* ALSAIController::GetTargetActor() const
 {
-	return Blackboard ? Cast<AActor>(Blackboard->GetValueAsObject(LSBlackboardKeys::TargetActor)) : nullptr;
+	if (Blackboard)
+	{
+		return Cast<AActor>(Blackboard->GetValueAsObject(LSBlackboardKeys::TargetActor));
+	}
+	return GetFocusActor();
 }

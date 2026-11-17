@@ -226,6 +226,13 @@ protected:
 	// 战斗朝向集中仲裁更新（综合开火、瞄准与常态设置）
 	void UpdateCombatFacing();
 
+	// ─── 开发专属调试功能：一键生成测试敌人 ───
+	UFUNCTION(BlueprintCallable, Category = "Development|Debug")
+	void SpawnDebugEnemy();
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Development|Debug")
+	TSubclassOf<class ALSEnemyBase> DebugEnemyClass;
+
 private:
 
 	bool bIsAiming = false;

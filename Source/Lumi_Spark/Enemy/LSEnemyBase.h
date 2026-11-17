@@ -12,6 +12,11 @@ class ULSElementComponent;
 class ULSShieldComponent;
 class ULSThreatComponent;
 class ULSEnemyDataAsset;
+class UAnimMontage;
+class UNiagaraSystem;
+class USoundBase;
+class UParticleSystem;
+class UWidgetComponent;
 
 //处决广播
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLSXenoBladeExecuted, AActor*, Victim, AActor*, Executioner, float, DamageDealt);
@@ -75,6 +80,10 @@ protected:
 	// 响应生命组件广播的 OnDeath
 	UFUNCTION()
 	void HandleHealthComponentDeath();
+
+	// 响应生命组件广播更新头顶血条
+	UFUNCTION()
+	void HandleHealthChanged(float CurrentHealth, float MaxHealth, bool bIsDamage);
 	
 	// ─── 专职战斗组件 ───
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -88,6 +97,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<ULSThreatComponent> ThreatComponent;
+
+	// ─── 敌人头顶血条组件 ───
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UWidgetComponent> HealthBarComponent;
 
 	// ─── 配置与状态 ───
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Config")
@@ -112,6 +125,35 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Execution")
 	float BackstabMaxDistance = 230.0f;
 
+	// ─── 死亡与布娃娃表现 ───
+	/** 是否优先采用物理布娃娃（Ragdoll）倒地，若为 false 且配置了 DeathMontage 则播放死亡蒙太奇 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death")
+	bool bUseRagdollDeath = true;
+
+	/** 死亡动画蒙太奇（当 bUseRagdollDeath 为 false 或备选时播放） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death")
+	TObjectPtr<UAnimMontage> DeathMontage;
+
+	/** 致命一击赋予布娃娃的物理冲量初速度（cm/s，推荐 350~600，赋予子弹击杀动量） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "0.0"))
+	float DeathImpulseForce = 450.0f;
+
+	/** 尸体在场景中保留的时间（秒，默认 5 秒后清理 Actor） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "1.0"))
+	float CorpseLifeSpan = 5.0f;
+
+	/** 死亡音效（击杀倒地时播放） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death")
+	TObjectPtr<USoundBase> DeathSound;
+
+	/** 能量微粒掉落 Niagara 特效（在怪物体表/击杀位置迸发） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Drops")
+	TObjectPtr<UNiagaraSystem> EnergyDropNiagara;
+
+	/** 能量微粒掉落 Cascade 粒子特效（兼容传统粒子发射器） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Drops")
+	TObjectPtr<UParticleSystem> EnergyDropEmitter;
+
 	bool bIsDead = false;
 
 	// 记录最后攻击该怪物的施加者（用于击杀判定与侵蚀度结算）
@@ -120,6 +162,11 @@ protected:
 
 	UPROPERTY()
 	TWeakObjectPtr<AController> LastDamageInstigator;
+
+	// 记录最后一次受击的物理特征（用于致命一击布娃娃继承射击动量）
+	FVector LastHitLocation = FVector::ZeroVector;
+	FVector LastHitDirection = FVector::ZeroVector;
+	FName LastHitBoneName = NAME_None;
 
 	void ApplyCorrosionReductionToKiller(AActor* Killer);
 };

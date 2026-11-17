@@ -3,6 +3,7 @@
 #include "Core/LSEventBus.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
@@ -15,6 +16,7 @@
 #include "Particles/ParticleSystemComponent.h"
 #include "Animation/AnimMontage.h"
 #include "Character/LSCharacterBase.h"
+#include "Character/LSHealthComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Element/LSElementComponent.h"
 #include "Combat/LSDamageCalculator.h"
@@ -277,12 +279,12 @@ void ALSWeaponBase::Server_Fire_Implementation(const FVector_NetQuantize& Muzzle
 	//2，广播给其他远端观察者播放火光与枪声
 	Multicast_FireEffects(MuzzleLoc, TraceEnd);
 	
-	//3，执行服务端射线检测
+	//3，执行服务端射线检测（优先简单胶囊碰撞，确保绝对不漏检角色；若击中带骨骼物理资产则同步提取骨骼爆头）
 	FHitResult HitResult;
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
 	QueryParams.AddIgnoredActor(GetOwner());
-	QueryParams.bTraceComplex = true;
+	QueryParams.bTraceComplex = false;
 	QueryParams.bReturnPhysicalMaterial = true;
 	
 	const bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, MuzzleLoc, TraceEnd, ECC_Visibility, QueryParams);
@@ -369,18 +371,70 @@ void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
 {
 	AActor* HitActor = Hit.GetActor();
 	if (!HitActor) return;
+
+	// 核心过滤：只有打中包含生命组件（ULSHealthComponent）的有效实体（怪物/角色），才结算伤害与跳字！
+	ULSHealthComponent* TargetHealthComp = HitActor->FindComponentByClass<ULSHealthComponent>();
+	if (!TargetHealthComp || TargetHealthComp->IsDead())
+	{
+		// 命中了静态掩体、地板或墙壁：只保留物理撞击火花，绝不产生虚假伤害跳字与 HitMarker！
+		return;
+	}
 	
 	// 1. 计算距离衰减
 	const float Distance = (Hit.ImpactPoint - GetActorLocation()).Size();
 	const float Dropoff = CalculateDamageDropoff(Distance);
 	float FinalDamage = BaseDamage * Dropoff;
 	
-	// 2. 弱点 / 爆头检测（骨骼名为 head 或专用弱点碰撞体）
+	// 2. 弱点 / 爆头检测（双通道判定：骨骼物理资产 + 空间几何垂直高度兜底）
 	bool bIsHeadshot = false;
-	if (Hit.BoneName.ToString().Contains(TEXT("head"), ESearchCase::IgnoreCase) || (Hit.Component.IsValid() && Hit.Component->ComponentHasTag(TEXT("head"))))
+	bool bIsGoldenHeadshot = false; // 黄金爆头标记（眉心/额头核心面）
+
+	// 通道 A：直接命中骨骼物理资产中的 head/neck 骨骼
+	const FString BoneNameStr = Hit.BoneName.ToString();
+	if (BoneNameStr.Contains(TEXT("head"), ESearchCase::IgnoreCase) || 
+	    BoneNameStr.Contains(TEXT("neck"), ESearchCase::IgnoreCase) ||
+	    (Hit.Component.IsValid() && Hit.Component->ComponentHasTag(TEXT("head"))))
+	{
+		bIsHeadshot = true;
+		if (BoneNameStr.Contains(TEXT("head"), ESearchCase::IgnoreCase))
+		{
+			bIsGoldenHeadshot = true; // 正中头部物理体即为黄金爆头
+		}
+	}
+	// 通道 B：空间几何垂直高度兜底（彻底攻克射线被角色外围 CapsuleComponent 提前阻挡导致丢失 BoneName 的顽疾）
+	else if (ACharacter* HitChar = Cast<ACharacter>(HitActor))
+	{
+		FVector HeadPos = FVector::ZeroVector;
+		if (USkeletalMeshComponent* CharMesh = HitChar->GetMesh())
+		{
+			HeadPos = CharMesh->GetSocketLocation(TEXT("head"));
+		}
+
+		if (HeadPos.IsZero())
+		{
+			// 若网格体尚未就绪或未找到 head 骨骼，回退使用胶囊体顶部 18% 空间（人体工程学标准头部占比）
+			const float CapsuleHalf = HitChar->GetCapsuleComponent() ? HitChar->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 88.0f;
+			HeadPos = HitChar->GetActorLocation() + FVector(0.0f, 0.0f, CapsuleHalf * 0.70f);
+		}
+
+		// 计算受击点相对于头部基准点的垂直高度差（DeltaZ）
+		const float DeltaZ = Hit.ImpactPoint.Z - HeadPos.Z;
+
+		// 喉咙与下巴以上区间（head 骨骼向下容差 15cm，向上延伸 25cm）：整颗头颅全覆盖！
+		if (DeltaZ >= -15.0f && DeltaZ <= 30.0f)
+		{
+			bIsHeadshot = true;
+			// 若击中点在眉心/额头核心区域（高于 head 骨骼 -3cm），判定为黄金爆头；下巴/喉部为白银爆头
+			if (DeltaZ >= -3.0f)
+			{
+				bIsGoldenHeadshot = true;
+			}
+		}
+	}
+
+	if (bIsHeadshot)
 	{
 		FinalDamage *= HeadshotMultiplier;
-		bIsHeadshot = true;
 	}
 	
 	// 3. 组装全局伤害上下文 FLSDamageContext
@@ -394,42 +448,66 @@ void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
 	DamageContext.bIsHeadshot = bIsHeadshot;
 	DamageContext.HitResult = Hit;
 
-	//4, 查询受到攻击目标身上是否有元素组件
+	// 4. 查询受到攻击目标身上是否有元素组件
 	ULSElementComponent* TargetElementComp = HitActor->FindComponentByClass<ULSElementComponent>();
 	FGameplayTag AuraTag = TargetElementComp ? TargetElementComp->GetPrimaryAuraTag() : FGameplayTag();
 
-	//5, 组装攻击者与防御者战斗属性包
+	// 5. 组装攻击者与防御者战斗属性包（根据目标防御力动态计算，普通怪低防享受足额高伤）
 	FLSAttackerStats AttackerStats;
 	AttackerStats.Attack = BaseDamage;
-	AttackerStats.CritRate = 0.05f; // 默认暴击率5%
-	AttackerStats.CritDamage = 0.5f; // 默认暴击伤害+50%
-	AttackerStats.ElementalMastery = 100.0f; //默认元素精通100
-	AttackerStats.Level = 90; //默认攻击者等级90
+	AttackerStats.CritRate = 0.05f; // 基础暴击率5%
+	AttackerStats.CritDamage = 0.5f; // 爆头/暴击额外+50%
+	AttackerStats.ElementalMastery = 100.0f;
+	AttackerStats.Level = 90;
 
 	FLSDefenderStats DefenderStats;
-	DefenderStats.Level = 90; //默认防御者等级90
-	DefenderStats.Defense = 500.0f;
-	DefenderStats.ElementalResistance = 0.1f; //默认抗性10
+	DefenderStats.Level = 90;
+	// 小怪防御设定合理区间（100 防御），不再硬编码 500 防御砍半伤害
+	DefenderStats.Defense = 100.0f;
+	DefenderStats.ElementalResistance = 0.0f;
 
-	//调用伤害计算器计算最终伤害
+	// 调用伤害计算器计算最终伤害
 	FLSDamageResult DamageResult = ULSDamageCalculator::CalculateDamage(DamageContext, AttackerStats, DefenderStats, AuraTag);
 
-	//6,服务端权威附加元素附着
+	// 6. 服务端权威附加元素附着
 	if (TargetElementComp && ElementTag.IsValid())
 	{
 		TargetElementComp->ApplyElement(GetOwner() ? GetOwner() : this, ElementTag, ElementGauge);
 	}
 
-	//7, 触发引擎标准伤害流程
-	HitActor->TakeDamage(DamageContext.FinalDamage, FDamageEvent(), (GetOwner() ? GetOwner()->GetInstigatorController() : nullptr), this);
+	// 7. 触发引擎标准伤害流程（受击者扣血与物理受击事件传导）
+	const FVector ShotDir = (Hit.TraceEnd - Hit.TraceStart).GetSafeNormal();
+	FPointDamageEvent PointDamageEvent(DamageContext.FinalDamage, Hit, ShotDir, nullptr);
+	HitActor->TakeDamage(DamageContext.FinalDamage, PointDamageEvent, (GetOwner() ? GetOwner()->GetInstigatorController() : nullptr), this);
 
-	// 8. 通过全局事件总线解耦广播（UI 准星跳字、音效、怪物扣血统一监听此事件）
+	// 8. 3D 浮空伤害跳字（纯粹数字，暴击略大加感叹号，小巧不遮挡视口）
+	const bool bIsCrit = bIsGoldenHeadshot || DamageContext.bIsHeadshot;
+	const FColor PopColor = bIsGoldenHeadshot ? FColor(255, 215, 0) : (DamageContext.bIsHeadshot ? FColor(255, 75, 75) : FColor::White);
+	const FString PopText = bIsCrit ? FString::Printf(TEXT("%.0f!"), DamageContext.FinalDamage) : FString::Printf(TEXT("%.0f"), DamageContext.FinalDamage);
+	const float FontScale = bIsCrit ? 1.2f : 1.0f;
+	DrawDebugString(GetWorld(), Hit.ImpactPoint + FVector(0.0f, 0.0f, 15.0f), PopText, nullptr, PopColor, 0.8f, true, FontScale);
+
+	if (GEngine)
+	{
+#if WITH_EDITOR
+		const FString DisplayName = HitActor->GetActorLabel();
+#else
+		const FString DisplayName = HitActor->GetName();
+#endif
+		const FString HitTypeStr = bIsGoldenHeadshot ? TEXT(" (👑黄金爆头!)") : (DamageContext.bIsHeadshot ? TEXT(" (🥈白银爆头!)") : TEXT(""));
+		const FColor LogColor = bIsGoldenHeadshot ? FColor(255, 215, 0) : (DamageContext.bIsHeadshot ? FColor::Red : FColor::Green);
+		// 使用固定 Key 2001 原地单行刷新，连射时不产生刷屏瀑布流
+		GEngine->AddOnScreenDebugMessage(2001, 1.5f, LogColor,
+			FString::Printf(TEXT("🎯 [命中] %s | 伤害: %.1f%s"), *DisplayName, DamageContext.FinalDamage, *HitTypeStr));
+	}
+
+	// 9. 通过全局事件总线解耦广播（UI 准星跳字、音效、怪物扣血统一监听此事件）
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
 	{
 		EventBus->OnDamageDealt.Broadcast(DamageContext);
 	}
 	
-	// 9. 回传给开火客户端，触发本地 HUD 准星 HitMarker 闪红与音效
+	// 10. 回传给开火客户端，触发本地 HUD 准星 HitMarker 闪红与音效
 	Client_HitConfirm(DamageContext.bIsHeadshot, DamageContext.FinalDamage);
 }
 
@@ -965,6 +1043,20 @@ void ALSWeaponBase::ApplyProceduralRecoilKick()
 	CurrentRecoilKickRot.Pitch = FMath::Clamp(CurrentRecoilKickRot.Pitch + RecoilKickPitch, 0.0f, 6.0f);
 	CurrentRecoilKickRot.Yaw += FMath::FRandRange(-RecoilKickYaw, RecoilKickYaw);
 	CurrentRecoilKickRot.Roll += FMath::FRandRange(-RecoilKickYaw * 0.5f, RecoilKickYaw * 0.5f);
+}
+
+void ALSWeaponBase::ResetAttachTransformCache()
+{
+	if (RootComponent && RootComponent->GetAttachParent())
+	{
+		BaseAttachRelativeTransform = RootComponent->GetRelativeTransform();
+		bHasCachedBaseTransform = true;
+	}
+	else
+	{
+		BaseAttachRelativeTransform = FTransform::Identity;
+		bHasCachedBaseTransform = false;
+	}
 }
 
 void ALSWeaponBase::UpdateProceduralRecoilKick(float DeltaTime)

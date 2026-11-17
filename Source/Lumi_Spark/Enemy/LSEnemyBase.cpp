@@ -1,4 +1,5 @@
 #include "LSEnemyBase.h"
+#include "LSAIController.h"
 #include "LSEnemyDataAsset.h"
 #include "Character/LSHealthComponent.h"
 #include "Element/LSElementComponent.h"
@@ -11,7 +12,13 @@
 #include "Extraction/ULSCorrosionComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/WidgetComponent.h"
+#include "UI/LSFloatingHealthBarWidget.h"
 #include "Engine/DamageEvents.h"
+#include "NiagaraFunctionLibrary.h"
+#include "Kismet/GameplayStatics.h"
+#include "DrawDebugHelpers.h"
 
 ALSEnemyBase::ALSEnemyBase()
 {
@@ -24,9 +31,48 @@ ALSEnemyBase::ALSEnemyBase()
 	ShieldComponent = CreateDefaultSubobject<ULSShieldComponent>(TEXT("ShieldComp"));
 	ThreatComponent = CreateDefaultSubobject<ULSThreatComponent>(TEXT("ThreatComp"));
 
-	// 敌人碰撞通道配置
+	// 头顶血条组件装配（面向屏幕摄像机，免受视距与朝向旋转畸变）
+	HealthBarComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarComp"));
+	if (GetMesh())
+	{
+		HealthBarComponent->SetupAttachment(GetMesh(), FName("head"));
+		HealthBarComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 35.0f));
+	}
+	else
+	{
+		HealthBarComponent->SetupAttachment(RootComponent);
+		HealthBarComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 110.0f));
+	}
+	HealthBarComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	HealthBarComponent->SetDrawSize(FVector2D(120.0f, 10.0f));
+	HealthBarComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// 敌人碰撞通道配置：胶囊体与骨骼网格体确保阻挡武器射线 Visibility
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+
+	if (GetMesh())
+	{
+		GetMesh()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	}
+
+	// 绑定战术 AI 控制器与生成/放置即附身
+	AIControllerClass = ALSAIController::StaticClass();
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
+	// ─── 运动与转向平滑配置 ───
+	// 禁用控制器强制硬同步 Yaw，交由 CharacterMovementComponent 物理平滑旋转
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->bOrientRotationToMovement = true; // 随寻路移动速度方向自动转向
+		MoveComp->bUseControllerDesiredRotation = false;
+		MoveComp->RotationRate = FRotator(0.0f, 600.0f, 0.0f); // 敏捷转向角速度（度/秒）
+	}
 }
 
 // ILSInteractableInterface 交互接口实现
@@ -136,13 +182,38 @@ void ALSEnemyBase::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 1. 绑定生命组件的死亡广播
+	// 运行时强制生效平滑转向与移动朝向（防御既有蓝图资产已序列化旧 CDO 默认值的问题）
+	bUseControllerRotationYaw = false;
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->bOrientRotationToMovement = true;
+		MoveComp->RotationRate = FRotator(0.0f, 600.0f, 0.0f);
+	}
+
+	// 1. 确保在单机或服务端必定拥有 AI 控制器附身（防御蓝图拖放放置时丢失 AutoPossessAI）
+	if (!GetController() && HasAuthority())
+	{
+		if (AIControllerClass)
+		{
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AController* NewAIC = GetWorld()->SpawnActor<AController>(AIControllerClass, GetActorTransform(), SpawnParams);
+			if (NewAIC)
+			{
+				NewAIC->Possess(this);
+				UE_LOG(LogTemp, Warning, TEXT("🤖 [ALSEnemyBase] BeginPlay 成功兜底生成并附身 AIController: %s"), *NewAIC->GetName());
+			}
+		}
+	}
+
+	// 2. 绑定生命组件的死亡与血量变动广播
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeath.AddDynamic(this, &ALSEnemyBase::HandleHealthComponentDeath);
+		HealthComponent->OnHealthChanged.AddDynamic(this, &ALSEnemyBase::HandleHealthChanged);
 	}
 
-	// 2. 从 EnemyDataAsset 资产初始化属性与抗性
+	// 3. 从 EnemyDataAsset 资产初始化属性与抗性
 	if (EnemyDataAsset)
 	{
 		CachedResistances = EnemyDataAsset->Resistances;
@@ -167,6 +238,21 @@ float ALSEnemyBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
 
 	LastDamageCauser = DamageCauser;
 	LastDamageInstigator = EventInstigator;
+
+	// 记录受击物理信息（若为点伤害提取精确打击点、骨骼和射击方向，供死亡布娃娃继承动量）
+	if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
+	{
+		const FPointDamageEvent* PointDmg = static_cast<const FPointDamageEvent*>(&DamageEvent);
+		LastHitLocation = PointDmg->HitInfo.ImpactPoint;
+		LastHitBoneName = PointDmg->HitInfo.BoneName;
+		LastHitDirection = PointDmg->ShotDirection;
+	}
+	else
+	{
+		LastHitLocation = GetActorLocation();
+		LastHitBoneName = NAME_None;
+		LastHitDirection = DamageCauser ? (GetActorLocation() - DamageCauser->GetActorLocation()).GetSafeNormal() : -GetActorForwardVector();
+	}
 
 	// 1. 解析伤害中的元素属性并应用元素抗性减免
 	float AdjustedDamage = DamageAmount;
@@ -195,6 +281,39 @@ float ALSEnemyBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
 	if (HealthComponent && AdjustedDamage > 0.0f)
 	{
 		HealthComponent->TakeDamage(AdjustedDamage, DmgElement, DamageCauser, EventInstigator);
+
+		if (GEngine)
+		{
+			const float CurHP = HealthComponent->GetCurrentHealth();
+			const float MaxHP = HealthComponent->GetMaxHealth();
+#if WITH_EDITOR
+			const FString DisplayName = GetActorLabel();
+#else
+			const FString DisplayName = GetName();
+#endif
+			// 使用固定 Key 2002 原地单行刷新，连射受击时动态更新生命值数字
+			GEngine->AddOnScreenDebugMessage(2002, 1.5f, FColor::Orange,
+				FString::Printf(TEXT("💥 [受击] %s 承受: %.1f | 剩余生命: %.1f / %.1f"),
+					*DisplayName, AdjustedDamage, CurHP, MaxHP));
+		}
+	}
+
+	// 5. 受击即刻唤醒 AI 索敌与警戒对准（防止被从背后偷袭时发呆）
+	if (ALSAIController* AIC = Cast<ALSAIController>(GetController()))
+	{
+		// 解析真正的攻击者角色（若 DamageCauser 是武器，取其持有人）
+		AActor* ActualTarget = DamageCauser;
+		if (ActualTarget && ActualTarget->GetOwner())
+		{
+			ActualTarget = ActualTarget->GetOwner();
+		}
+
+		if (ActualTarget)
+		{
+			AIC->SetFocus(ActualTarget);
+			AIC->MoveToActor(ActualTarget, 150.0f);
+			SetCombatMovementSpeed(true);
+		}
 	}
 
 	return AdjustedDamage;
@@ -207,6 +326,11 @@ void ALSEnemyBase::SetCombatMovementSpeed(bool bInCombat)
 		if (EnemyDataAsset)
 		{
 			MoveComp->MaxWalkSpeed = bInCombat ? EnemyDataAsset->CombatRunSpeed : EnemyDataAsset->PatrolWalkSpeed;
+		}
+		else
+		{
+			// 无数据资产时的标准战术移速兜底（交火快跑 460，常态慢巡 200）
+			MoveComp->MaxWalkSpeed = bInCombat ? 460.0f : 200.0f;
 		}
 	}
 }
@@ -221,6 +345,37 @@ void ALSEnemyBase::HandleHealthComponentDeath()
 	OnDeath(Killer);
 }
 
+void ALSEnemyBase::HandleHealthChanged(float CurrentHealth, float MaxHealth, bool bIsDamage)
+{
+	if (bIsDead) return;
+
+	// 1. 同步刷新 UWidgetComponent 挂载的头顶血条控件
+	if (HealthBarComponent)
+	{
+		if (ULSFloatingHealthBarWidget* BarWidget = Cast<ULSFloatingHealthBarWidget>(HealthBarComponent->GetUserWidgetObject()))
+		{
+			BarWidget->UpdateHealth(CurrentHealth, MaxHealth);
+		}
+	}
+
+	// 2. 3D 即时头顶紧凑血条显示（受击瞬间在头顶清晰显现，免去任何手动蓝图配置）
+	if (bIsDamage && CurrentHealth > 0.0f)
+	{
+		FVector HeadPos = GetActorLocation() + FVector(0.0f, 0.0f, 95.0f);
+		if (GetMesh() && GetMesh()->DoesSocketExist(FName("head")))
+		{
+			HeadPos = GetMesh()->GetSocketLocation(FName("head")) + FVector(0.0f, 0.0f, 25.0f);
+		}
+
+		const float Pct = MaxHealth > 0.0f ? FMath::Clamp(CurrentHealth / MaxHealth, 0.0f, 1.0f) : 0.0f;
+		const FColor HealthColor = FColor::MakeRedToGreenColorFromScalar(Pct);
+		const FString HealthStr = FString::Printf(TEXT("[%.0f / %.0f]"), CurrentHealth, MaxHealth);
+
+		// 在头顶显示清晰小巧的血量数值，存活 1.2 秒（受击刷新）
+		DrawDebugString(GetWorld(), HeadPos, HealthStr, nullptr, HealthColor, 1.2f, true, 1.0f);
+	}
+}
+
 void ALSEnemyBase::OnDeath(AActor* Killer)
 {
 	if (bIsDead) return;
@@ -231,16 +386,93 @@ void ALSEnemyBase::OnDeath(AActor* Killer)
 	// 1. 战术正向解压：击杀变异体回退玩家地脉侵蚀度
 	ApplyCorrosionReductionToKiller(Killer);
 
-	// 2. 掉落元素能量微粒
+	// 2. 掉落元素能量微粒与视听反馈
 	SpawnEnergyParticles(Killer);
 
-	// 3. 停止移动与碰撞
-	GetCharacterMovement()->StopMovementImmediately();
-	GetCharacterMovement()->DisableMovement();
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// 3. 隐藏头顶血条
+	if (HealthBarComponent)
+	{
+		HealthBarComponent->SetVisibility(false);
+	}
 
-	// 延时销毁或执行布娃娃（Ragdoll）
-	SetLifeSpan(3.0f);
+	// 4. 播放死亡音效
+	if (DeathSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation());
+	}
+
+	// 5. 全局事件总线广播击杀事件（供 HUD、任务与搜打撤战后结算系统订阅）
+	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
+	{
+		EventBus->OnEnemyKilled.Broadcast(this, Killer);
+	}
+
+	// 6. 停止移动组件并禁用 Tick，防止死后继续消耗物理寻路开销
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->StopMovementImmediately();
+		MoveComp->DisableMovement();
+		MoveComp->SetComponentTickEnabled(false);
+	}
+
+	// 7. 关闭胶囊体碰撞（防止死尸阻挡玩家射击射线或移动走位）
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+	{
+		Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Capsule->SetCollisionResponseToAllChannels(ECR_Ignore);
+	}
+
+	// 8. 解除 AI 控制器附身并停止寻路与感知聚焦
+	if (AController* C = GetController())
+	{
+		C->StopMovement();
+		if (AAIController* AIC = Cast<AAIController>(C))
+		{
+			AIC->ClearFocus(EAIFocusPriority::Gameplay);
+		}
+		DetachFromControllerPendingDestroy();
+	}
+
+	// 9. 物理布娃娃系统（Ragdoll）倒地或播放死亡动画蒙太奇
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		if (bUseRagdollDeath || !DeathMontage)
+		{
+			// 设置布娃娃碰撞 Profile（对场景静态/物理体 Block，对 Pawn/Camera 忽略）
+			MeshComp->SetCollisionProfileName(TEXT("Ragdoll"));
+			MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+
+			// 开启骨骼网格体全物理模拟
+			MeshComp->SetAllBodiesSimulatePhysics(true);
+			MeshComp->SetSimulatePhysics(true);
+			MeshComp->WakeAllRigidBodies();
+			MeshComp->bBlendPhysics = true;
+
+			// 仅当物理模拟已激活时施加冲量，彻底消除底层未激活时的黄色警告！
+			if (MeshComp->IsSimulatingPhysics())
+			{
+				FVector Impulse = LastHitDirection.GetSafeNormal() * DeathImpulseForce;
+				Impulse.Z += 80.0f; // 略微上抛，防止直接贴地滑动或粘连
+
+				if (LastHitBoneName != NAME_None)
+				{
+					MeshComp->AddImpulseAtLocation(Impulse, LastHitLocation, LastHitBoneName);
+				}
+				else
+				{
+					MeshComp->AddImpulse(Impulse, NAME_None, true); // true = 忽略质量施加速度突变
+				}
+			}
+		}
+		else
+		{
+			// 播放死亡动画蒙太奇
+			PlayAnimMontage(DeathMontage);
+		}
+	}
+
+	// 10. 延时销毁 Actor（给布娃娃留出倒地稳定与特写展示时间）
+	SetLifeSpan(CorpseLifeSpan);
 }
 
 void ALSEnemyBase::ApplyCorrosionReductionToKiller(AActor* Killer)
@@ -268,20 +500,54 @@ void ALSEnemyBase::ApplyCorrosionReductionToKiller(AActor* Killer)
 
 void ALSEnemyBase::SpawnEnergyParticles(AActor* Killer)
 {
-	if (!EnemyDataAsset) return;
+	const int32 ParticleCount = EnemyDataAsset ? EnemyDataAsset->DroppedParticleCount : 2;
+	const float EnergyPerPart = EnemyDataAsset ? EnemyDataAsset->EnergyPerParticle : 6.0f;
+	const FGameplayTag ParticleElement = EnemyDataAsset ? EnemyDataAsset->DroppedParticleElement : FGameplayTag();
 
-	// 向全局总线或直接向击杀者小队注入能量微粒
+	// 1. 注入能量给击杀者玩家小队
 	if (Killer)
 	{
-		if (ALSCharacterBase* PlayerChar = Cast<ALSCharacterBase>(Killer))
+		ALSCharacterBase* PlayerChar = Cast<ALSCharacterBase>(Killer);
+		if (!PlayerChar && Killer->GetOwner())
+		{
+			PlayerChar = Cast<ALSCharacterBase>(Killer->GetOwner());
+		}
+
+		if (PlayerChar)
 		{
 			if (ULSEnergyComponent* EnergyComp = PlayerChar->GetEnergyComponent())
 			{
-				for (int32 i = 0; i < EnemyDataAsset->DroppedParticleCount; ++i)
+				for (int32 i = 0; i < ParticleCount; ++i)
 				{
-					EnergyComp->CollectParticle(EnemyDataAsset->DroppedParticleElement, EnemyDataAsset->EnergyPerParticle);
+					EnergyComp->CollectParticle(ParticleElement, EnergyPerPart);
 				}
 			}
 		}
+	}
+
+	// 2. 视觉表现：若配置了特效资产则播放，未配置则不绘制任何大光球，保持战场写实纯净
+	const FVector DropLocation = GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
+
+	if (EnergyDropNiagara)
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), EnergyDropNiagara, DropLocation, GetActorRotation());
+	}
+	else if (EnergyDropEmitter)
+	{
+		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), EnergyDropEmitter, DropLocation, GetActorRotation());
+	}
+
+	// 3. 屏幕单行击杀确认刷新（Key 2003 原地刷新，与 2000开火/2001命中/2002生命 组成完整打击闭环）
+	if (GEngine)
+	{
+#if WITH_EDITOR
+		const FString DisplayName = GetActorLabel();
+#else
+		const FString DisplayName = GetName();
+#endif
+		const float TotalEnergy = ParticleCount * EnergyPerPart;
+		GEngine->AddOnScreenDebugMessage(2003, 3.0f, FColor::Cyan,
+			FString::Printf(TEXT("💀 [击杀确认] %s 已被消灭！获得能量微粒 (+%.0f) | 侵蚀度已净化"),
+				*DisplayName, TotalEnergy));
 	}
 }

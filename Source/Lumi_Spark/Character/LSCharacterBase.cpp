@@ -130,6 +130,9 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
 	CameraBoom->bUsePawnControlRotation = true; // 随 Controller 旋转
 	CameraBoom->bDoCollisionTest = true;
 	CameraBoom->SocketOffset = FVector(0.0f, 50.0f, 65.0f); // 默认右肩偏移
+	CameraBoom->bEnableCameraLag = true;
+	CameraBoom->CameraLagSpeed = 14.0f;
+	CameraBoom->CameraLagMaxDistance = 80.0f;
 
 	// 摄像机挂载至弹簧臂末端 Socket
 	CameraComponent = CreateDefaultSubobject<ULSCameraComponent>(TEXT("LSCameraComp"));

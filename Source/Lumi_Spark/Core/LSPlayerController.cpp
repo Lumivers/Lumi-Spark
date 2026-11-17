@@ -15,6 +15,7 @@
 #include "Extraction/ULSBackpackComponent.h"
 #include "Extraction/LSExtractionTypes.h"
 #include "Extraction/ULSCorrosionComponent.h"
+#include "Enemy/LSEnemyBase.h"
 ALSPlayerController::ALSPlayerController()
 {
 	bShowMouseCursor = false;
@@ -149,11 +150,21 @@ void ALSPlayerController::SetupInputComponent()
 		if (IA_Zoom) EnhancedInputComponent->BindAction(IA_Zoom, ETriggerEvent::Triggered, this, &ALSPlayerController::HandleZoom);
 	}
 
-	// 4. 滚轮缩放直接绑定
+	// 4. 滚轮缩放与战术切枪/手雷原生绑定兜底
 	if (InputComponent)
 	{
 		InputComponent->BindKey(EKeys::MouseScrollUp, IE_Pressed, this, &ALSPlayerController::HandleZoomIn);
 		InputComponent->BindKey(EKeys::MouseScrollDown, IE_Pressed, this, &ALSPlayerController::HandleZoomOut);
+
+		// 原生基础键位兜底绑定（保证即便 IMC 漏配也能顺畅体验切枪与手雷）
+		InputComponent->BindKey(EKeys::One, IE_Pressed, this, &ALSPlayerController::HandleSwitchToSlot1);
+		InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ALSPlayerController::HandleSwitchToSlot2);
+		InputComponent->BindKey(EKeys::G, IE_Pressed, this, &ALSPlayerController::HandleThrowGrenadeStarted);
+		InputComponent->BindKey(EKeys::G, IE_Released, this, &ALSPlayerController::HandleThrowGrenadeCompleted);
+
+		// 开发专属调试快捷键：按 [B] 或 小键盘 [+] 一键在准星前方召唤测试敌人
+		InputComponent->BindKey(EKeys::B, IE_Pressed, this, &ALSPlayerController::SpawnDebugEnemy);
+		InputComponent->BindKey(EKeys::Add, IE_Pressed, this, &ALSPlayerController::SpawnDebugEnemy);
 	}
 }
 
@@ -333,7 +344,8 @@ void ALSPlayerController::UpdateCombatFacing()
 
 void ALSPlayerController::HandleFireStarted()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("🎯 [Input] 触发了鼠标左键开火！"));
+	// 使用固定 Key 2000 原地刷新提示，避免全自动连射时疯狂刷屏叠行
+	GEngine->AddOnScreenDebugMessage(2000, 1.0f, FColor::Yellow, TEXT("🎯 [Input] 触发了鼠标左键开火！"));
 	bIsFiring = true;
 
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
@@ -872,4 +884,68 @@ void ALSPlayerController::LSSimulateExtract(const FString& HazardStr)
 	GEngine->AddOnScreenDebugMessage(-1, 6.0f, FColor::Green,
 		FString::Printf(TEXT("✅ [模拟撤离] 难度: %s | 估值: %.0f | 物品格: %d"),
 			*HazardStr, TotalVal, ItemCount));
+}
+
+void ALSPlayerController::SpawnDebugEnemy()
+{
+	APawn* ControlledPawn = GetPawn();
+	if (!ControlledPawn || !GetWorld()) return;
+
+	FVector CameraLoc;
+	FRotator CameraRot;
+	GetPlayerViewPoint(CameraLoc, CameraRot);
+
+	const FVector ForwardDir = CameraRot.Vector();
+	const FVector TraceStart = CameraLoc;
+	const FVector TraceEnd = CameraLoc + (ForwardDir * 1200.0f);
+
+	FHitResult HitResult;
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(ControlledPawn);
+
+	FVector SpawnLoc = ControlledPawn->GetActorLocation() + (ControlledPawn->GetActorForwardVector() * 500.0f);
+
+	// 1. 射线打地面，确保精准踩在地面上不浮空不卡地
+	if (GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECC_Visibility, Params))
+	{
+		SpawnLoc = HitResult.ImpactPoint + FVector(0.0f, 0.0f, 95.0f);
+	}
+	else
+	{
+		// 备用垂直下打探测
+		FVector AirLoc = ControlledPawn->GetActorLocation() + (ControlledPawn->GetActorForwardVector() * 600.0f) + FVector(0.f, 0.f, 100.f);
+		if (GetWorld()->LineTraceSingleByChannel(HitResult, AirLoc, AirLoc - FVector(0.f, 0.f, 500.f), ECC_Visibility, Params))
+		{
+			SpawnLoc = HitResult.ImpactPoint + FVector(0.0f, 0.0f, 95.0f);
+		}
+	}
+
+	// 2. 旋转朝向：让怪物面向玩家
+	FRotator SpawnRot = (ControlledPawn->GetActorLocation() - SpawnLoc).Rotation();
+	SpawnRot.Pitch = 0.0f;
+	SpawnRot.Roll = 0.0f;
+
+	// 3. 动态加载 BP_Enemy 蓝图类（带动画蓝图与完整战斗属性）
+	UClass* EnemyClassToSpawn = DebugEnemyClass;
+	if (!EnemyClassToSpawn)
+	{
+		EnemyClassToSpawn = LoadClass<ALSEnemyBase>(nullptr, TEXT("/Game/Enemes/BP_Enemy.BP_Enemy_C"));
+		if (!EnemyClassToSpawn)
+		{
+			EnemyClassToSpawn = ALSEnemyBase::StaticClass();
+		}
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	if (ALSEnemyBase* NewEnemy = GetWorld()->SpawnActor<ALSEnemyBase>(EnemyClassToSpawn, SpawnLoc, SpawnRot, SpawnParams))
+	{
+		NewEnemy->SpawnDefaultController();
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(2005, 2.5f, FColor::Green,
+				FString::Printf(TEXT("🤖 [调试] 成功在准星前方地面召唤测试敌人！按 [B] 或 [小键盘+] 可反复刷怪")));
+		}
+	}
 }

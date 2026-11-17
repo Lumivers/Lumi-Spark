@@ -45,6 +45,35 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Transition")
 	float TransitionSpeed = 12.f; // 视角切换平滑插值速率
 	
+	// ═══ 垂直高程阻尼与死区滤波配置 ═══
+	/** 是否开启垂直高程延后平滑（解决翻墙攀爬镜头瞬间冲天脱节） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing")
+	bool bEnableVerticalDamping = true;
+
+	/** 垂直滤波死区半高（cm，小于此阈值的奔跑颠簸/碎石微小起伏将被完全过滤，防晕防震） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "0.0", ClampMax = "25.0"))
+	float VerticalDeadZone = 7.0f;
+
+	/** 爬墙/上升时的延后平滑速率（推荐 3.5~5.0，速度越慢越延后，营造动作优先的从容呼吸感） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "1.0", ClampMax = "20.0"))
+	float UpwardSmoothingSpeed = 4.5f;
+
+	/** 下落/降落时的平滑速率（推荐 7.0~10.0，快速跟进防止镜头悬空过久） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "1.0", ClampMax = "20.0"))
+	float DownwardSmoothingSpeed = 8.0f;
+
+	/** 最大允许的高度滞后距离（cm，默认 60cm，防止镜头落后过多或触地穿模） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "20.0", ClampMax = "120.0"))
+	float MaxVerticalLagDistance = 60.0f;
+
+	/** 是否开启弹簧臂水平位移弹性滞后（消除机械硬拉扯） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing")
+	bool bEnableCameraLag = true;
+
+	/** 水平位移滞后速率（推荐 12~16，既灵敏跟手又具备影视级平滑质感） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "1.0"))
+	float CameraLagSpeed = 14.0f;
+
 	// ═══ 控制接口（供 Controller / Character 调用） ═══
 	UFUNCTION(BlueprintCallable, Category="Camera")
 	void SetCameraMode(ELSCameraMode NewMode);
@@ -90,4 +119,15 @@ private:
 	
 	// 逐帧更新摄像机平滑插值与防穿墙检测
 	void UpdateCameraInterpolation(float DeltaTime);
+
+	// 维护的世界平滑高程目标
+	float SmoothedCameraPivotWorldZ = 0.0f;
+	bool bHasInitializedWorldZ = false;
+
+	// 动态垂直高程补偿值（当前平滑结果）
+	float CurrentVerticalCompensationZ = 0.0f;
+
+	// 缓存的父级角色弱引用
+	UPROPERTY(Transient)
+	TWeakObjectPtr<class ACharacter> CachedOwnerCharacter;
 };
