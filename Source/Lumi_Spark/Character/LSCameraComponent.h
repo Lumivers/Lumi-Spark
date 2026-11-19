@@ -54,17 +54,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "0.0", ClampMax = "25.0"))
 	float VerticalDeadZone = 7.0f;
 
-	/** 爬墙/上升时的延后平滑速率（推荐 3.5~5.0，速度越慢越延后，营造动作优先的从容呼吸感） */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "1.0", ClampMax = "20.0"))
-	float UpwardSmoothingSpeed = 4.5f;
+	/** 爬墙/上升时的延后平滑速率（推荐 1.8~2.5，速度越慢越延后，营造动作优先、镜头悠移的鲜明对比） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "0.5", ClampMax = "20.0"))
+	float UpwardSmoothingSpeed = 2.0f;
 
 	/** 下落/降落时的平滑速率（推荐 7.0~10.0，快速跟进防止镜头悬空过久） */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "1.0", ClampMax = "20.0"))
 	float DownwardSmoothingSpeed = 8.0f;
 
-	/** 最大允许的高度滞后距离（cm，默认 60cm，防止镜头落后过多或触地穿模） */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "20.0", ClampMax = "120.0"))
-	float MaxVerticalLagDistance = 60.0f;
+	/** 最大允许的高度滞后距离（cm，推荐 140~180cm，避免攀爬 2 米高台时滞后被过早截断） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "20.0", ClampMax = "300.0"))
+	float MaxVerticalLagDistance = 160.0f;
 
 	/** 是否开启弹簧臂水平位移弹性滞后（消除机械硬拉扯） */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing")

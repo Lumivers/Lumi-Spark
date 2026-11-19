@@ -361,12 +361,12 @@ void ALSCharacterBase::AddSpineRecoilKick(float Multiplier)
 	const float RollKick = FMath::FRandRange(-RecoilSpineRoll, RecoilSpineRoll) * Multiplier;
 	const float BackKick = RecoilSpineBack * Multiplier;
 
-	SpineRecoilRotation.Pitch = FMath::Clamp(SpineRecoilRotation.Pitch + PitchKick, -6.0f, 6.0f);
-	SpineRecoilRotation.Yaw = FMath::Clamp(SpineRecoilRotation.Yaw + YawKick, -2.5f, 2.5f);
-	SpineRecoilRotation.Roll = FMath::Clamp(SpineRecoilRotation.Roll + RollKick, -1.5f, 1.5f);
+	SpineRecoilRotation.Pitch = FMath::Clamp(SpineRecoilRotation.Pitch + PitchKick, -MaxRecoilSpinePitch, MaxRecoilSpinePitch);
+	SpineRecoilRotation.Yaw = FMath::Clamp(SpineRecoilRotation.Yaw + YawKick, -1.5f, 1.5f);
+	SpineRecoilRotation.Roll = FMath::Clamp(SpineRecoilRotation.Roll + RollKick, -1.0f, 1.0f);
 
 	// 2. 躯干向后抵肩受力位移 (Location.X 微退)
-	SpineRecoilLocation.X = FMath::Clamp(SpineRecoilLocation.X - BackKick, -2.5f, 0.0f);
+	SpineRecoilLocation.X = FMath::Clamp(SpineRecoilLocation.X - BackKick, -MaxRecoilSpineBack, 0.0f);
 
 	// 屏幕调试提示：实时监测开火冲量触发
 	if (GEngine && IsLocallyControlled())
@@ -439,10 +439,9 @@ void ALSCharacterBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// 平滑弹性回正躯干脊椎开火后坐力抖动
-	const float EffectiveRecovery = 14.0f;
-	SpineRecoilRotation = FMath::RInterpTo(SpineRecoilRotation, FRotator::ZeroRotator, DeltaTime, EffectiveRecovery);
-	SpineRecoilLocation = FMath::VInterpTo(SpineRecoilLocation, FVector::ZeroVector, DeltaTime, EffectiveRecovery);
+	// 平滑弹性回正躯干脊椎开火后坐力抖动（与武器回正速率 RecoilRecoverySpeed 严格对齐）
+	SpineRecoilRotation = FMath::RInterpTo(SpineRecoilRotation, FRotator::ZeroRotator, DeltaTime, RecoilSpineRecoverySpeed);
+	SpineRecoilLocation = FMath::VInterpTo(SpineRecoilLocation, FVector::ZeroVector, DeltaTime, RecoilSpineRecoverySpeed);
 
 	// 实时在屏幕左上角打印 ALS 状态监测雷达（覆盖刷新，不刷屏）
 	if (GEngine && IsLocallyControlled())

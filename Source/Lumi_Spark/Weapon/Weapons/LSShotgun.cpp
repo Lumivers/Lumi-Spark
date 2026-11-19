@@ -9,6 +9,7 @@ ALSShotgun::ALSShotgun()
 {
 	WeaponDisplayName = FText::FromString(TEXT("寒霜重型霰弹枪"));
 	WeaponTypeTag = LSTags::TAG_Weapon_Type_Shotgun;
+	CrosshairStyle = ELSCrosshairStyle::ShotgunCircle;
 	ElementTag = LSTags::TAG_Element_Cryo;
 	ElementGauge = ELSElementGauge::Heavy; // 2U 强冰，命中带火敌人引爆 2.0x 融化暴击
 
@@ -77,7 +78,7 @@ void ALSShotgun::FireOnce()
 		}
 	}
 
-	const float SpreadAngle = bIsADS ? (CurrentSpread * ADSSpreadMultiplier) : CurrentSpread;
+	const float SpreadAngle = GetFinalSpreadAngle(bIsADS);
 	const FVector AimDir = CameraRotation.Vector();
 
 	// 2. 权威端扣除 1 发大口径弹药

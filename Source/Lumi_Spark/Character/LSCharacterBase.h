@@ -95,33 +95,33 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Recoil")
 	FVector SpineRecoilLocation = FVector::ZeroVector;
 
-	// 单发开火身体后仰角度冲量（Pitch，度）
+	// 单发开火身体后仰角度冲量（Pitch，度，配合枪身形成自然的人枪一体后仰）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
-	float RecoilSpinePitch = 2.0f;
+	float RecoilSpinePitch = 1.0f;
 
 	// 单发开火右肩后挫偏航扭矩（Yaw，度）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
-	float RecoilSpineYaw = 0.6f;
+	float RecoilSpineYaw = 0.25f;
 
 	// 单发开火身体侧倾扰动随机范围（Roll，度）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
-	float RecoilSpineRoll = 0.3f;
+	float RecoilSpineRoll = 0.15f;
 
 	// 单发开火躯干后挫位移冲量（cm）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
-	float RecoilSpineBack = 0.8f;
+	float RecoilSpineBack = 0.5f;
 
 	// 连续开火最大累计仰角限制（防止全自动连续射击时仰角过大）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
-	float MaxRecoilSpinePitch = 5.0f;
+	float MaxRecoilSpinePitch = 3.5f;
 
 	// 连续开火最大累计后挫位移限制（cm）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
-	float MaxRecoilSpineBack = 2.0f;
+	float MaxRecoilSpineBack = 1.2f;
 
-	// 躯干后坐力平滑弹性回正阻尼速率
+	// 躯干后坐力平滑弹性回正阻尼速率（与武器 RecoilRecoverySpeed 严格对齐为 20.0，保持同频回正）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Recoil")
-	float RecoilSpineRecoverySpeed = 24.0f;
+	float RecoilSpineRecoverySpeed = 20.0f;
 
 	// 触发一次躯干受力脉冲（由武器开火或技能调用）
 	UFUNCTION(BlueprintCallable, Category = "Combat|Recoil")

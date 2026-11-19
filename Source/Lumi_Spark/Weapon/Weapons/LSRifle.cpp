@@ -26,7 +26,7 @@ ALSRifle::ALSRifle()
 	// 散布控制
 	BaseSpread = 0.8f;
 	MaxSpread = 3.5f;
-	SpreadIncreasePerShot = 0.2f;
+	SpreadIncreasePerShot = 0.27f;      // 恰好约 10 发连续射击达到最大散射
 	SpreadRecoveryRate = 5.0f;
 	ADSSpreadMultiplier = 0.35f;
 }

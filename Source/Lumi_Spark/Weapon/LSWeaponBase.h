@@ -93,11 +93,16 @@ public:
 	FORCEINLINE float GetBaseDamage() const { return BaseDamage; }
 	FORCEINLINE bool IsFiring() const { return bIsFiring; }
 	FORCEINLINE bool IsReloading() const { return bIsReloading; }
+	FORCEINLINE ELSCrosshairStyle GetCrosshairStyle() const { return CrosshairStyle; }
 	
 	FORCEINLINE float GetSpreadRatio() const 
 	{ 
 		return (MaxSpread > BaseSpread) ? FMath::Clamp((CurrentSpread - BaseSpread) / (MaxSpread - BaseSpread), 0.0f, 1.0f) : 0.0f; 
 	}
+
+	// 获取综合了连射热度、开镜衰减、角色水平移速与滞空等全状态的最终真实弹道散布角（度）
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Weapon|Spread")
+	float GetFinalSpreadAngle(bool bInIsADS) const;
 	
 	//委托广播
 	UPROPERTY(BlueprintAssignable, Category = "Weapon|Events")
@@ -208,6 +213,10 @@ protected:
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Identity")
 	FGameplayTag WeaponTypeTag;
+
+	// 该武器绑定的准星呈现形态（换枪时 HUD 依据此属性自动切换准星）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Crosshair")
+	ELSCrosshairStyle CrosshairStyle = ELSCrosshairStyle::ClassicCross;
 	
 	//武器自带元素属性
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Identity")
@@ -271,28 +280,32 @@ protected:
 	
 	// --- 程序化武器物理后坐力回冲（开火枪身自身机械后挫与枪口上跳） ---
 	
-	// 每次开火枪身后坐后退距离（厘米，沿枪管轴向后退）
+	// 每次开火枪身后坐后退距离（厘米，沿枪管轴向后退，战术紧凑微冲量，避免枪身与手臂脱节）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|RecoilKick", meta = (ClampMin = "0.0"))
-	float RecoilKickDistance = 2.4f;
+	float RecoilKickDistance = 0.8f;
 
-	// 每次开火枪口瞬间上扬仰角（度，Pitch 旋转）
+	// 每次开火枪口瞬间上扬仰角（度，Pitch 旋转，配合脊椎仰角形成细腻枪口跳动）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|RecoilKick", meta = (ClampMin = "0.0"))
-	float RecoilKickPitch = 2.0f;
+	float RecoilKickPitch = 0.7f;
 
 	// 每次开火枪身随机微量横偏角（度，Yaw/Roll 摆动）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|RecoilKick", meta = (ClampMin = "0.0"))
-	float RecoilKickYaw = 0.6f;
+	float RecoilKickYaw = 0.25f;
 
-	// 枪身后坐复位回弹速度（数值越大回位越迅猛紧凑）
+	// 枪身后坐复位回弹速度（与角色脊椎回正速率对齐，保证人枪回弹相位同步）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|RecoilKick", meta = (ClampMin = "1.0"))
-	float RecoilRecoverySpeed = 22.0f;
+	float RecoilRecoverySpeed = 20.0f;
 
-	// 最大累积后退距离限制（防止连发时枪模持续后移）
+	// 最大累积后退距离限制（厘米，防止连发时枪模持续过度后移）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|RecoilKick")
-	float MaxRecoilKickDistance = 4.5f;
+	float MaxRecoilKickDistance = 1.8f;
 
-	// 触发一次程序化物理枪身抖动与后坐力回冲
-	virtual void ApplyProceduralRecoilKick();
+	// 开镜瞄准时枪身程序化抖动的阻尼倍率（保持与角色躯干衰减比例完全一致）
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|RecoilKick", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ADSRecoilKickMultiplier = 0.5f;
+
+	// 触发一次程序化物理枪身抖动与后坐力回冲（支持开镜状态阻尼衰减）
+	virtual void ApplyProceduralRecoilKick(bool bIsADS = false);
 
 	// 每帧物理回正程序化枪身偏移
 	virtual void UpdateProceduralRecoilKick(float DeltaTime);
@@ -304,14 +317,23 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Spread")
 	float MaxSpread = 4.0f;
 	
+	// 连射单发散布增量（默认约 10 发连射达到最大散布天花板）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Spread")
-	float SpreadIncreasePerShot = 0.25f;
+	float SpreadIncreasePerShot = 0.32f;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Spread")
 	float SpreadRecoveryRate = 5.0f;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Spread")
 	float ADSSpreadMultiplier = 0.35f;
+
+	// 角色水平移动对武器真实弹道散布的惩罚系数（度/最大移速，奔跑时最多附加多少度弹道散布，默认 1.5°）
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Spread")
+	float MovementSpreadPenalty = 1.5f;
+
+	// 角色滞空（跳跃/翻爬/坠落）时的弹道散布惩罚（度，默认 2.5°）
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Spread")
+	float InAirSpreadPenalty = 2.5f;
 	
 	//枪口骨骼插槽名称
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Mesh")

@@ -14,6 +14,7 @@ ALSSniperRifle::ALSSniperRifle()
 
 	WeaponDisplayName = FText::FromString(TEXT("极星重型狙击步枪"));
 	WeaponTypeTag = LSTags::TAG_Weapon_Type_Sniper;
+	CrosshairStyle = ELSCrosshairStyle::DotOnly;
 
 	FireMode = ELSFireMode::SemiAuto;
 	FireRate = 45.0f;                   // 45 RPM 重型栓动节拍

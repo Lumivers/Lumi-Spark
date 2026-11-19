@@ -27,6 +27,7 @@
 #include "Core/LSPlayerController.h"
 #include "Enemy/LSEnemyBase.h"
 #include "Enemy/LSEnemyDataAsset.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 ALSWeaponBase::ALSWeaponBase()
 {
@@ -243,8 +244,8 @@ void ALSWeaponBase::PlayLocalFireEffects(bool bIsADS)
 		}
 	}
 	
-	// 触发枪身程序化机械后坐力回冲与枪口上跳抖动！
-	ApplyProceduralRecoilKick();
+	// 触发枪身程序化机械后坐力回冲与枪口上跳抖动（严格传递开镜瞄准阻尼）
+	ApplyProceduralRecoilKick(bIsADS);
 
 	// 后坐力与动态散布增长
 	if (RecoilComponent)
@@ -311,11 +312,12 @@ void ALSWeaponBase::Multicast_FireEffects_Implementation(const FVector_NetQuanti
 		}
 	}
 
-	// 远端观察者同步播放角色身体与脊椎受力后坐抖动
+	// 远端观察者同步播放角色身体与枪身受力后坐抖动
 	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
 	{
 		OwnerChar->AddSpineRecoilKick(1.0f);
 	}
+	ApplyProceduralRecoilKick(false);
 	
 	// 其他远端客户端播放枪声与火光
 	if (FireSound)
@@ -618,6 +620,43 @@ float ALSWeaponBase::CalculateDamageDropoff(float Distance) const
 	return FMath::Lerp(1.0f, MinDamageMultiplier, Alpha);
 }
 
+float ALSWeaponBase::GetFinalSpreadAngle(bool bInIsADS) const
+{
+	float Final = CurrentSpread;
+	if (bInIsADS)
+	{
+		Final *= ADSSpreadMultiplier;
+	}
+
+	if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+	{
+		const float HorizontalSpeed = OwnerChar->GetVelocity().Size2D();
+		const float MoveRatio = FMath::Clamp(HorizontalSpeed / 600.0f, 0.0f, 1.0f);
+		float DynamicMovePenalty = MoveRatio * MovementSpreadPenalty;
+
+		if (UCharacterMovementComponent* MoveComp = OwnerChar->GetCharacterMovement())
+		{
+			if (MoveComp->IsFalling())
+			{
+				DynamicMovePenalty += InAirSpreadPenalty;
+			}
+			if (MoveComp->IsCrouching())
+			{
+				DynamicMovePenalty *= 0.75f;
+			}
+		}
+
+		if (bInIsADS)
+		{
+			DynamicMovePenalty *= ADSSpreadMultiplier;
+		}
+
+		Final += DynamicMovePenalty;
+	}
+
+	return Final;
+}
+
 bool ALSWeaponBase::CalculateTraceEndpoints(FVector& OutMuzzleLoc, FVector& OutTraceEnd, bool bIsADS) const
 {
 	ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
@@ -628,12 +667,8 @@ bool ALSWeaponBase::CalculateTraceEndpoints(FVector& OutMuzzleLoc, FVector& OutT
 	GetMuzzleTransform(MuzzleTransform);
 	OutMuzzleLoc = MuzzleTransform.GetLocation();
 	
-	// 2. 计算散布角（开镜衰减）
-	float FinalSpread = CurrentSpread;
-	if (bIsADS)
-	{
-		FinalSpread *= ADSSpreadMultiplier;
-	}
+	// 2. 计算综合散布角（连射热度 + 开镜衰减 + 移动/滞空物理惩罚）
+	const float FinalSpread = GetFinalSpreadAngle(bIsADS);
 	
 	if (bFireAlongMuzzleForward)
 	{
@@ -1033,16 +1068,21 @@ USceneComponent* ALSWeaponBase::GetMuzzleAttachComponent(FName& OutSocketName) c
 	return WeaponMesh ? WeaponMesh : RootComponent;
 }
 
-void ALSWeaponBase::ApplyProceduralRecoilKick()
+void ALSWeaponBase::ApplyProceduralRecoilKick(bool bIsADS)
 {
-	// 1. 枪身后坐位移：沿枪管自身局部 -X 轴向后猛挫，Z 轴微量上抬
-	CurrentRecoilKickLoc.X = FMath::Clamp(CurrentRecoilKickLoc.X - RecoilKickDistance, -MaxRecoilKickDistance, 0.0f);
-	CurrentRecoilKickLoc.Z = FMath::Clamp(CurrentRecoilKickLoc.Z + 0.35f, 0.0f, 1.2f);
+	const float ADSMod = bIsADS ? ADSRecoilKickMultiplier : 1.0f;
+	const float EffectiveKickDist = RecoilKickDistance * ADSMod;
+	const float EffectiveKickPitch = RecoilKickPitch * ADSMod;
+	const float EffectiveKickYaw = RecoilKickYaw * ADSMod;
 
-	// 2. 枪口上挑与横摆：Pitch 仰角瞬时上挑，随机微量横偏晃动
-	CurrentRecoilKickRot.Pitch = FMath::Clamp(CurrentRecoilKickRot.Pitch + RecoilKickPitch, 0.0f, 6.0f);
-	CurrentRecoilKickRot.Yaw += FMath::FRandRange(-RecoilKickYaw, RecoilKickYaw);
-	CurrentRecoilKickRot.Roll += FMath::FRandRange(-RecoilKickYaw * 0.5f, RecoilKickYaw * 0.5f);
+	// 1. 枪身后坐位移：沿枪管自身局部 -X 轴向后后挫（微量细腻），Z 轴微量上浮
+	CurrentRecoilKickLoc.X = FMath::Clamp(CurrentRecoilKickLoc.X - EffectiveKickDist, -MaxRecoilKickDistance, 0.0f);
+	CurrentRecoilKickLoc.Z = FMath::Clamp(CurrentRecoilKickLoc.Z + (0.12f * ADSMod), 0.0f, 0.6f);
+
+	// 2. 枪口上挑与横摆：Pitch 仰角瞬时微上挑（与躯干脊椎仰角自然叠加），随机微量横偏晃动
+	CurrentRecoilKickRot.Pitch = FMath::Clamp(CurrentRecoilKickRot.Pitch + EffectiveKickPitch, 0.0f, 3.5f);
+	CurrentRecoilKickRot.Yaw += FMath::FRandRange(-EffectiveKickYaw, EffectiveKickYaw);
+	CurrentRecoilKickRot.Roll += FMath::FRandRange(-EffectiveKickYaw * 0.5f, EffectiveKickYaw * 0.5f);
 }
 
 void ALSWeaponBase::ResetAttachTransformCache()

@@ -42,6 +42,16 @@ enum class ELSElementGauge : uint8
 	SuperHeavy = 4	UMETA(DisplayName = "超强元素（4U，衰减17s）")
 };
 
+// 武器准星呈现形态
+UENUM(BlueprintType)
+enum class ELSCrosshairStyle : uint8
+{
+	ClassicCross = 0	UMETA(DisplayName = "战术四向十字（突击步枪/冲锋枪）"),
+	ShotgunCircle = 1	UMETA(DisplayName = "战术霰弹环形（重型霰弹枪）"),
+	DotOnly = 2			UMETA(DisplayName = "高精狙击单点（狙击步枪）"),
+	None = 3			UMETA(DisplayName = "无准星")
+};
+
 //战斗伤害上下文（用于攻击判定，暴击结算与伤害广播）
 USTRUCT(Blueprintable)
 struct FLSDamageContext
