@@ -36,6 +36,11 @@ ALSSniperRifle::ALSSniperRifle()
 	BaseSpread = 0.05f;
 	MaxSpread = 5.5f;
 	ADSSpreadMultiplier = 0.0f;
+
+	// 狙击枪战术飞行弹道参数（1200 m/s 超高初速穿甲，3.0 米长尾迹，硬直极速弹道）
+	BulletTracerSpeed = 1200.0f;
+	TracerRibbonLength = 3.0f;
+	bUseDirectTraceEndTiming = true;
 }
 
 void ALSSniperRifle::Tick(float DeltaTime)

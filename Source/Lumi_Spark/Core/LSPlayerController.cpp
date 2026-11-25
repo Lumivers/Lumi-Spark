@@ -357,10 +357,13 @@ void ALSPlayerController::HandleFireStarted()
 			MoveComp->SetAiming(true);
 		}
 
-		// 2. 开火瞬间：角色身形水平立即对齐当前视线朝向，消除转向延迟
-		FRotator NewRot = Char->GetActorRotation();
-		NewRot.Yaw = GetControlRotation().Yaw;
-		Char->SetActorRotation(NewRot);
+		// 2. 可选开火瞬间角色水平朝向对齐（关闭时由 ALS 平滑旋转自然跟上，避免与 ALS TargetRotation 抢控制权）
+		if (bSnapCharacterYawOnFireStart)
+		{
+			FRotator NewRot = Char->GetActorRotation();
+			NewRot.Yaw = GetControlRotation().Yaw;
+			Char->SetActorRotation(NewRot);
+		}
 
 		// 3. 激活战斗朝向锁定与 Aiming(2) 极速端枪姿态
 		UpdateCombatFacing();

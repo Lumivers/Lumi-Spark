@@ -29,6 +29,11 @@ ALSRifle::ALSRifle()
 	SpreadIncreasePerShot = 0.27f;      // 恰好约 10 发连续射击达到最大散射
 	SpreadRecoveryRate = 5.0f;
 	ADSSpreadMultiplier = 0.35f;
+
+	// 步枪战术飞行弹道参数（800 m/s 高初速，2.0 米尾迹，开启飞行受击时钟同步）
+	BulletTracerSpeed = 800.0f;
+	TracerRibbonLength = 2.0f;
+	bUseDirectTraceEndTiming = true;
 }
 
 void ALSRifle::ToggleFireMode()
@@ -46,8 +51,8 @@ void ALSRifle::StartFire()
 {
 	if (FireMode == ELSFireMode::SemiAuto)
 	{
-		// 半自动模式：点一次打一发，不启动循环定时器
-		if (!CanFire()) return;
+		// 半自动模式：受射速冷却保护，防止手速连点突破上限
+		if (!CanFire() || GetRemainingFireCooldown() > 0.005f) return;
 		FireOnce();
 	}
 	else

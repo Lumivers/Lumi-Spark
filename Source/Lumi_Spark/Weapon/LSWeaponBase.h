@@ -94,6 +94,10 @@ public:
 	FORCEINLINE bool IsFiring() const { return bIsFiring; }
 	FORCEINLINE bool IsReloading() const { return bIsReloading; }
 	FORCEINLINE ELSCrosshairStyle GetCrosshairStyle() const { return CrosshairStyle; }
+	FORCEINLINE float GetBulletTracerSpeed() const { return BulletTracerSpeed; }
+	FORCEINLINE float GetTracerRibbonLength() const { return TracerRibbonLength; }
+	FORCEINLINE bool IsDirectTraceEndTimingEnabled() const { return bUseDirectTraceEndTiming; }
+	FORCEINLINE bool IsWeaponDebugDrawEnabled() const { return bEnableWeaponDebugDraw; }
 	
 	FORCEINLINE float GetSpreadRatio() const 
 	{ 
@@ -159,17 +163,25 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
 	TObjectPtr<UParticleSystem> MuzzleFlashEmitter;
 	
-	// 1. 击中表面火花/碎屑粒子 (Niagara，优先使用)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	// 1. 击中表面火花/碎屑粒子 (Niagara，优先使用，环境/掩体受击)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
 	TObjectPtr<UNiagaraSystem> ImpactNiagara;
+
+	// 1. 击中生物肉体受击/飙血粒子 (Niagara，角色/敌人受击)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
+	TObjectPtr<UNiagaraSystem> FleshImpactNiagara;
 
 	// 1. 击中表面火花/碎屑粒子 (Cascade 传统粒子，备用)
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
 	TObjectPtr<UParticleSystem> ImpactEmitter;
 	
 	// 2. 击中表面物理受击音效（打在墙壁/金属上的撞击声）
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
 	TObjectPtr<USoundBase> ImpactSound;
+
+	// 2. 击中生物肉体受击音效（打在人身上的入肉闷响/撕裂声）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
+	TObjectPtr<USoundBase> FleshImpactSound;
 	
 	// 3. 击中表面弹孔贴花材质（留在墙壁上的焦黑弹坑）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
@@ -191,14 +203,30 @@ protected:
 	UPROPERTY(Transient)
 	TArray<TWeakObjectPtr<UDecalComponent>> ActiveDecals;
 	
-	// 4. 子弹曳光烟道粒子 (Niagara，优先使用)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	// 4. 子弹曳光烟道粒子 (Niagara，战术级飞行曳光系统)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
 	TObjectPtr<UNiagaraSystem> TracerNiagara;
 
 	// 4. 子弹曳光烟道粒子 (Cascade 传统粒子，备用)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
 	TObjectPtr<UParticleSystem> TracerEmitter;
-	
+
+	// 子弹视觉飞行速度 (米/秒 m/s，默认 800 m/s，步枪 750~850，冲锋枪 650~700，狙击枪 1200+，霰弹 450)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects", meta = (ClampMin = "50.0"))
+	float BulletTracerSpeed = 800.0f;
+
+	// 曳光尾迹烟道长度 (米，默认 2.0 米，有效控制在 1.5~3 米区间，杜绝贯穿屏幕死线)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects", meta = (ClampMin = "0.1", ClampMax = "10.0"))
+	float TracerRibbonLength = 2.0f;
+
+	// 是否启用飞行延时受击响应（中远距离依据弹道飞行时间 T = Distance / Speed 延迟触发打击火花与弹孔）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
+	bool bUseDirectTraceEndTiming = true;
+
+	// 弹道近距离即时受击阈值（单位：厘米，默认 1500 cm = 15 米；在此距离内无需延迟，瞬间爆出火花）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects", meta = (ClampMin = "0.0"))
+	float InstantImpactThresholdDistance = 1500.0f;
+
 	// Cascade 曳光粒子目标点向量参数名（Cascade 粒子默认通常是 "Target"）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
 	FName TracerTargetParamName = FName("Target");
@@ -206,6 +234,10 @@ protected:
 	// Niagara 曳光粒子目标点向量参数名（Lyra 等通常为 "User.TraceEnd" 或 "TraceEnd"）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Effects")
 	FName TracerNiagaraParamName = FName("TraceEnd");
+
+	// 是否启用武器射线调试绘制（默认关闭；开启后用 DrawDebugLine 绘制瞬时射线供排查）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon|Debug")
+	bool bEnableWeaponDebugDraw = false;
 	
 	//武器基础身份
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Identity")
@@ -342,6 +374,10 @@ protected:
 	// 是否优先严格以枪口插槽物理朝向射击（true: 纯枪管弹道；false: 现代TPS标准——从枪口精确打向屏幕准星落点）
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Fire")
 	bool bFireAlongMuzzleForward = false;
+
+	// 是否在每次开火时强制把角色朝向瞬移对齐到准星（与 ALS 平滑转身并行开启会在甩镜头时产生朝向拉扯，默认关闭交由 ALS Aiming 自然跟随）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon|Fire")
+	bool bSnapOwnerRotationOnFire = false;
 	
 	// 是否开启枪身随镜头仰俯动态对齐
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Aim")
@@ -379,6 +415,9 @@ protected:
 	bool bIsReloading = false;
 	bool bWantsToFire = false;
 	float CurrentSpread = 0.8f;
+
+	// 上一次实际开火的世界时间（用于统一校验半自动与全自动的 FireRate 冷却）
+	double LastFireTime = -100.0;
 	
 	// 程序化枪身位移与旋转偏移
 	FVector CurrentRecoilKickLoc = FVector::ZeroVector;
@@ -389,6 +428,12 @@ protected:
 	FTimerHandle FireTimerHandle;
 	FTimerHandle ReloadTimerHandle;
 	
+	// 查询距下一发允许开火的剩余冷却秒数（<= 0 表示可立即开火）
+	float GetRemainingFireCooldown() const;
+
+	// 判定命中目标是否为角色/生物实体（用于分流肉体与环境受击反馈）
+	static bool IsCharacterImpactTarget(const AActor* HitActor);
+
 	//执行单发HitScan射线射击
 	virtual void FireOnce();
 	
@@ -410,7 +455,7 @@ protected:
 	
 	//多播广播击中表面物理表现
 	UFUNCTION(NetMulticast, Unreliable)
-	void Multicast_ImpactEffects(const FHitResult& Hit);
+	void Multicast_ImpactEffects(const FHitResult& Hit, bool bPlaySound);
 	
 	// 3，服务端向开火客户端回传打击确认（触发本地 HUD 准星 HitMarker 闪红与音效）
 	UFUNCTION(Client, Reliable)
@@ -438,8 +483,11 @@ protected:
 	UFUNCTION()
 	void OnRep_CurrentReserveAmmo();
 	
-	// 本地播放击中表面物理表现（火花、音效、贴花）
-	void PlayImpactEffects(const FHitResult& Hit);
+	// 本地播放击中表面物理表现（火花、音效、贴花，根据距离与飞行速度自动调度延时）
+	void PlayImpactEffects(const FHitResult& Hit, bool bPlaySound = true);
+
+	// 真正执行击中表面物理生成（火花、音效、贴花）
+	virtual void ExecuteImpactEffects(const FHitResult& Hit, bool bPlaySound = true);
 	
 	// 本地/远端播放子弹曳光弹道烟道
 	void PlayTracerEffect(const FVector& StartLoc, const FVector& EndLoc);

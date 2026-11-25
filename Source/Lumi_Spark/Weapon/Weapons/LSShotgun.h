@@ -26,4 +26,8 @@ protected:
 	// 单发弹丸数量
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Shotgun", meta = (ClampMin = "4", ClampMax = "16"))
 	int32 PelletCount = 8;
+
+	// 单次射击最多触发几处受击特效（避免 8 颗弹丸同帧叠放造成卡顿与爆炸音）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Shotgun", meta = (ClampMin = "1", ClampMax = "16"))
+	int32 MaxImpactEffectsPerShot = 3;
 };

@@ -130,7 +130,7 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
 	CameraBoom->bUsePawnControlRotation = true; // 随 Controller 旋转
 	CameraBoom->bDoCollisionTest = true;
 	CameraBoom->SocketOffset = FVector(0.0f, 50.0f, 65.0f); // 默认右肩偏移
-	CameraBoom->bEnableCameraLag = true;
+	CameraBoom->bEnableCameraLag = false;
 	CameraBoom->CameraLagSpeed = 14.0f;
 	CameraBoom->CameraLagMaxDistance = 80.0f;
 

@@ -35,6 +35,11 @@ ALSShotgun::ALSShotgun()
 	SpreadIncreasePerShot = 1.0f;
 	SpreadRecoveryRate = 4.0f;
 	ADSSpreadMultiplier = 0.65f;
+
+	// 霰弹枪战术飞行弹道参数（450 m/s 弹丸初速，1.2 米紧凑尾迹，多弹丸并发扇形散布）
+	BulletTracerSpeed = 450.0f;
+	TracerRibbonLength = 1.2f;
+	bUseDirectTraceEndTiming = true;
 }
 
 void ALSShotgun::FireOnce()
@@ -52,10 +57,13 @@ void ALSShotgun::FireOnce()
 	ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
 	if (!OwnerChar) return;
 
-	// 1. 枪口起点与视口朝向
-	const FVector MuzzleLocation = WeaponMesh->DoesSocketExist(MuzzleSocketName)
-		? WeaponMesh->GetSocketLocation(MuzzleSocketName)
-		: GetActorLocation();
+	if (UWorld* World = GetWorld())
+	{
+		LastFireTime = World->GetTimeSeconds();
+	}
+
+	// 1. 枪口起点（走基类通用查找，兼容蓝图组件与包围盒前端估算）与视口朝向
+	const FVector MuzzleLocation = GetMuzzleLocation();
 
 	FVector CameraLocation;
 	FRotator CameraRotation;
@@ -100,6 +108,10 @@ void ALSShotgun::FireOnce()
 	QueryParams.bTraceComplex = true;
 	QueryParams.bReturnPhysicalMaterial = true;
 
+	bool bPlayedFleshSoundThisShot = false;
+	bool bPlayedEnvSoundThisShot = false;
+	int32 SpawnedImpactVFXCount = 0;
+
 	for (int32 i = 0; i < PelletCount; ++i)
 	{
 		// 独立锥形随机偏角
@@ -110,7 +122,11 @@ void ALSShotgun::FireOnce()
 		FVector TargetPoint = CamTraceEnd;
 		if (GetWorld()->LineTraceSingleByChannel(CamHit, CameraLocation, CamTraceEnd, ECC_Visibility, QueryParams))
 		{
-			TargetPoint = CamHit.ImpactPoint;
+			// 只有命中点位于枪口前方时才采用准星收敛落点，防止相机与枪口之间有遮挡时倒打
+			if (FVector::DotProduct(CamHit.ImpactPoint - MuzzleLocation, AimDir) > 0.0f)
+			{
+				TargetPoint = CamHit.ImpactPoint;
+			}
 		}
 
 		// 枪口连线校验
@@ -121,7 +137,23 @@ void ALSShotgun::FireOnce()
 		if (bHit && HasAuthority())
 		{
 			ProcessHit(PelletHit);
-			Multicast_ImpactEffects(PelletHit);
+
+			// 限制单枪受击特效与音效数量：全弹丸伤害照常结算，但同类型受击音效每枪最多响 1 次，特效最多保留 MaxImpactEffectsPerShot 处
+			if (SpawnedImpactVFXCount < MaxImpactEffectsPerShot)
+			{
+				const bool bHitChar = IsCharacterImpactTarget(PelletHit.GetActor());
+				const bool bShouldPlaySound = bHitChar ? !bPlayedFleshSoundThisShot : !bPlayedEnvSoundThisShot;
+				Multicast_ImpactEffects(PelletHit, bShouldPlaySound);
+				SpawnedImpactVFXCount++;
+				if (bHitChar)
+				{
+					bPlayedFleshSoundThisShot = true;
+				}
+				else
+				{
+					bPlayedEnvSoundThisShot = true;
+				}
+			}
 		}
 
 		// 播放每颗弹丸的独立曳光烟道

@@ -42,6 +42,11 @@ void ALSLauncher::FireOnce()
 	ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
 	if (!OwnerChar) return;
 
+	if (UWorld* World = GetWorld())
+	{
+		LastFireTime = World->GetTimeSeconds();
+	}
+
 	// 1. 枪口生成点与视口朝向
 	const FVector MuzzleLoc = WeaponMesh->DoesSocketExist(MuzzleSocketName)
 		? WeaponMesh->GetSocketLocation(MuzzleSocketName)

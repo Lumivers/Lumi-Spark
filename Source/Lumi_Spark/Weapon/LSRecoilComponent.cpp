@@ -23,15 +23,30 @@ ULSRecoilComponent::ULSRecoilComponent()
 void ULSRecoilComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// 1. 将开火产生的待施加后坐力按帧平滑推给控制器，避免单帧硬跳打断甩枪轨迹
+	if (bUseSmoothRecoilApply && !PendingRecoilOffset.IsNearlyZero(0.001f))
+	{
+		const float Alpha = FMath::Clamp(RecoilApplyInterpSpeed * DeltaTime, 0.0f, 1.0f);
+		const FVector2D ApplyStep = PendingRecoilOffset.IsNearlyZero(0.005f) ? PendingRecoilOffset : (PendingRecoilOffset * Alpha);
+		ApplyInputToController(-ApplyStep.Y, ApplyStep.X);
+		PendingRecoilOffset -= ApplyStep;
+	}
+	else if (!bUseSmoothRecoilApply && !PendingRecoilOffset.IsNearlyZero(0.001f))
+	{
+		ApplyInputToController(-PendingRecoilOffset.Y, PendingRecoilOffset.X);
+		PendingRecoilOffset = FVector2D::ZeroVector;
+	}
 	
-	//仅在停火且开启回正时执行平滑插值
-	if (bEnableRecovery && !bIsFiring)
+	// 2. 仅在停火且上抬缓冲推完、并开启回正时执行平滑回正（避免上抬与下拉同帧抵消）
+	if (bEnableRecovery && !bIsFiring && PendingRecoilOffset.IsNearlyZero(0.001f))
 	{
 		ProcessRecovery(DeltaTime);
 	}
 	
-	//回正完毕后关闭Tick节省性能
-	if (!bIsFiring && AccumulatedRecoil.IsNearlyZero(0.01f))
+	// 3. 缓冲与回正都归零后关闭 Tick 节省性能
+	const bool bRecoveryFinished = (!bEnableRecovery || AccumulatedRecoil.IsNearlyZero(0.01f));
+	if (!bIsFiring && PendingRecoilOffset.IsNearlyZero(0.001f) && bRecoveryFinished)
 	{
 		SetComponentTickEnabled(false);
 	}
@@ -49,8 +64,13 @@ void ULSRecoilComponent::StopRecoil()
 	bIsFiring = false;
 	CurrentPatternIndex = 0; //重置弹道模式索引
 	
+	// 若未启用停火自动回正，停火时必须清空累计池，否则下次开火会直接撞上 MaxVerticalPitch 锁死垂直后坐力
+	if (!bEnableRecovery)
+	{
+		AccumulatedRecoil = FVector2D::ZeroVector;
+	}
 	//停火后启用Tick，让ProcessRecovery可以平滑回正
-	if (bEnableRecovery && !AccumulatedRecoil.IsNearlyZero(0.01f))
+	else if (!AccumulatedRecoil.IsNearlyZero(0.01f))
 	{
 		SetComponentTickEnabled(true);
 	}
@@ -61,6 +81,7 @@ void ULSRecoilComponent::ResetRecoil()
 	bIsFiring = false;
 	CurrentPatternIndex = 0;
 	AccumulatedRecoil = FVector2D::ZeroVector;
+	PendingRecoilOffset = FVector2D::ZeroVector;
 }
 
 void ULSRecoilComponent::ApplyRecoil(bool bIsADS)
@@ -107,8 +128,19 @@ void ULSRecoilComponent::ApplyRecoil(bool bIsADS)
 		ShotOffset.Y = FMath::Max(0.0f, EffectiveMaxPitch - AccumulatedRecoil.Y); // 削减超限部分
 	}
 	
-	// 5. 将后坐力施加到玩家控制器（Pitch 向上抬，Yaw 左右偏）
-	ApplyInputToController(-ShotOffset.Y, ShotOffset.X);
+	// 5. 将后坐力施加到玩家控制器（平滑缓冲模式在 Tick 逐帧推入，防止单帧硬跳打断甩枪）
+	if (bUseSmoothRecoilApply)
+	{
+		PendingRecoilOffset += ShotOffset;
+		if (!PendingRecoilOffset.IsNearlyZero(0.001f))
+		{
+			SetComponentTickEnabled(true);
+		}
+	}
+	else
+	{
+		ApplyInputToController(-ShotOffset.Y, ShotOffset.X);
+	}
 	
 	// 6. 累加到回正池中并推进连射发数
 	AccumulatedRecoil += ShotOffset;

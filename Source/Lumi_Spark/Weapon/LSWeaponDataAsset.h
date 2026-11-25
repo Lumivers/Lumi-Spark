@@ -12,6 +12,7 @@ class USoundBase;
 class UParticleSystem;
 class UMaterialInterface;
 class UTexture2D;
+class UNiagaraSystem;
 
 /**
  * 武器数据资产 (ULSWeaponDataAsset)
@@ -144,14 +145,44 @@ public:
 	TSoftObjectPtr<UParticleSystem> MuzzleFlashFX;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
+	TSoftObjectPtr<UNiagaraSystem> MuzzleFlashNiagara;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
 	TSoftObjectPtr<UParticleSystem> ImpactFX;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
+	TSoftObjectPtr<UNiagaraSystem> ImpactNiagara;
+
+	// 击中生物肉体受击/飙血特效 (Niagara 粒子，角色/敌人受击)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
+	TSoftObjectPtr<UNiagaraSystem> FleshImpactNiagara;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
 	TSoftObjectPtr<USoundBase> ImpactSound;
+
+	// 击中生物肉体受击音效（打在人身上的入肉闷响/撕裂声）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
+	TSoftObjectPtr<USoundBase> FleshImpactSound;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
 	TSoftObjectPtr<UMaterialInterface> ImpactDecalMaterial;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
 	TSoftObjectPtr<UParticleSystem> TracerFX;
+
+	// 战术飞行曳光弹道系统 (Niagara 粒子，高亮发光弹头与立体烟尾)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
+	TSoftObjectPtr<UNiagaraSystem> TracerNiagara;
+
+	// 子弹视觉飞行速度 (米/秒 m/s，默认 800 m/s，步枪 750~850，冲锋枪 650~700，狙击枪 1200+，霰弹 450)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects", meta = (ClampMin = "50.0"))
+	float BulletTracerSpeed = 800.0f;
+
+	// 曳光尾迹烟道长度 (米，默认约 1.5~3 米，防止贯穿全屏死棍)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects", meta = (ClampMin = "0.1", ClampMax = "10.0"))
+	float TracerRibbonLength = 2.0f;
+
+	// 是否启用中远距离飞行延时受击响应（T = Distance / Speed，避免子弹在空中靶子先爆火花）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Effects")
+	bool bUseDirectTraceEndTiming = true;
 };

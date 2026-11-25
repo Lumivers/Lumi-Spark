@@ -68,7 +68,7 @@ public:
 
 	/** 是否开启弹簧臂水平位移弹性滞后（消除机械硬拉扯） */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing")
-	bool bEnableCameraLag = true;
+	bool bEnableCameraLag = false;
 
 	/** 水平位移滞后速率（推荐 12~16，既灵敏跟手又具备影视级平滑质感） */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Camera|Smoothing", meta = (ClampMin = "1.0"))

@@ -29,6 +29,37 @@
 #include "Enemy/LSEnemyDataAsset.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
+namespace
+{
+	void SpawnImpactNiagaraWithParams(UWorld* World, UNiagaraSystem* System, const FHitResult& Hit)
+	{
+		if (!World || !System)
+		{
+			return;
+		}
+
+		if (UNiagaraComponent* Comp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			World,
+			System,
+			Hit.ImpactPoint,
+			Hit.ImpactNormal.Rotation()))
+		{
+			Comp->SetVariableBool(FName("User.Trigger"), true);
+			Comp->SetVariableInt(FName("User.NumberOfHits"), 1);
+
+			TArray<FVector> ImpactPosArray;
+			ImpactPosArray.Add(Hit.ImpactPoint);
+			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition(Comp, FName("User.ImpactPositions"), ImpactPosArray);
+
+			TArray<FVector> ImpactNormArray;
+			ImpactNormArray.Add(Hit.ImpactNormal);
+			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(Comp, FName("User.ImpactNormals"), ImpactNormArray);
+
+			Comp->Activate(true);
+		}
+	}
+}
+
 ALSWeaponBase::ALSWeaponBase()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -97,6 +128,23 @@ void ALSWeaponBase::StartFire()
 		return;
 	}
 	
+	// 校验射速冷却，防止半自动疯狂连点或全自动点射突破 FireRate 上限（5ms 容差）
+	const float RemainingCooldown = GetRemainingFireCooldown();
+	if (RemainingCooldown > 0.005f)
+	{
+		if (FireMode == ELSFireMode::FullAuto && FireRate > 0.f)
+		{
+			bIsFiring = true;
+			if (RecoilComponent)
+			{
+				RecoilComponent->StartRecoil();
+			}
+			const float TimeBetweenShots = 60.f / FireRate;
+			GetWorldTimerManager().SetTimer(FireTimerHandle, this, &ALSWeaponBase::FireOnce, TimeBetweenShots, true, RemainingCooldown);
+		}
+		return;
+	}
+
 	bIsFiring = true;
 	if (RecoilComponent)
 	{
@@ -106,12 +154,39 @@ void ALSWeaponBase::StartFire()
 	// 执行单发或首发送发射击
 	FireOnce();
 	
-	// 全自动模式下启动循环定时器
+	// 全自动模式下启动循环定时器；半自动单发打完立即释放开火状态，避免按住左键不放时卡死后坐力回正
 	if (FireMode == ELSFireMode::FullAuto && FireRate > 0.f)
 	{
 		const float TimeBetweenShots = 60.f / FireRate;
 		GetWorldTimerManager().SetTimer(FireTimerHandle, this, &ALSWeaponBase::FireOnce, TimeBetweenShots, true);
 	}
+	else
+	{
+		bIsFiring = false;
+		if (RecoilComponent)
+		{
+			RecoilComponent->StopRecoil();
+		}
+	}
+}
+
+float ALSWeaponBase::GetRemainingFireCooldown() const
+{
+	if (!GetWorld() || FireRate <= 0.0f)
+	{
+		return 0.0f;
+	}
+	const double MinInterval = 60.0 / static_cast<double>(FireRate);
+	const double Elapsed = GetWorld()->GetTimeSeconds() - LastFireTime;
+	return FMath::Max(0.0f, static_cast<float>(MinInterval - Elapsed));
+}
+
+bool ALSWeaponBase::IsCharacterImpactTarget(const AActor* HitActor)
+{
+	return HitActor && (
+		HitActor->IsA<ACharacter>() ||
+		HitActor->FindComponentByClass<ULSHealthComponent>() != nullptr
+	);
 }
 
 void ALSWeaponBase::StopFire()
@@ -139,6 +214,11 @@ void ALSWeaponBase::FireOnce()
 		}
 		return;
 	}
+
+	if (UWorld* World = GetWorld())
+	{
+		LastFireTime = World->GetTimeSeconds();
+	}
 	
 	// 1. 开火时角色的面向对齐 Controller Yaw（确保腰射与连发时身体正对准星，枪口正对目标）
 	FVector MuzzleLocation;
@@ -146,11 +226,14 @@ void ALSWeaponBase::FireOnce()
 	bool bIsADS = false;
 	if (ALSCharacterBase* OwnerChar = Cast<ALSCharacterBase>(GetOwner()))
 	{
-		if (AController* PC = OwnerChar->GetController())
+		if (bSnapOwnerRotationOnFire)
 		{
-			FRotator DesiredRot = OwnerChar->GetActorRotation();
-			DesiredRot.Yaw = PC->GetControlRotation().Yaw;
-			OwnerChar->SetActorRotation(DesiredRot);
+			if (AController* PC = OwnerChar->GetController())
+			{
+				FRotator DesiredRot = OwnerChar->GetActorRotation();
+				DesiredRot.Yaw = PC->GetControlRotation().Yaw;
+				OwnerChar->SetActorRotation(DesiredRot);
+			}
 		}
 
 		if (ULSCameraComponent* Cam = OwnerChar->GetCameraComponent())
@@ -296,7 +379,7 @@ void ALSWeaponBase::Server_Fire_Implementation(const FVector_NetQuantize& Muzzle
 		ProcessHit(HitResult);
 		
 		// 5，广播击中表面物理表现给所有客户端
-		Multicast_ImpactEffects(HitResult);
+		Multicast_ImpactEffects(HitResult, true);
 	}
 }
 
@@ -363,10 +446,10 @@ void ALSWeaponBase::Multicast_FireEffects_Implementation(const FVector_NetQuanti
 	PlayTracerEffect(MuzzleLoc, TraceEnd);
 }
 
-void ALSWeaponBase::Multicast_ImpactEffects_Implementation(const FHitResult& Hit)
+void ALSWeaponBase::Multicast_ImpactEffects_Implementation(const FHitResult& Hit, bool bPlaySound)
 {
 	//播放击中表面物理表现（火花、音效、贴花）
-	PlayImpactEffects(Hit);
+	PlayImpactEffects(Hit, bPlaySound);
 }
 
 void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
@@ -594,7 +677,24 @@ void ALSWeaponBase::FinishReload()
 	// 如果换弹前玩家一直长按开火键，换弹完成后自动无缝继续全自动射击！
 	if (bWantsToFire && CanFire() && FireMode == ELSFireMode::FullAuto)
 	{
-		bIsFiring = true;
+		// 校验射速冷却，防止半自动疯狂连点或全自动点射突破 FireRate 上限（5ms 容差）
+	const float RemainingCooldown = GetRemainingFireCooldown();
+	if (RemainingCooldown > 0.005f)
+	{
+		if (FireMode == ELSFireMode::FullAuto && FireRate > 0.f)
+		{
+			bIsFiring = true;
+			if (RecoilComponent)
+			{
+				RecoilComponent->StartRecoil();
+			}
+			const float TimeBetweenShots = 60.f / FireRate;
+			GetWorldTimerManager().SetTimer(FireTimerHandle, this, &ALSWeaponBase::FireOnce, TimeBetweenShots, true, RemainingCooldown);
+		}
+		return;
+	}
+
+	bIsFiring = true;
 		FireOnce();
 		const float TimeBetweenShots = 60.f / FireRate;
 		GetWorldTimerManager().SetTimer(FireTimerHandle, this, &ALSWeaponBase::FireOnce, TimeBetweenShots, true);
@@ -742,40 +842,101 @@ void ALSWeaponBase::OnRep_CurrentReserveAmmo()
 	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
 }
 
-void ALSWeaponBase::PlayImpactEffects(const FHitResult& Hit)
+void ALSWeaponBase::PlayImpactEffects(const FHitResult& Hit, bool bPlaySound)
 {
 	if (!GetWorld()) return;
-	
+
+	// 规范化弹道起点与物理飞行距离（规避 FVector_NetQuantize 与 FVector 三目运算符类型推导歧义）
+	FVector StartLoc = GetMuzzleLocation();
+	if (!Hit.TraceStart.IsNearlyZero())
+	{
+		StartLoc = FVector(Hit.TraceStart);
+	}
+	const float Distance = FVector::Dist(StartLoc, Hit.ImpactPoint);
+
+	// 近距离（< 15 米）或未开启飞行延时同步时，瞬间爆出受击火花，保证近身射击极致打击响应
+	if (!bUseDirectTraceEndTiming || Distance < InstantImpactThresholdDistance)
+	{
+		ExecuteImpactEffects(Hit, bPlaySound);
+		return;
+	}
+
+	// 中远距离射击时，依据真实子弹飞行时间 T = Distance / Speed 进行受击时钟同步
+	const float SpeedInCmPerSec = (BulletTracerSpeed > 2000.0f) ? BulletTracerSpeed : (BulletTracerSpeed * 100.0f);
+	const float SafeSpeed = FMath::Max(100.0f, SpeedInCmPerSec);
+	const float FlightTime = Distance / SafeSpeed;
+
+	if (FlightTime <= 0.001f)
+	{
+		ExecuteImpactEffects(Hit, bPlaySound);
+		return;
+	}
+
+	// 独立的延时受击定时器（使用弱引用 Lambda，确保多发连射与霰弹多弹丸互不覆盖且 Actor 销毁时不崩）
+	FTimerHandle DelayedImpactTimer;
+	GetWorld()->GetTimerManager().SetTimer(
+		DelayedImpactTimer,
+		FTimerDelegate::CreateWeakLambda(this, [this, Hit, bPlaySound]()
+		{
+			ExecuteImpactEffects(Hit, bPlaySound);
+		}),
+		FlightTime,
+		false
+	);
+}
+
+void ALSWeaponBase::ExecuteImpactEffects(const FHitResult& Hit, bool bPlaySound)
+{
+	if (!GetWorld()) return;
+
+	AActor* HitActor = Hit.GetActor();
+	// 核心判定：是否击中生物/角色/假人实体（排除墙体掩体）
+	const bool bHitCharacter = IsCharacterImpactTarget(HitActor);
+
+	// ══════════════════════════════════════════════════════════════
+	// 类别 A：击中活体角色（飙血 / 肉体受击反馈）
+	// ══════════════════════════════════════════════════════════════
+	if (bHitCharacter)
+	{
+		// 1. 播放肉体/飙血专用受击特效
+		SpawnImpactNiagaraWithParams(GetWorld(), FleshImpactNiagara, Hit);
+
+		// 2. 播放肉体入肉音效（多弹丸霰弹等场景可由调用方去重控制 bPlaySound）
+		if (bPlaySound)
+		{
+			if (FleshImpactSound)
+			{
+				UGameplayStatics::PlaySoundAtLocation(GetWorld(), FleshImpactSound, Hit.ImpactPoint);
+			}
+			else if (ImpactSound)
+			{
+				UGameplayStatics::PlaySoundAtLocation(GetWorld(), ImpactSound, Hit.ImpactPoint);
+			}
+		}
+
+		// 核心拦截：击中活体角色严禁触发混凝土白灰烟尘与贴花弹孔，杜绝身上挂石坑白雾的严重穿帮！
+		return;
+	}
+
+	// ══════════════════════════════════════════════════════════════
+	// 类别 B：击中环境掩体/墙壁/地面（混凝土与障碍物撞击表现）
+	// ══════════════════════════════════════════════════════════════
 	// 1. 在击中表面法线方向生成撞击火花/碎屑粒子（同时适配常规 Niagara 与 Lyra Array 系统）
 	if (ImpactNiagara)
 	{
-		if (UNiagaraComponent* ImpactComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), ImpactNiagara, Hit.ImpactPoint, Hit.ImpactNormal.Rotation()))
-		{
-			ImpactComp->SetVariableBool(FName("User.Trigger"), true);
-			ImpactComp->SetVariableInt(FName("User.NumberOfHits"), 1);
-			
-			TArray<FVector> ImpactPosArray;
-			ImpactPosArray.Add(Hit.ImpactPoint);
-			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition(ImpactComp, FName("User.ImpactPositions"), ImpactPosArray);
-			
-			TArray<FVector> ImpactNormArray;
-			ImpactNormArray.Add(Hit.ImpactNormal);
-			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(ImpactComp, FName("User.ImpactNormals"), ImpactNormArray);
-			
-			ImpactComp->Activate(true);
-		}
+		SpawnImpactNiagaraWithParams(GetWorld(), ImpactNiagara, Hit);
 	}
 	else if (ImpactEmitter)
 	{
 		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ImpactEmitter, Hit.ImpactPoint, Hit.ImpactNormal.Rotation());
 	}
-	
+
 	// 2. 播放撞击音效
-	if (ImpactSound)
+	if (bPlaySound && ImpactSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(GetWorld(), ImpactSound, Hit.ImpactPoint);
 	}
-	
+
 	// 3. 在击中表面附着弹孔贴花（支持最多同时存在 MaxDecalCount 个弹孔，先进先出循环复用）
 	if (ImpactDecalMaterial)
 	{
@@ -783,12 +944,13 @@ void ALSWeaponBase::PlayImpactEffects(const FHitResult& Hit)
 		DecalRotation.Roll = FMath::FRandRange(-180.0f, 180.0f);
 		UDecalComponent* SpawnedDecal = nullptr;
 
-		if (Hit.GetComponent())
+		// 检查击中组件是否仍然存活有效
+		if (Hit.Component.IsValid())
 		{
 			SpawnedDecal = UGameplayStatics::SpawnDecalAttached(
 				ImpactDecalMaterial,
 				DecalSize,
-				Hit.GetComponent(),
+				Hit.Component.Get(),
 				Hit.BoneName,
 				Hit.ImpactPoint,
 				DecalRotation,
@@ -833,45 +995,85 @@ void ALSWeaponBase::PlayImpactEffects(const FHitResult& Hit)
 void ALSWeaponBase::PlayTracerEffect(const FVector& StartLoc, const FVector& EndLoc)
 {
 	if (!GetWorld()) return;
-	
-	// 射线物理阻挡测试：如果中途有障碍物（墙体等），弹道精确止于墙面命中点
-	FHitResult ObstacleHit;
-	FCollisionQueryParams TraceParams;
-	TraceParams.AddIgnoredActor(this);
-	TraceParams.AddIgnoredActor(GetOwner());
-	
+
 	FVector VisualEnd = EndLoc;
-	if (GetWorld()->LineTraceSingleByChannel(ObstacleHit, StartLoc, EndLoc, ECC_Visibility, TraceParams))
+
+	// 若终点接近或等于最大射程（未决终点），执行物理障碍阻挡检测，确保弹道精确止于墙面/障碍物表面
+	if (FVector::DistSquared(StartLoc, EndLoc) >= FMath::Square(MaxRange * 0.95f))
 	{
-		VisualEnd = ObstacleHit.ImpactPoint;
+		FHitResult ObstacleHit;
+		FCollisionQueryParams TraceParams;
+		TraceParams.AddIgnoredActor(this);
+		TraceParams.AddIgnoredActor(GetOwner());
+		if (GetWorld()->LineTraceSingleByChannel(ObstacleHit, StartLoc, EndLoc, ECC_Visibility, TraceParams))
+		{
+			VisualEnd = ObstacleHit.ImpactPoint;
+		}
 	}
 
-	// 基础保底：始终绘制高亮金色瞬时射线（持续 0.05 秒），确保任何视角都能看到子弹飞行轨迹！
-	DrawDebugLine(GetWorld(), StartLoc, VisualEnd, FColor(255, 215, 0), false, 0.05f, 0, 1.5f);
+	// 仅在明确开启开发者调试时绘制瞬时线，严禁在正常游戏时出现实心黄色棍子！
+	if (bEnableWeaponDebugDraw)
+	{
+		DrawDebugLine(GetWorld(), StartLoc, VisualEnd, FColor(255, 215, 0), false, 0.05f, 0, 1.5f);
+	}
 
-	// 1. Niagara 曳光粒子（同时兼容普通向量与 Lyra 数组系统）
+	// 计算物理飞行距离与弹道飞行速度（单位换算：米/秒 转 厘米/秒，自动防呆兼容）
+	const float Distance = FVector::Dist(StartLoc, VisualEnd);
+	const float SpeedInCmPerSec = (BulletTracerSpeed > 2000.0f) ? BulletTracerSpeed : (BulletTracerSpeed * 100.0f);
+	const float SafeSpeed = FMath::Max(100.0f, SpeedInCmPerSec);
+	const float FlightTime = Distance / SafeSpeed;
+	const FVector FlyDirection = (VisualEnd - StartLoc).GetSafeNormal();
+	const FRotator FlyRotation = FlyDirection.Rotation();
+
+	// 1. Niagara 战术级飞行曳光系统（发光体弹头 + 长度受控的动态衰减烟尾）
 	if (TracerNiagara)
 	{
-		if (UNiagaraComponent* NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), TracerNiagara, StartLoc))
+		if (UNiagaraComponent* NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(),
+			TracerNiagara,
+			StartLoc,
+			FlyRotation,
+			FVector(1.0f),
+			true,   // bAutoDestroy
+			false)) // bAutoActivate = false (先灌注参数再激活，杜绝首帧空数组闪退)
 		{
+			// 空间两极传递
+			NiagaraComp->SetVariablePosition(FName("User.MuzzlePosition"), StartLoc);
 			NiagaraComp->SetVariableVec3(TracerNiagaraParamName, VisualEnd);
 			NiagaraComp->SetVariableVec3(FName("User.TraceEnd"), VisualEnd);
-			NiagaraComp->SetVariablePosition(FName("User.MuzzlePosition"), StartLoc);
 			NiagaraComp->SetVariableBool(FName("User.Trigger"), true);
-			
+
+			// Lyra 弹道数组规范兼容
 			TArray<FVector> ImpactPosArray;
 			ImpactPosArray.Add(VisualEnd);
 			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition(NiagaraComp, FName("User.ImpactPositions"), ImpactPosArray);
-			
+
+			// 运动学速度传导（兼容多种参数命名）
+			NiagaraComp->SetVariableFloat(FName("User.BulletTracerSpeed"), SafeSpeed);
+			NiagaraComp->SetVariableFloat(FName("User.TracerSpeed"), SafeSpeed);
+			NiagaraComp->SetVariableFloat(FName("User.Speed"), SafeSpeed);
+			NiagaraComp->SetVariableFloat(FName("Speed"), SafeSpeed);
+			NiagaraComp->SetVariableVec3(FName("User.Velocity"), FlyDirection * SafeSpeed);
+
+			// 尾迹 Ribbon 长度与寿命传导（米转厘米）
+			const float RibbonLengthCm = TracerRibbonLength * 100.0f;
+			NiagaraComp->SetVariableFloat(FName("User.TracerRibbonLength"), RibbonLengthCm);
+			NiagaraComp->SetVariableFloat(FName("User.RibbonLength"), RibbonLengthCm);
+			NiagaraComp->SetVariableFloat(FName("User.TracerLength"), RibbonLengthCm);
+			NiagaraComp->SetVariableFloat(FName("TracerLength"), RibbonLengthCm);
+			NiagaraComp->SetVariableFloat(FName("User.Lifetime"), FlightTime);
+			NiagaraComp->SetVariableFloat(FName("User.Distance"), Distance);
+
+			// 所有参数注入完毕后统一激活粒子，立刻喷射高速飞行弹道
 			NiagaraComp->Activate(true);
 		}
 		return;
 	}
 
-	// 2. Cascade 曳光粒子
+	// 2. Cascade 传统粒子（备用降级路径）
 	if (TracerEmitter)
 	{
-		if (UParticleSystemComponent* TracerComp = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), TracerEmitter, StartLoc))
+		if (UParticleSystemComponent* TracerComp = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), TracerEmitter, StartLoc, FlyRotation))
 		{
 			TracerComp->SetVectorParameter(TracerTargetParamName, VisualEnd);
 		}
@@ -926,6 +1128,65 @@ void ALSWeaponBase::InitializeFromDataAsset(const ULSWeaponDataAsset* InDataAsse
 		{
 			WeaponMesh->SetSkeletalMesh(InDataAsset->WeaponMeshAsset.Get());
 		}
+	}
+
+	// 战术飞行曳光与延时参数
+	BulletTracerSpeed = InDataAsset->BulletTracerSpeed;
+	TracerRibbonLength = InDataAsset->TracerRibbonLength;
+	bUseDirectTraceEndTiming = InDataAsset->bUseDirectTraceEndTiming;
+
+	if (InDataAsset->TracerNiagara.IsValid())
+	{
+		TracerNiagara = InDataAsset->TracerNiagara.Get();
+	}
+	else if (!InDataAsset->TracerNiagara.IsNull())
+	{
+		TracerNiagara = InDataAsset->TracerNiagara.LoadSynchronous();
+	}
+
+	if (InDataAsset->MuzzleFlashNiagara.IsValid())
+	{
+		MuzzleFlashNiagara = InDataAsset->MuzzleFlashNiagara.Get();
+	}
+	else if (!InDataAsset->MuzzleFlashNiagara.IsNull())
+	{
+		MuzzleFlashNiagara = InDataAsset->MuzzleFlashNiagara.LoadSynchronous();
+	}
+
+	if (InDataAsset->ImpactNiagara.IsValid())
+	{
+		ImpactNiagara = InDataAsset->ImpactNiagara.Get();
+	}
+	else if (!InDataAsset->ImpactNiagara.IsNull())
+	{
+		ImpactNiagara = InDataAsset->ImpactNiagara.LoadSynchronous();
+	}
+
+	if (InDataAsset->FleshImpactNiagara.IsValid())
+	{
+		FleshImpactNiagara = InDataAsset->FleshImpactNiagara.Get();
+	}
+	else if (!InDataAsset->FleshImpactNiagara.IsNull())
+	{
+		FleshImpactNiagara = InDataAsset->FleshImpactNiagara.LoadSynchronous();
+	}
+
+	if (InDataAsset->FleshImpactSound.IsValid())
+	{
+		FleshImpactSound = InDataAsset->FleshImpactSound.Get();
+	}
+	else if (!InDataAsset->FleshImpactSound.IsNull())
+	{
+		FleshImpactSound = InDataAsset->FleshImpactSound.LoadSynchronous();
+	}
+
+	if (InDataAsset->ImpactDecalMaterial.IsValid())
+	{
+		ImpactDecalMaterial = InDataAsset->ImpactDecalMaterial.Get();
+	}
+	else if (!InDataAsset->ImpactDecalMaterial.IsNull())
+	{
+		ImpactDecalMaterial = InDataAsset->ImpactDecalMaterial.LoadSynchronous();
 	}
 
 	// 广播一次弹药更新，确保 HUD 同步

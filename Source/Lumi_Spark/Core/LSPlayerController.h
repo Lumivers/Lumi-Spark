@@ -105,6 +105,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Sensitivity")
 	float ADSSensitivityMultiplier = 0.6f;//开镜灵敏度衰减倍率
 
+	// 开火按下瞬间是否强行瞬移对齐角色水平朝向（与 ALS 平滑转身混用容易产生回拉扯感，默认关闭交由 ALS Aiming 姿态自然跟随）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Input|Combat")
+	bool bSnapCharacterYawOnFireStart = false;
+
 	//6，模式切换接口
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SwitchToGameInputMode();

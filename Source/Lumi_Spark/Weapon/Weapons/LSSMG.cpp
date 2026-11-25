@@ -28,6 +28,11 @@ ALSSMG::ALSSMG()
 	SpreadIncreasePerShot = 0.12f;
 	SpreadRecoveryRate = 6.0f;
 	ADSSpreadMultiplier = 0.5f;
+
+	// 冲锋枪战术飞行弹道参数（680 m/s 亚音速初速，1.5 米紧凑尾迹，密集泼水张力）
+	BulletTracerSpeed = 680.0f;
+	TracerRibbonLength = 1.5f;
+	bUseDirectTraceEndTiming = true;
 }
 
 float ALSSMG::CalculateDamageDropoff(float Distance) const

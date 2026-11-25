@@ -74,6 +74,14 @@ protected:
 	//是否启用停火后自动回正
 	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Recovery")
 	bool bEnableRecovery = true;
+
+	// 是否开启开火后坐力多帧平滑推入（避免单帧硬抬打断甩枪平滑手感）
+	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Smoothing")
+	bool bUseSmoothRecoilApply = true;
+
+	// 开火后坐力平滑推入视角的插值速率（值越大越脆，推荐 20~35）
+	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Smoothing", meta = (ClampMin = "1.0", EditCondition = "bUseSmoothRecoilApply"))
+	float RecoilApplyInterpSpeed = 28.0f;
 	
 private:
 	//当前连射第几发
@@ -84,6 +92,9 @@ private:
 	
 	//累积尚未回正的 (Yaw, Pitch) 偏移量
 	FVector2D AccumulatedRecoil = FVector2D::ZeroVector;
+
+	// 待平滑推入视角的缓冲后坐力偏移量
+	FVector2D PendingRecoilOffset = FVector2D::ZeroVector;
 	
 	//获取拥有该武器/组件的玩家控制器
 	APlayerController* GetPlayerController() const;
