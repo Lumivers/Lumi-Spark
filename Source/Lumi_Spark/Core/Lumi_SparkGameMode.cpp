@@ -1,4 +1,5 @@
 #include "Lumi_SparkGameMode.h"
+#include "Core/LSDebugHelpers.h"
 #include "LSPlayerController.h"
 #include "LSGameState.h"
 #include "Character/LSCharacterBase.h"
@@ -82,7 +83,7 @@ void ALumi_SparkGameMode::HandleRaidWipe()
 		EventBus->OnRaidWiped.Broadcast();
 	}
 	
-	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("⚠️ 团灭！"));
+	LS_SCREEN_DEBUG(-1, 5.0f, FColor::Red, TEXT("⚠️ 团灭！"));
 }
 
 void ALumi_SparkGameMode::HandlePlayerExtraction(ALSPlayerController* PC, const FLSRaidReport& Report)

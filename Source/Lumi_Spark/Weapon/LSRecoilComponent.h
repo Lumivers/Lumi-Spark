@@ -43,6 +43,9 @@ public:
 	// 获取后坐力弹道序列
 	UFUNCTION(BlueprintPure, Category = "Weapon|Recoil")
 	const TArray<FVector2D>& GetRecoilPattern() const { return RecoilPattern; }
+
+	// 批量配置武器默认后坐力参数（供武器子类构造函数初始化差异化手感，仍可被蓝图覆写）
+	void ConfigureRecoilDefaults(const TArray<FVector2D>& InPattern, float InMultiplier, float InMaxVerticalPitch, float InADSRecoilMultiplier, float InRecoverySpeed, bool bInEnableRecovery, float InRandomSpreadFactor = 0.08f);
 	
 protected:
 	//后坐力模式配置

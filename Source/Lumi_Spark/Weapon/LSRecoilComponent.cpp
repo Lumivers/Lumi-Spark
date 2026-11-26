@@ -1,4 +1,5 @@
 ﻿#include "LSRecoilComponent.h"
+#include "Core/LSDebugHelpers.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 
@@ -18,6 +19,20 @@ ULSRecoilComponent::ULSRecoilComponent()
 		FVector2D(-0.14f, 0.05f), // 第7发：垂直几乎见顶
 		FVector2D(0.15f,  0.00f)  // 第8发：垂直彻底封顶，只在水平横向拉扯
 	};
+}
+
+void ULSRecoilComponent::ConfigureRecoilDefaults(const TArray<FVector2D>& InPattern, float InMultiplier, float InMaxVerticalPitch, float InADSRecoilMultiplier, float InRecoverySpeed, bool bInEnableRecovery, float InRandomSpreadFactor)
+{
+	if (!InPattern.IsEmpty())
+	{
+		RecoilPattern = InPattern;
+	}
+	RecoilMultiplier = InMultiplier;
+	MaxVerticalPitch = InMaxVerticalPitch;
+	ADSRecoilMultiplier = InADSRecoilMultiplier;
+	RecoverySpeed = InRecoverySpeed;
+	bEnableRecovery = bInEnableRecovery;
+	RandomSpreadFactor = InRandomSpreadFactor;
 }
 
 void ULSRecoilComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -146,7 +161,7 @@ void ULSRecoilComponent::ApplyRecoil(bool bIsADS)
 	AccumulatedRecoil += ShotOffset;
 	CurrentPatternIndex++;
 
-	GEngine->AddOnScreenDebugMessage(9999, 0.4f, FColor::Orange, 
+	LS_SCREEN_DEBUG(9999, 0.4f, FColor::Orange, 
 		FString::Printf(TEXT("💥 [后坐力] 第%d发 | 垂直抬升=%.2f, 水平偏转=%.2f | 累计=%.2f/%.2f"), 
 			CurrentPatternIndex, ShotOffset.Y, ShotOffset.X, AccumulatedRecoil.Y, EffectiveMaxPitch));
 }
@@ -212,6 +227,6 @@ void ULSRecoilComponent::ApplyInputToController(float PitchDelta, float YawDelta
 	}
 	else
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("❌ [后坐力] 获取 PlayerController 失败！"));
+		LS_SCREEN_DEBUG(-1, 2.0f, FColor::Red, TEXT("❌ [后坐力] 获取 PlayerController 失败！"));
 	}
 }

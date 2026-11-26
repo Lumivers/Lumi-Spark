@@ -13,6 +13,24 @@ class ULSHealthComponent;
 class ULSStaminaComponent;
 class ULSEnergyComponent;
 class UImage;
+class UProgressBar;
+class UTextBlock;
+struct FLSRaidReport;
+
+// 局内限量伤害跳字运行时条目
+USTRUCT()
+struct FLSHUDDamagePopEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TextWidget = nullptr;
+
+	FVector WorldLocation = FVector::ZeroVector;
+	FLinearColor BaseColor = FLinearColor::White;
+	float RemainingTime = 0.0f;
+	float TotalLifeTime = 0.65f;
+};
 
 UCLASS(Abstract)
 class LUMI_SPARK_API ULSHUDWidget : public UUserWidget
@@ -23,6 +41,7 @@ public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "HUD|Crosshair")
 	float GetCurrentSpreadRatio() const;
@@ -181,6 +200,84 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|Crosshair")
 	bool bEnableProceduralCrosshair = true;
 
+	// ─── 霰弹枪战术圆形准星配置 (ELSCrosshairStyle::ShotgunCircle) ───
+	// 霰弹准星是否显示中心瞄准小点
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|Crosshair|Shotgun")
+	bool bShowShotgunCenterDot = true;
+
+	// 霰弹腰射静止基础圆环半径（像素）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|Crosshair|Shotgun", meta = (ClampMin = "12.0"))
+	float ShotgunHipfireBaseRadius = 40.0f;
+
+	// 霰弹腰射最大散射圆环半径（像素）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|Crosshair|Shotgun", meta = (ClampMin = "16.0"))
+	float ShotgunHipfireMaxRadius = 64.0f;
+
+	// 霰弹开镜肩射静止基础圆环半径（像素，右键收紧弹道）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|Crosshair|Shotgun", meta = (ClampMin = "10.0"))
+	float ShotgunADSBaseRadius = 26.0f;
+
+	// 霰弹开镜肩射最大散射圆环半径（像素）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|Crosshair|Shotgun", meta = (ClampMin = "12.0"))
+	float ShotgunADSMaxRadius = 42.0f;
+
+	// 霰弹圆形准星线条粗细（像素）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|Crosshair|Shotgun", meta = (ClampMin = "1.0", ClampMax = "6.0"))
+	float ShotgunCircleThickness = 2.0f;
+
+	// 45° 对角线留白缺口角度（度），让四段弧线框住扩散区同时给 HitMarker 留出清晰空间
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|Crosshair|Shotgun", meta = (ClampMin = "0.0", ClampMax = "40.0"))
+	float ShotgunCircleArcGapDegrees = 18.0f;
+
+	// 每段圆弧的折线分段数（越大越圆滑）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|Crosshair|Shotgun", meta = (ClampMin = "4", ClampMax = "24"))
+	int32 ShotgunCircleSegmentsPerArc = 10;
+
+	// 霰弹圆形准星颜色与不透明度
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|Crosshair|Shotgun")
+	FLinearColor ShotgunCircleColor = FLinearColor(1.0f, 1.0f, 1.0f, 0.9f);
+
+	// 命中音效最小触发间隔（秒，防止霰弹 8 弹丸同帧命中叠音炸耳）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|HitMarker", meta = (ClampMin = "0.0"))
+	float HitSoundCooldown = 0.04f;
+
+	// ─── 限量伤害跳字设置 ───
+	// 是否开启屏幕限量伤害跳字
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|DamagePop")
+	bool bEnableFloatingDamagePop = true;
+
+	// 画面内同时存在的最大伤害跳字数量（超过时按生成顺序淘汰最早一条，FIFO）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|DamagePop", meta = (ClampMin = "1", ClampMax = "10"))
+	int32 MaxDamagePopCount = 3;
+
+	// 单条伤害跳字存活时间（秒）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|DamagePop", meta = (ClampMin = "0.15", ClampMax = "3.0"))
+	float DamagePopLifeTime = 0.65f;
+
+	// 伤害跳字在世界空间向上飘升速度（cm/s）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|DamagePop", meta = (ClampMin = "0.0"))
+	float DamagePopFloatSpeed = 72.0f;
+
+	// 普通命中跳字字号
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|DamagePop", meta = (ClampMin = "8", ClampMax = "64"))
+	int32 DamagePopNormalFontSize = 20;
+
+	// 暴击/爆头跳字字号
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|DamagePop", meta = (ClampMin = "8", ClampMax = "72"))
+	int32 DamagePopCritFontSize = 26;
+
+	// 普通命中跳字颜色
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|DamagePop")
+	FLinearColor DamagePopNormalColor = FLinearColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+	// 暴击/爆头跳字颜色（亮金橙，醒目不遮挡准星）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|DamagePop")
+	FLinearColor DamagePopCritColor = FLinearColor(1.0f, 0.82f, 0.16f, 1.0f);
+
+	// 跳字生成随机散布半径（X: 水平半径 cm, Y: 竖直高度附加随机范围 cm）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|DamagePop")
+	FVector2D DamagePopJitterRadius = FVector2D(22.0f, 18.0f);
+
 	// 命中标记斜线厚度（像素，默认 2.0，与准星线条保持一致）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HUD|HitMarker")
 	float HitMarkerLineThickness = 2.0f;
@@ -215,6 +312,37 @@ public:
 	// 主动触发命中标记闪现（供 C++ 与蓝图统一调用）
 	UFUNCTION(BlueprintCallable, Category = "HUD|HitMarker")
 	void TriggerHitMarker(bool bIsHeadshot);
+
+	// 更新局内撤离倒计时条（供 PlayerController 撤离 RPC 直接驱动，免去屏幕左上角调试文字）
+	UFUNCTION(BlueprintCallable, Category = "HUD|Extraction")
+	void UpdateExtractionProgress(const FText& PointName, float Progress, float RemainingSeconds);
+
+	// 隐藏局内撤离倒计时条（离开撤离区时调用）
+	UFUNCTION(BlueprintCallable, Category = "HUD|Extraction")
+	void HideExtractionProgress();
+
+	// 显示撤离成功结算横幅
+	UFUNCTION(BlueprintCallable, Category = "HUD|Extraction")
+	void ShowExtractionSuccess(const FLSRaidReport& Report);
+
+protected:
+	// 初始化撤离提示与进度条控件（若蓝图未手动摆放则自动构建）
+	void SetupExtractionHUD();
+
+	// 生成一条先入先出限量伤害跳字
+	void SpawnFloatingDamagePop(const FLSDamageContext& DamageContext);
+
+	// 逐帧更新所有存活伤害跳字的世界投影、上浮与淡出
+	void UpdateFloatingDamagePops(float DeltaTime);
+
+	// 同步单条跳字的屏幕坐标与透明度（在屏幕视野外时自动隐藏）
+	bool UpdateDamagePopScreenTransform(const FLSHUDDamagePopEntry& Entry, float Alpha) const;
+
+	// 从对象池借用或新建一个跳字文本控件
+	UTextBlock* AcquireDamagePopTextBlock();
+
+	// 回收过期或被淘汰的跳字控件回池
+	void RecycleDamagePopEntry(const FLSHUDDamagePopEntry& Entry);
 
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Ammo")
@@ -284,4 +412,24 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ALSWeaponBase> CurrentBoundWeapon = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ExtractionTitleText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UProgressBar> ExtractionProgressBar = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ExtractionResultText = nullptr;
+
+	FText CachedExtractionPointName;
+	double LastHitSoundTime = -1.0;
+
+	// 按生成顺序排列的存活伤害跳字队列（索引 0 为最早生成，超出 MaxDamagePopCount 时优先淘汰）
+	UPROPERTY(Transient)
+	TArray<FLSHUDDamagePopEntry> ActiveDamagePops;
+
+	// 已构建的可复用跳字控件池
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> DamagePopWidgetPool;
 };

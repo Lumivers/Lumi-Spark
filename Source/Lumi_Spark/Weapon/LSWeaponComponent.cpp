@@ -1,4 +1,5 @@
 #include "LSWeaponComponent.h"
+#include "Core/LSDebugHelpers.h"
 #include "Weapon/LSWeaponBase.h"
 #include "Weapon/Weapons/LSRifle.h"
 #include "Weapon/Weapons/LSShotgun.h"
@@ -128,7 +129,7 @@ void ULSWeaponComponent::StartFire()
 	}
 	else
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Red, 
+		LS_SCREEN_DEBUG(-1, 4.0f, FColor::Red, 
 			FString::Printf(TEXT("❌ CurrentWeapon 为空！Owner=%s | Comp=%p | DefaultClass=%s"),
 				GetOwner() ? *GetOwner()->GetName() : TEXT("None"),
 				this,
@@ -177,10 +178,7 @@ void ULSWeaponComponent::EquipPrimaryWeapon()
 	CurrentWeaponIndex = 0;
 	OnWeaponChanged.Broadcast(CurrentWeapon);
 
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(5512, 2.0f, FColor::Orange, TEXT("🔫 已切换至主武器 [1 号位]"));
-	}
+	LS_SCREEN_DEBUG(5512, 2.0f, FColor::Orange, TEXT("🔫 已切换至主武器 [1 号位]"));
 }
 
 void ULSWeaponComponent::EquipSecondaryWeapon()
@@ -201,10 +199,7 @@ void ULSWeaponComponent::EquipSecondaryWeapon()
 	CurrentWeaponIndex = 1;
 	OnWeaponChanged.Broadcast(CurrentWeapon);
 
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(5512, 2.0f, FColor::Cyan, TEXT("🔫 已切换至副武器 [2 号位]"));
-	}
+	LS_SCREEN_DEBUG(5512, 2.0f, FColor::Cyan, TEXT("🔫 已切换至副武器 [2 号位]"));
 }
 
 void ULSWeaponComponent::ToggleWeapon()

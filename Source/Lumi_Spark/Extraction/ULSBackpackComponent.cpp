@@ -1,4 +1,5 @@
 #include "Extraction/ULSBackpackComponent.h"
+#include "Core/LSDebugHelpers.h"
 
 ULSBackpackComponent::ULSBackpackComponent()
 {
@@ -322,5 +323,5 @@ void ULSBackpackComponent::ProcessFailedExtraction(TArray<FLSInventoryItem>& Out
 	// 2. 安全箱内的物品 100% 绝对保留（不作任何清空操作）
 	OnInventoryChanged.Broadcast();
 
-	GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Red, FString::Printf(TEXT("💀 【非正常撤离/战死】除安全箱外所有物资已全部遗失！掉落件数: %d"), OutDroppedLoot.Num()));
+	LS_SCREEN_DEBUG(-1, 4.0f, FColor::Red, FString::Printf(TEXT("💀 【非正常撤离/战死】除安全箱外所有物资已全部遗失！掉落件数: %d"), OutDroppedLoot.Num()));
 }

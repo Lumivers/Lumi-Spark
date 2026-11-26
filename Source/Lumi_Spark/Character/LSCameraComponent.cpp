@@ -1,4 +1,5 @@
 #include "LSCameraComponent.h"
+#include "Core/LSDebugHelpers.h"
 #include "GameFramework/Character.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -198,7 +199,7 @@ void ULSCameraComponent::AdjustCameraZoom(float ZoomDelta)
 		TargetArmLength = CustomTPSArmLength;
 		if (SpringArm)
 		{
-			GEngine->AddOnScreenDebugMessage(54321, 1.5f, FColor::Yellow, FString::Printf(TEXT("🔭 [Camera] 臂长已调整: %.0f (范围: %.0f~%.0f)"), TargetArmLength, MinArmLength, MaxArmLength));
+			LS_SCREEN_DEBUG(54321, 1.5f, FColor::Yellow, FString::Printf(TEXT("🔭 [Camera] 臂长已调整: %.0f (范围: %.0f~%.0f)"), TargetArmLength, MinArmLength, MaxArmLength));
 		}
 	}
 }

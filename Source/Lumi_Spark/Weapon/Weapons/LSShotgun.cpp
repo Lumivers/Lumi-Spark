@@ -40,6 +40,26 @@ ALSShotgun::ALSShotgun()
 	BulletTracerSpeed = 450.0f;
 	TracerRibbonLength = 1.2f;
 	bUseDirectTraceEndTiming = true;
+
+	// 重型霰弹枪枪身程序化后坐力回冲（沉重单发后挫与枪口上跳，与脊椎抖动同频）
+	RecoilKickDistance = 2.6f;
+	RecoilKickPitch = 2.5f;
+	RecoilKickYaw = 0.75f;
+	RecoilRecoverySpeed = 14.0f;
+	MaxRecoilKickDistance = 4.2f;
+	ADSRecoilKickMultiplier = 0.6f;
+
+	// 霰弹枪专用镜头后坐力：高单发上抬 + 明显随机横摆（默认开启回正以保持泵动节奏，可在 BP_Shotgun 自由调整）
+	if (RecoilComponent)
+	{
+		const TArray<FVector2D> ShotgunPattern = {
+			FVector2D(0.15f, 2.20f),
+			FVector2D(-0.25f, 2.00f),
+			FVector2D(0.30f, 1.80f),
+			FVector2D(-0.20f, 1.60f)
+		};
+		RecoilComponent->ConfigureRecoilDefaults(ShotgunPattern, 1.0f, 10.0f, 0.65f, 6.5f, true, 0.22f);
+	}
 }
 
 void ALSShotgun::FireOnce()
@@ -89,16 +109,19 @@ void ALSShotgun::FireOnce()
 	const float SpreadAngle = GetFinalSpreadAngle(bIsADS);
 	const FVector AimDir = CameraRotation.Vector();
 
-	// 2. 权威端扣除 1 发大口径弹药
-	if (HasAuthority())
+	// 2. 权威端扣除 1 发大口径弹药（无限弹药模式下不扣）
+	if (!bInfiniteAmmo)
 	{
-		CurrentAmmo--;
-		OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
-	}
-	else
-	{
-		CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
-		OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
+		if (HasAuthority())
+		{
+			CurrentAmmo--;
+			OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
+		}
+		else
+		{
+			CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
+			OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
+		}
 	}
 
 	// 3. 循环发射 8 颗独立弹丸

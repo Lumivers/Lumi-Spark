@@ -1,4 +1,5 @@
 #include "LSEnemyBase.h"
+#include "Core/LSDebugHelpers.h"
 #include "LSAIController.h"
 #include "LSEnemyDataAsset.h"
 #include "Character/LSHealthComponent.h"
@@ -31,20 +32,15 @@ ALSEnemyBase::ALSEnemyBase()
 	ShieldComponent = CreateDefaultSubobject<ULSShieldComponent>(TEXT("ShieldComp"));
 	ThreatComponent = CreateDefaultSubobject<ULSThreatComponent>(TEXT("ThreatComp"));
 
-	// 头顶血条组件装配（面向屏幕摄像机，免受视距与朝向旋转畸变）
+	// 头顶血条组件装配（挂载至胶囊体正上方 + 屏幕空间绘制，避免骨骼旋转导致血条歪斜）
 	HealthBarComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarComp"));
-	if (GetMesh())
-	{
-		HealthBarComponent->SetupAttachment(GetMesh(), FName("head"));
-		HealthBarComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 35.0f));
-	}
-	else
-	{
-		HealthBarComponent->SetupAttachment(RootComponent);
-		HealthBarComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 110.0f));
-	}
+	HealthBarComponent->SetupAttachment(RootComponent);
+	HealthBarComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 116.0f));
+	HealthBarComponent->SetWidgetClass(ULSFloatingHealthBarWidget::StaticClass());
 	HealthBarComponent->SetWidgetSpace(EWidgetSpace::Screen);
-	HealthBarComponent->SetDrawSize(FVector2D(120.0f, 10.0f));
+	HealthBarComponent->SetDrawAtDesiredSize(false);
+	HealthBarComponent->SetDrawSize(HealthBarDrawSize);
+	HealthBarComponent->SetPivot(FVector2D(0.5f, 0.5f));
 	HealthBarComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	// 敌人碰撞通道配置：胶囊体与骨骼网格体确保阻挡武器射线 Visibility
@@ -179,7 +175,7 @@ bool ALSEnemyBase::ExecuteXenoBlade(AActor* Interactor)
 	OnXenoBladeExecuted.Broadcast(this, Interactor, ExecutionDamage);
 
 	FString RankName = DamageRatio >= 1.0f ? TEXT("普通小怪") : (DamageRatio >= 0.5f ? TEXT("精英怪") : TEXT("首领Boss"));
-	GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Red, FString::Printf(TEXT("【战术处决】对【%s】造成 %.0f 真实伤害（%.0f%% 生命），护盾已破除！"), *RankName, ExecutionDamage, DamageRatio * 100.0f));
+	LS_SCREEN_DEBUG(-1, 3.5f, FColor::Red, FString::Printf(TEXT("【战术处决】对【%s】造成 %.0f 真实伤害（%.0f%% 生命），护盾已破除！"), *RankName, ExecutionDamage, DamageRatio * 100.0f));
 
 	return true;
 }
@@ -236,6 +232,42 @@ void ALSEnemyBase::BeginPlay()
 
 		SetCombatMovementSpeed(false);
 	}
+
+	// 4. 装配并初始化头顶常驻绿血条（Dedicated Server 无需构建 UI 控件）
+	if (HealthBarComponent && GetNetMode() != NM_DedicatedServer)
+	{
+		// 统一挂回胶囊体并依据缩放后半高自动落在头顶上方，避免旧蓝图残留 head 骨骼附着导致的轴向偏移
+		if (GetCapsuleComponent())
+		{
+			HealthBarComponent->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+			HealthBarComponent->SetRelativeLocation(FVector(0.0f, 0.0f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + HealthBarHeadClearance));
+		}
+
+		HealthBarComponent->SetWidgetSpace(EWidgetSpace::Screen);
+		HealthBarComponent->SetDrawAtDesiredSize(false);
+		HealthBarComponent->SetDrawSize(HealthBarDrawSize);
+		HealthBarComponent->SetPivot(FVector2D(0.5f, 0.5f));
+
+		if (!HealthBarComponent->GetWidgetClass())
+		{
+			HealthBarComponent->SetWidgetClass(ULSFloatingHealthBarWidget::StaticClass());
+		}
+		if (!HealthBarComponent->GetUserWidgetObject())
+		{
+			HealthBarComponent->InitWidget();
+		}
+
+		if (ULSFloatingHealthBarWidget* BarWidget = Cast<ULSFloatingHealthBarWidget>(HealthBarComponent->GetUserWidgetObject()))
+		{
+			if (HealthComponent)
+			{
+				BarWidget->UpdateHealth(HealthComponent->GetCurrentHealth(), HealthComponent->GetMaxHealth());
+			}
+		}
+
+		HealthBarComponent->SetVisibility(true);
+		HealthBarComponent->UpdateWidget();
+	}
 }
 
 float ALSEnemyBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
@@ -290,7 +322,7 @@ float ALSEnemyBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
 	{
 		HealthComponent->TakeDamage(AdjustedDamage, DmgElement, DamageCauser, EventInstigator);
 
-		if (GEngine)
+		if (GEngine && LSDebug::IsScreenDebugEnabled())
 		{
 			const float CurHP = HealthComponent->GetCurrentHealth();
 			const float MaxHP = HealthComponent->GetMaxHealth();
@@ -366,6 +398,10 @@ void ALSEnemyBase::HandleHealthChanged(float CurrentHealth, float MaxHealth, boo
 	// 1. 同步刷新 UWidgetComponent 挂载的头顶血条控件
 	if (HealthBarComponent)
 	{
+		if (!HealthBarComponent->GetUserWidgetObject())
+		{
+			HealthBarComponent->InitWidget();
+		}
 		if (ULSFloatingHealthBarWidget* BarWidget = Cast<ULSFloatingHealthBarWidget>(HealthBarComponent->GetUserWidgetObject()))
 		{
 			BarWidget->UpdateHealth(CurrentHealth, MaxHealth);
@@ -373,7 +409,7 @@ void ALSEnemyBase::HandleHealthChanged(float CurrentHealth, float MaxHealth, boo
 	}
 
 	// 2. 3D 即时头顶紧凑血条显示（受击瞬间在头顶清晰显现，免去任何手动蓝图配置）
-	if (bIsDamage && CurrentHealth > 0.0f)
+	if (bIsDamage && CurrentHealth > 0.0f && LSDebug::IsWorldHealthTextEnabled())
 	{
 		FVector HeadPos = GetActorLocation() + FVector(0.0f, 0.0f, 95.0f);
 		if (GetMesh() && GetMesh()->DoesSocketExist(FName("head")))
@@ -403,10 +439,11 @@ void ALSEnemyBase::OnDeath(AActor* Killer)
 	// 2. 掉落元素能量微粒与视听反馈
 	SpawnEnergyParticles(Killer);
 
-	// 3. 隐藏头顶血条
+	// 3. 隐藏头顶血条（同步刷新屏幕组件避免死亡当帧残留一帧）
 	if (HealthBarComponent)
 	{
 		HealthBarComponent->SetVisibility(false);
+		HealthBarComponent->UpdateWidget();
 	}
 
 	// 4. 播放死亡音效（Dedicated Server 跳过本地音频）
@@ -552,7 +589,7 @@ void ALSEnemyBase::SpawnEnergyParticles(AActor* Killer)
 	}
 
 	// 3. 屏幕单行击杀确认刷新（Key 2003 原地刷新，与 2000开火/2001命中/2002生命 组成完整打击闭环）
-	if (GEngine)
+	if (GEngine && LSDebug::IsScreenDebugEnabled())
 	{
 #if WITH_EDITOR
 		const FString DisplayName = GetActorLabel();

@@ -87,8 +87,8 @@ void ULSAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 	const FRotator AimRotation = Character->GetBaseAimRotation();
 	const FRotator DeltaRot = UKismetMathLibrary::NormalizedDeltaRotator(AimRotation, ActorRotation);
-	// 战斗对齐：无论是右键开镜瞄准 (bIsAiming) 还是左键开火射击 (bIsFiring)，均激活身体与脊椎俯仰对齐准星！
-	const bool bCombatActive = bIsAiming || bIsFiring;
+	// 战斗对齐：右键开镜 (bIsAiming)、正在开火 (bIsFiring) 或处于停火举枪保持期 (IsCombatFacingActive) 时，均维持身体与脊椎俯仰对齐准星
+	const bool bCombatActive = bIsAiming || bIsFiring || Character->IsCombatFacingActive();
 	const float TargetPitch = bCombatActive ? DeltaRot.Pitch : 0.0f;
 	const float TargetYaw = bCombatActive ? DeltaRot.Yaw : 0.0f;
 	if (bIsFiring)

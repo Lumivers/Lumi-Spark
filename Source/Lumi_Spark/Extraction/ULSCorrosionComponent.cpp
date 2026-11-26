@@ -1,4 +1,5 @@
 #include "Extraction/ULSCorrosionComponent.h"
+#include "Core/LSDebugHelpers.h"
 #include "Net/UnrealNetwork.h"
 #include "Character/LSCharacterBase.h"
 #include "Character/LSHealthComponent.h"
@@ -55,7 +56,7 @@ void ULSCorrosionComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 			bIsOverloaded = true;
 			OverloadDamageTimer = 0.0f;
 			OnCorrosionOverloadChanged.Broadcast(true);
-			GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Red, TEXT("🚨 【地脉侵蚀过载】侵蚀度达到 100%！生命回复上限压制至 30%，进入软狂暴持续扣血！"));
+			LS_SCREEN_DEBUG(-1, 4.0f, FColor::Red, TEXT("🚨 【地脉侵蚀过载】侵蚀度达到 100%！生命回复上限压制至 30%，进入软狂暴持续扣血！"));
 		}
 	}
 
@@ -129,7 +130,7 @@ bool ULSCorrosionComponent::UsePurificationInjector(float CleanseAmount)
 	if (CurrentCorrosion <= 0.0f && !bIsOverloaded) return false;
 
 	ReduceCorrosion(CleanseAmount);
-	GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Cyan, FString::Printf(TEXT("💉 【战术净化】清除 %.1f 侵蚀度（当前: %.1f%%）"), CleanseAmount, CurrentCorrosion));
+	LS_SCREEN_DEBUG(-1, 2.5f, FColor::Cyan, FString::Printf(TEXT("💉 【战术净化】清除 %.1f 侵蚀度（当前: %.1f%%）"), CleanseAmount, CurrentCorrosion));
 	return true;
 }
 
@@ -153,7 +154,7 @@ void ULSCorrosionComponent::ApplyOverloadDamage()
 	const float DamageToApply = HealthComp->GetMaxHealth() * OverloadDamagePercent;
 	HealthComp->TakeDamage(DamageToApply, LSTags::TAG_Damage_Type_DoT, ActiveChar, ActiveChar->GetController());
 
-	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Red, FString::Printf(TEXT("☣️ 【侵蚀软狂暴】机体承受侵蚀流失: -%.0f HP"), DamageToApply));
+	LS_SCREEN_DEBUG(-1, 1.5f, FColor::Red, FString::Printf(TEXT("☣️ 【侵蚀软狂暴】机体承受侵蚀流失: -%.0f HP"), DamageToApply));
 }
 
 float ULSCorrosionComponent::GetVignetteIntensity() const

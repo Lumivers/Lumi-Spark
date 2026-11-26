@@ -1,4 +1,5 @@
 #include "Extraction/LSPurificationOrb.h"
+#include "Core/LSDebugHelpers.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/RotatingMovementComponent.h"
@@ -60,11 +61,8 @@ void ALSPurificationOrb::HandleSphereBeginOverlap(UPrimitiveComponent* Overlappe
 					UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), PickupEmitter, GetActorLocation());
 				}
 
-				if (GEngine)
-				{
-					GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green,
-						FString::Printf(TEXT("✨ [地脉净化] 拾取净化光球，侵蚀度已回退 -%.0f%%！"), CleanseAmount));
-				}
+				LS_SCREEN_DEBUG(-1, 3.0f, FColor::Green,
+					FString::Printf(TEXT("✨ [地脉净化] 拾取净化光球，侵蚀度已回退 -%.0f%%！"), CleanseAmount));
 
 				Destroy();
 			}

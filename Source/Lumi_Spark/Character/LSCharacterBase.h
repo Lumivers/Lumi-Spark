@@ -61,6 +61,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Character|Rotation")
 	virtual void SetCombatFacing(bool bEnable);
 
+	// 查询当前是否处于战斗举枪朝向状态（ALS RotationMode == Aiming）
+	UFUNCTION(BlueprintPure, Category = "Character|Rotation")
+	bool IsCombatFacingActive() const { return bIsCombatFacingActive; }
+
 	// 向底层动画/状态机（如 ALS 蓝图接口）派发旋转模式指令 (0: VelocityDirection, 1: LookingDirection, 2: Aiming)
 	UFUNCTION(BlueprintCallable, Category = "Character|Rotation")
 	void SetALSRotationMode(uint8 InRotationMode);
@@ -226,4 +230,7 @@ protected:
 	// 响应生命组件广播的 OnDeath 事件
 	UFUNCTION()
 	void HandleHealthComponentDeath();
+
+	// 缓存当前是否处于 ALS Aiming(2) 战斗举枪态
+	bool bIsCombatFacingActive = false;
 };

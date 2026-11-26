@@ -1,4 +1,5 @@
 #include "LSCharacterBase.h"
+#include "Core/LSDebugHelpers.h"
 #include "Character/LSCameraComponent.h"
 #include "Character/LSMovementComponent.h"
 #include "Character/LSSkillComponent.h"
@@ -158,6 +159,8 @@ ALSCharacterBase::ALSCharacterBase(const FObjectInitializer& ObjectInitializer)
 
 void ALSCharacterBase::SetCombatFacing(bool bEnable)
 {
+	bIsCombatFacingActive = bEnable;
+
 	if (bAlwaysOrientToControlRotation)
 	{
 		bUseControllerRotationYaw = false;
@@ -186,6 +189,8 @@ void ALSCharacterBase::SetCombatFacing(bool bEnable)
 
 void ALSCharacterBase::SetALSRotationMode(uint8 InRotationMode)
 {
+	bIsCombatFacingActive = (InRotationMode == 2);
+
 	// 1. 直接同步反射属性，确保 ALS 蓝图内部变量立即响应
 	SetALSPropertyByteOrEnum(this, FName("RotationMode"), InRotationMode);
 	SetALSPropertyByteOrEnum(this, FName("DesiredRotationMode"), InRotationMode);
@@ -229,7 +234,7 @@ void ALSCharacterBase::SetALSOverlayState(uint8 InOverlayState)
 {
 	UE_LOG(LogTemp, Warning, TEXT("🎯 [SetALSOverlayState] 收到调用，修改 OverlayState: %d -> %d"),
 		GetALSPropertyByteOrEnum(this, FName("OverlayState")), InOverlayState);
-	if (GEngine)
+	if (GEngine && LSDebug::IsScreenDebugEnabled())
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Orange,
 			FString::Printf(TEXT("🎯 [SetALSOverlayState] 修改 OverlayState 为 %d"), InOverlayState));
@@ -300,22 +305,16 @@ void ALSCharacterBase::SetALSOverlayOverrideState(int32 InOverrideState)
 void ALSCharacterBase::ALSJumpAction(bool bPressed)
 {
 	// 屏幕与日志调试输出，毫秒级验证按键到达与 Pawn 类型
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(8841, 2.0f, bPressed ? FColor::Cyan : FColor::Silver,
-			FString::Printf(TEXT("🦘 [ALSJumpAction] bPressed=%d | Pawn=%s"), bPressed, *GetName()));
-	}
+	LS_SCREEN_DEBUG(8841, 2.0f, bPressed ? FColor::Cyan : FColor::Silver,
+		FString::Printf(TEXT("🦘 [ALSJumpAction] bPressed=%d | Pawn=%s"), bPressed, *GetName()));
 	UE_LOG(LogTemp, Warning, TEXT("🦘 [ALSJumpAction] bPressed=%d | Pawn=%s"), bPressed, *GetName());
 
 	// 1. 优先尝试派发蓝图中的 ALS_JumpAction(bool bPressed) 自定义事件
 	static const FName FuncName(TEXT("ALS_JumpAction"));
 	if (UFunction* Func = FindFunction(FuncName))
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(8842, 2.0f, FColor::Green,
-				FString::Printf(TEXT("✅ 命中蓝图 ALS_JumpAction，已派发 ProcessEvent！")));
-		}
+		LS_SCREEN_DEBUG(8842, 2.0f, FColor::Green,
+			FString::Printf(TEXT("✅ 命中蓝图 ALS_JumpAction，已派发 ProcessEvent！")));
 		UE_LOG(LogTemp, Warning, TEXT("✅ 命中蓝图 ALS_JumpAction，已派发 ProcessEvent！"));
 
 		struct { bool bInPressed; } Params{ bPressed };
@@ -323,11 +322,8 @@ void ALSCharacterBase::ALSJumpAction(bool bPressed)
 		return;
 	}
 
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(8842, 2.0f, FColor::Red,
-			FString::Printf(TEXT("❌ 未找到蓝图 ALS_JumpAction！执行保底 Jump()")));
-	}
+	LS_SCREEN_DEBUG(8842, 2.0f, FColor::Red,
+		FString::Printf(TEXT("❌ 未找到蓝图 ALS_JumpAction！执行保底 Jump()")));
 	UE_LOG(LogTemp, Warning, TEXT("❌ 未找到蓝图 ALS_JumpAction！执行保底 Jump()"));
 
 	// 2. 兼容模式：检查是否有老版 JumpAction 无参事件
@@ -369,9 +365,9 @@ void ALSCharacterBase::AddSpineRecoilKick(float Multiplier)
 	SpineRecoilLocation.X = FMath::Clamp(SpineRecoilLocation.X - BackKick, -MaxRecoilSpineBack, 0.0f);
 
 	// 屏幕调试提示：实时监测开火冲量触发
-	if (GEngine && IsLocallyControlled())
+	if (IsLocallyControlled())
 	{
-		GEngine->AddOnScreenDebugMessage(8877, 0.4f, FColor::Yellow,
+		LS_SCREEN_DEBUG(8877, 0.4f, FColor::Yellow,
 			FString::Printf(TEXT("💥 [后坐冲量爆发] 仰角=%.1f° | 偏摆=%.1f°"), SpineRecoilRotation.Pitch, SpineRecoilRotation.Yaw));
 	}
 }
@@ -417,7 +413,7 @@ void ALSCharacterBase::BeginPlay()
 	UE_LOG(LogTemp, Warning, TEXT("动画蓝图: %s | 初始 Anim_OverlayState: %d | OverrideState: %d"), *AnimClassName, AnimOverlay, AnimOverride);
 	UE_LOG(LogTemp, Warning, TEXT("================================================"));
 
-	if (GEngine && IsLocallyControlled())
+	if (GEngine && IsLocallyControlled() && LSDebug::IsScreenDebugEnabled())
 	{
 		GEngine->AddOnScreenDebugMessage(9997, 15.0f, FColor::Emerald,
 			FString::Printf(TEXT("📦 [DLL 构建版本] %s"), LS_DLL_BUILD_TIMESTAMP));
@@ -443,8 +439,8 @@ void ALSCharacterBase::Tick(float DeltaTime)
 	SpineRecoilRotation = FMath::RInterpTo(SpineRecoilRotation, FRotator::ZeroRotator, DeltaTime, RecoilSpineRecoverySpeed);
 	SpineRecoilLocation = FMath::VInterpTo(SpineRecoilLocation, FVector::ZeroVector, DeltaTime, RecoilSpineRecoverySpeed);
 
-	// 实时在屏幕左上角打印 ALS 状态监测雷达（覆盖刷新，不刷屏）
-	if (GEngine && IsLocallyControlled())
+	// 实时在屏幕左上角打印 ALS 状态监测雷达（仅在开启 LS.ShowScreenDebug 1 时运行，录屏默认零开销关闭）
+	if (GEngine && IsLocallyControlled() && LSDebug::IsScreenDebugEnabled())
 	{
 		const uint8 CharOverlay = GetALSPropertyByteOrEnum(this, FName("OverlayState"));
 		const uint8 CharRotMode = GetALSPropertyByteOrEnum(this, FName("RotationMode"));

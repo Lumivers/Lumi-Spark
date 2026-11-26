@@ -1,6 +1,9 @@
 #include "Extraction/ALSExtractionPoint.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/TextRenderComponent.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Engine/StaticMesh.h"
 #include "Net/UnrealNetwork.h"
 #include "Core/LSPlayerController.h"
 #include "Core/LSEventBus.h"
@@ -27,6 +30,22 @@ ALSExtractionPoint::ALSExtractionPoint()
 	BasePlatformMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BasePlatformMesh"));
 	BasePlatformMesh->SetupAttachment(RootComponent);
 	BasePlatformMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> DefaultPadMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (DefaultPadMesh.Succeeded())
+	{
+		BasePlatformMesh->SetStaticMesh(DefaultPadMesh.Object);
+		BasePlatformMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -2.0f));
+		BasePlatformMesh->SetRelativeScale3D(FVector(6.0f, 6.0f, 0.06f));
+	}
+
+	ZoneLabelText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ZoneLabelText"));
+	ZoneLabelText->SetupAttachment(RootComponent);
+	ZoneLabelText->SetRelativeLocation(FVector(0.0f, 0.0f, 180.0f));
+	ZoneLabelText->SetHorizontalAlignment(EHTA_Center);
+	ZoneLabelText->SetVerticalAlignment(EVRTA_TextCenter);
+	ZoneLabelText->SetWorldSize(42.0f);
+	ZoneLabelText->SetTextRenderColor(FColor(80, 255, 175));
+	ZoneLabelText->SetText(FText::FromString(TEXT("EXTRACTION ZONE")));
 
 	ExtractionPointName = FText::FromString(TEXT("紧急避难穿梭井"));
 }

@@ -457,9 +457,9 @@ protected:
 	UFUNCTION(NetMulticast, Unreliable)
 	void Multicast_ImpactEffects(const FHitResult& Hit, bool bPlaySound);
 	
-	// 3，服务端向开火客户端回传打击确认（触发本地 HUD 准星 HitMarker 闪红与音效）
+	// 3，服务端向开火客户端回传打击确认（触发本地 HUD 准星 HitMarker 闪红、音效与限量跳字）
 	UFUNCTION(Client, Reliable)
-	void Client_HitConfirm(bool bIsHeadshot, float FinalDamage);
+	void Client_HitConfirm(bool bIsHeadshot, float FinalDamage, const FVector_NetQuantize& HitLocation);
 	
 	//4，服务端权威换弹RPC（扣除储备弹药、广播换弹动画与音效）
 	UFUNCTION(Server, Reliable, WithValidation)

@@ -109,6 +109,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWidgetComponent> HealthBarComponent;
 
+	// 头顶血条相对胶囊体顶部的竖直抬升偏移（厘米）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Enemy|HealthBar", meta = (ClampMin = "0.0"))
+	float HealthBarHeadClearance = 28.0f;
+
+	// 头顶血条屏幕空间绘制宽高（像素）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Enemy|HealthBar")
+	FVector2D HealthBarDrawSize = FVector2D(108.0f, 9.0f);
+
 	// ─── 配置与状态 ───
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Config")
 	TObjectPtr<ULSEnemyDataAsset> EnemyDataAsset;

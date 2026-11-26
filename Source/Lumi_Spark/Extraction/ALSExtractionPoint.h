@@ -7,6 +7,7 @@
 
 class UBoxComponent;
 class UStaticMeshComponent;
+class UTextRenderComponent;
 class ALSPlayerController;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLSExtractionPointStateChanged, bool, bIsActive, const FText&, Reason);
@@ -86,6 +87,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Extraction|Components")
 	TObjectPtr<UStaticMeshComponent> BasePlatformMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Extraction|Components")
+	TObjectPtr<UTextRenderComponent> ZoneLabelText;
 
 	// 触发器重叠事件
 	UFUNCTION()

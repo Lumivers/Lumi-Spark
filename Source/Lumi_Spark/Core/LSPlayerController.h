@@ -109,6 +109,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Input|Combat")
 	bool bSnapCharacterYawOnFireStart = false;
 
+	// 停火后保持举枪战斗姿态的缓冲时长（秒，避免半自动/霰弹枪单点松开左键后手臂立刻垂下抽搐）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Input|Combat", meta = (ClampMin = "0.0", ClampMax = "5.0"))
+	float FirePoseHoldDuration = 1.5f;
+
 	//6，模式切换接口
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SwitchToGameInputMode();
@@ -230,6 +234,9 @@ protected:
 	// 战斗朝向集中仲裁更新（综合开火、瞄准与常态设置）
 	void UpdateCombatFacing();
 
+	// 停火举枪姿态保持期结束回调
+	void HandleFirePoseHoldExpired();
+
 	// ─── 开发专属调试功能：一键生成测试敌人 ───
 	UFUNCTION(BlueprintCallable, Category = "Development|Debug")
 	void SpawnDebugEnemy();
@@ -241,4 +248,6 @@ private:
 
 	bool bIsAiming = false;
 	bool bIsFiring = false;
+	bool bHoldFireStance = false;
+	FTimerHandle FirePoseHoldTimerHandle;
 };

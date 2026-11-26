@@ -152,5 +152,5 @@ void ALSSniperRifle::ProcessHit(const FHitResult& Hit)
 		EventBus->OnDamageDealt.Broadcast(DamageContext);
 	}
 
-	Client_HitConfirm(DamageContext.bIsHeadshot, DamageContext.FinalDamage);
+	Client_HitConfirm(DamageContext.bIsHeadshot, DamageContext.FinalDamage, Hit.ImpactPoint);
 }

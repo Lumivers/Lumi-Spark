@@ -1,4 +1,5 @@
 #include "LSPlayerController.h"
+#include "Core/LSDebugHelpers.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
@@ -30,9 +31,9 @@ void ALSPlayerController::BeginPlay()
 	//默认进入纯游戏战斗输入模式
 	SwitchToGameInputMode();
 	
-	if (IsLocalController() && GEngine)
+	if (IsLocalController())
 	{
-		GEngine->AddOnScreenDebugMessage(1100, 8.0f, FColor::Green, 
+		LS_SCREEN_DEBUG(1100, 8.0f, FColor::Green, 
 			FString::Printf(TEXT("🎮 [LumiSpark] 控制器就绪 | IA_Crouch: %s | IA_Dash: %s | IMC: %s"), 
 				IA_Crouch ? TEXT("已配置") : TEXT("❌未配置(NULL)"), 
 				IA_Dash ? TEXT("已配置") : TEXT("❌未配置(NULL)"),
@@ -233,7 +234,7 @@ void ALSPlayerController::HandleJumpStarted()
 	}
 	else
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("❌ [HandleJumpStarted] Pawn 不是 ALSCharacterBase！"));
+		LS_SCREEN_DEBUG(-1, 2.0f, FColor::Red, TEXT("❌ [HandleJumpStarted] Pawn 不是 ALSCharacterBase！"));
 		UE_LOG(LogTemp, Error, TEXT("❌ [HandleJumpStarted] Pawn 不是 ALSCharacterBase！"));
 	}
 }
@@ -248,9 +249,13 @@ void ALSPlayerController::HandleJumpCompleted()
 
 void ALSPlayerController::HandleSprintStarted()
 {
+	// 主动冲刺时立即结束开火后举枪保持态，确保疾跑响应干脆不卡顿
+	bHoldFireStance = false;
+	GetWorldTimerManager().ClearTimer(FirePoseHoldTimerHandle);
+
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		GEngine->AddOnScreenDebugMessage(1101, 1.5f, FColor::Cyan, TEXT("🏃 [EnhancedInput] 触发了疾跑 (Sprint Started)！"));
+		LS_SCREEN_DEBUG(1101, 1.5f, FColor::Cyan, TEXT("🏃 [EnhancedInput] 触发了疾跑 (Sprint Started)！"));
 		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent()) MoveComp->StartSprint();
 	}
 }
@@ -311,7 +316,7 @@ void ALSPlayerController::HandleZoom(const FInputActionValue& Value)
 
 void ALSPlayerController::HandleZoomIn()
 {
-	GEngine->AddOnScreenDebugMessage(54320, 1.0f, FColor::Yellow, TEXT("🔭 [Input] 滚轮向上，拉近视角"));
+	LS_SCREEN_DEBUG(54320, 1.0f, FColor::Yellow, TEXT("🔭 [Input] 滚轮向上，拉近视角"));
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
 		if (ULSCameraComponent* Cam = Char->GetCameraComponent())
@@ -323,7 +328,7 @@ void ALSPlayerController::HandleZoomIn()
 
 void ALSPlayerController::HandleZoomOut()
 {
-	GEngine->AddOnScreenDebugMessage(54320, 1.0f, FColor::Yellow, TEXT("🔭 [Input] 滚轮向下，拉远视角"));
+	LS_SCREEN_DEBUG(54320, 1.0f, FColor::Yellow, TEXT("🔭 [Input] 滚轮向下，拉远视角"));
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
 		if (ULSCameraComponent* Cam = Char->GetCameraComponent())
@@ -337,16 +342,24 @@ void ALSPlayerController::UpdateCombatFacing()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		const bool bIsActiveCombat = bIsAiming || bIsFiring;
+		const bool bIsActiveCombat = bIsAiming || bIsFiring || bHoldFireStance;
 		Char->SetCombatFacing(bIsActiveCombat);
 	}
+}
+
+void ALSPlayerController::HandleFirePoseHoldExpired()
+{
+	bHoldFireStance = false;
+	UpdateCombatFacing();
 }
 
 void ALSPlayerController::HandleFireStarted()
 {
 	// 使用固定 Key 2000 原地刷新提示，避免全自动连射时疯狂刷屏叠行
-	GEngine->AddOnScreenDebugMessage(2000, 1.0f, FColor::Yellow, TEXT("🎯 [Input] 触发了鼠标左键开火！"));
+	LS_SCREEN_DEBUG(2000, 1.0f, FColor::Yellow, TEXT("🎯 [Input] 触发了鼠标左键开火！"));
 	bIsFiring = true;
+	bHoldFireStance = (FirePoseHoldDuration > 0.0f);
+	GetWorldTimerManager().ClearTimer(FirePoseHoldTimerHandle);
 
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
@@ -380,6 +393,16 @@ void ALSPlayerController::HandleFireCompleted()
 {
 	bIsFiring = false;
 
+	if (FirePoseHoldDuration > 0.0f)
+	{
+		bHoldFireStance = true;
+		GetWorldTimerManager().SetTimer(FirePoseHoldTimerHandle, this, &ALSPlayerController::HandleFirePoseHoldExpired, FirePoseHoldDuration, false);
+	}
+	else
+	{
+		bHoldFireStance = false;
+	}
+
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
 		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent())
@@ -387,7 +410,7 @@ void ALSPlayerController::HandleFireCompleted()
 			WeaponComp->StopFire();
 		}
 
-		// 停火后，若未按住右键开镜，则退出瞄准移动步态
+		// 停火后，若未按住右键开镜，则恢复正常腰射移动速度（举枪动作由 bHoldFireStance 维持直到超时或冲刺）
 		if (ULSMovementComponent* MoveComp = Char->GetLSMovementComponent())
 		{
 			if (!bIsAiming)
@@ -396,14 +419,14 @@ void ALSPlayerController::HandleFireCompleted()
 			}
 		}
 
-		// 停止开火后，根据是否仍处于瞄准状态动态仲裁朝向
+		// 停止开火后，根据是否仍处于瞄准或停火保持态动态仲裁朝向
 		UpdateCombatFacing();
 	}
 }
 
 void ALSPlayerController::HandleADSStarted()
 {
-	GEngine->AddOnScreenDebugMessage(12345, 2.0f, FColor::Green, TEXT("🔍 [Input] 触发右键瞄准 (ADS) - 进入过肩模式！"));
+	LS_SCREEN_DEBUG(12345, 2.0f, FColor::Green, TEXT("🔍 [Input] 触发右键瞄准 (ADS) - 进入过肩模式！"));
 	if (bIsAiming) return;
 	bIsAiming = true;
 
@@ -417,7 +440,7 @@ void ALSPlayerController::HandleADSStarted()
 
 void ALSPlayerController::HandleADSCompleted()
 {
-	GEngine->AddOnScreenDebugMessage(12345, 2.0f, FColor::Cyan, TEXT("🔄 [Input] 释放右键，退出瞄准！"));
+	LS_SCREEN_DEBUG(12345, 2.0f, FColor::Cyan, TEXT("🔄 [Input] 释放右键，退出瞄准！"));
 	if (!bIsAiming) return;
 	bIsAiming = false;
 
@@ -433,7 +456,7 @@ void ALSPlayerController::HandleReload()
 {
 	if (ALSCharacterBase* Char = GetPawn<ALSCharacterBase>())
 	{
-		GEngine->AddOnScreenDebugMessage(1102, 1.5f, FColor::Yellow, TEXT("🔄 [EnhancedInput] 触发了换弹 (Reload)！"));
+		LS_SCREEN_DEBUG(1102, 1.5f, FColor::Yellow, TEXT("🔄 [EnhancedInput] 触发了换弹 (Reload)！"));
 		if (ULSWeaponComponent* WeaponComp = Char->GetWeaponComponent()) WeaponComp->Reload();
 	}
 }
@@ -450,8 +473,8 @@ void ALSPlayerController::HandleSkill()
 			}
 			else
 			{
-				//屏幕屏幕调试提示或触发 CD 未就绪音效
-                GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Yellow, FString::Printf(TEXT("⏳ E 战技冷却中，剩余: %.1fs"), SkillComp->GetSkillCooldownRemaining()));
+				//屏幕调试提示或触发 CD 未就绪音效
+				LS_SCREEN_DEBUG(-1, 1.5f, FColor::Yellow, FString::Printf(TEXT("⏳ E 战技冷却中，剩余: %.1fs"), SkillComp->GetSkillCooldownRemaining()));
 			}
 		}
 	}
@@ -469,7 +492,7 @@ void ALSPlayerController::HandleBurst()
             }
             else
             {
-                GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Yellow, FString::Printf(TEXT("⚡ Q 能量不足: %.0f / %.0f"), SkillComp->GetCurrentEnergy(), SkillComp->GetMaxEnergy()));
+                LS_SCREEN_DEBUG(-1, 1.5f, FColor::Yellow, FString::Printf(TEXT("⚡ Q 能量不足: %.0f / %.0f"), SkillComp->GetCurrentEnergy(), SkillComp->GetMaxEnergy()));
             }
         }
     }
@@ -642,7 +665,7 @@ void ALSPlayerController::LSAddLoot(const FString& LootType)
 			120.0f
 		);
 		BackpackComponent->AddItem(Bearing);
-		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Cyan, TEXT("📦 拾取材料: [旧式降噪轴承] x15（可用于 Meta-Tree 加点与修枪）"));
+		LS_SCREEN_DEBUG(-1, 4.0f, FColor::Cyan, TEXT("📦 拾取材料: [旧式降噪轴承] x15（可用于 Meta-Tree 加点与修枪）"));
 	}
 	else if (LootType.Equals(TEXT("Tape"), ESearchCase::IgnoreCase))
 	{
@@ -654,7 +677,7 @@ void ALSPlayerController::LSAddLoot(const FString& LootType)
 			ELSExtractionRarity::Precision
 		);
 		BackpackComponent->AddItem(Tape);
-		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Yellow, TEXT("📼 摸到高价值收藏品: [特化加密录像带]！单价 8000！"));
+		LS_SCREEN_DEBUG(-1, 4.0f, FColor::Yellow, TEXT("📼 摸到高价值收藏品: [特化加密录像带]！单价 8000！"));
 	}
 	else if (LootType.Equals(TEXT("Record"), ESearchCase::IgnoreCase))
 	{
@@ -666,7 +689,7 @@ void ALSPlayerController::LSAddLoot(const FString& LootType)
 			ELSExtractionRarity::Classified
 		);
 		BackpackComponent->AddItem(Record, true);
-		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("📀 摸到顶级大红收藏品: [初代黄金黑胶唱片]！价值 60000，已自动护送入安全箱！"));
+		LS_SCREEN_DEBUG(-1, 5.0f, FColor::Red, TEXT("📀 摸到顶级大红收藏品: [初代黄金黑胶唱片]！价值 60000，已自动护送入安全箱！"));
 	}
 	else if (LootType.Equals(TEXT("Blueprint"), ESearchCase::IgnoreCase))
 	{
@@ -677,11 +700,11 @@ void ALSPlayerController::LSAddLoot(const FString& LootType)
 			100000.0f
 		);
 		BackpackComponent->AddItem(Wpn, true);
-		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("🔫 摸到大红武器图纸！价值 100000，已锁定在安全箱中！"));
+		LS_SCREEN_DEBUG(-1, 5.0f, FColor::Red, TEXT("🔫 摸到大红武器图纸！价值 100000，已锁定在安全箱中！"));
 	}
 	else
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::White, TEXT("用法: LS.AddLoot [Bearing / Tape / Record / Blueprint]"));
+		LS_SCREEN_DEBUG(-1, 4.0f, FColor::White, TEXT("用法: LS.AddLoot [Bearing / Tape / Record / Blueprint]"));
 	}
 }
 
@@ -689,7 +712,7 @@ void ALSPlayerController::LSUpgradeBackpack()
 {
 	if (!BackpackComponent) return;
 	const int32 NewCap = BackpackComponent->UpgradeBackpackTier();
-	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("🎒 背包阶位晋级！新容量上限: %d 格！"), NewCap));
+	LS_SCREEN_DEBUG(-1, 5.0f, FColor::Green, FString::Printf(TEXT("🎒 背包阶位晋级！新容量上限: %d 格！"), NewCap));
 }
 
 void ALSPlayerController::LSPrintBackpack()
@@ -732,7 +755,7 @@ void ALSPlayerController::LSPrintBackpack()
 	}
 	UE_LOG(LogTemp, Warning, TEXT("======================================================"));
 	
-	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("🎒 背包状态已输出！容量: %d格 | 总身价: %.0f"), BackpackComponent->BackpackCapacity, TotalVal));
+	LS_SCREEN_DEBUG(-1, 5.0f, FColor::Green, FString::Printf(TEXT("🎒 背包状态已输出！容量: %d格 | 总身价: %.0f"), BackpackComponent->BackpackCapacity, TotalVal));
 }
 
 void ALSPlayerController::LSSimulateDeath()
@@ -744,7 +767,7 @@ void ALSPlayerController::LSSimulateDeath()
 
 	// 模拟战死（常规遗迹 0% 保留全部掉落在现场）
 	BackpackComponent->ProcessDeathDrop(0.0f, Dropped, Retained);
-	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, FString::Printf(TEXT("💀 就地战死！遗留在尸体标包: %d 件 | 🛡️ 安全箱绝对带回: %d 件"), Dropped.Num(), Retained.Num()));
+	LS_SCREEN_DEBUG(-1, 5.0f, FColor::Red, FString::Printf(TEXT("💀 就地战死！遗留在尸体标包: %d 件 | 🛡️ 安全箱绝对带回: %d 件"), Dropped.Num(), Retained.Num()));
 	UE_LOG(LogTemp, Error, TEXT("💥 战死模拟结算：现场留下 %d 堆掉落物（生成 CorpseMarker 供跑尸）；安全箱内 %d 件物品 100%% 成功保底！"), Dropped.Num(), Retained.Num());
 }
 
@@ -823,7 +846,7 @@ void ALSPlayerController::LSAddCorrosion(float Amount)
 {
 	if (!CorrosionComponent) return;
 	CorrosionComponent->AddCorrosion(Amount);
-	GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Yellow, FString::Printf(TEXT("🧪 [Debug] 侵蚀度已增加 %.1f -> 当前: %.1f%% (过载: %s)"), Amount, CorrosionComponent->CurrentCorrosion, CorrosionComponent->bIsOverloaded ? TEXT("是") : TEXT("否")));
+	LS_SCREEN_DEBUG(-1, 2.5f, FColor::Yellow, FString::Printf(TEXT("🧪 [Debug] 侵蚀度已增加 %.1f -> 当前: %.1f%% (过载: %s)"), Amount, CorrosionComponent->CurrentCorrosion, CorrosionComponent->bIsOverloaded ? TEXT("是") : TEXT("否")));
 }
 
 void ALSPlayerController::LSUseInjector()
@@ -840,7 +863,7 @@ void ALSPlayerController::LSPrintCorrosion()
 	const float RemainTime = CorrosionComponent->BaseCorrosionRate > 0.0f 
 		? (CorrosionComponent->MaxCorrosion - CorrosionComponent->CurrentCorrosion) / CorrosionComponent->BaseCorrosionRate 
 		: 0.0f;
-	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, FString::Printf(TEXT("═══ 地脉侵蚀监控 ═══\n侵蚀度: %.1f / %.1f (%.0f%%)\n预计安全剩余时间: %.1f 秒\n过载状态: %s\n暗角强度: %.2f\n生命回复上限: %.0f%%"),
+	LS_SCREEN_DEBUG(-1, 5.0f, FColor::Cyan, FString::Printf(TEXT("═══ 地脉侵蚀监控 ═══\n侵蚀度: %.1f / %.1f (%.0f%%)\n预计安全剩余时间: %.1f 秒\n过载状态: %s\n暗角强度: %.2f\n生命回复上限: %.0f%%"),
 		CorrosionComponent->CurrentCorrosion, CorrosionComponent->MaxCorrosion, CorrosionComponent->GetCorrosionPercent() * 100.0f,
 		RemainTime,
 		CorrosionComponent->bIsOverloaded ? TEXT("🚨 过载中 (扣血+上限压制)") : TEXT("正常"),
@@ -851,24 +874,40 @@ void ALSPlayerController::LSPrintCorrosion()
 
 void ALSPlayerController::Client_OnExtractionCountdownStarted_Implementation(const FText& PointName, float Duration)
 {
-	GEngine->AddOnScreenDebugMessage(1101, 3.0f, FColor::Cyan,
+	if (ULSHUDWidget* HUD = Cast<ULSHUDWidget>(HUDWidgetInstance))
+	{
+		HUD->UpdateExtractionProgress(PointName, 0.0f, Duration);
+	}
+	LS_SCREEN_DEBUG(1101, 3.0f, FColor::Cyan,
 		FString::Printf(TEXT("🚨 正在撤离 [%s] - 保持在区域内 (%.1f 秒)..."), *PointName.ToString(), Duration));
 }
 
 void ALSPlayerController::Client_OnExtractionCountdownProgress_Implementation(float Progress, float RemainingTime)
 {
-	GEngine->AddOnScreenDebugMessage(1101, 0.5f, FColor::Cyan,
+	if (ULSHUDWidget* HUD = Cast<ULSHUDWidget>(HUDWidgetInstance))
+	{
+		HUD->UpdateExtractionProgress(FText::GetEmpty(), Progress, RemainingTime);
+	}
+	LS_SCREEN_DEBUG(1101, 0.5f, FColor::Cyan,
 		FString::Printf(TEXT("⏳ 撤离倒计时: %.1f 秒 [%.0f%%]"), RemainingTime, Progress * 100.0f));
 }
 
 void ALSPlayerController::Client_OnExtractionCountdownCanceled_Implementation()
 {
-	GEngine->AddOnScreenDebugMessage(1101, 3.0f, FColor::Yellow, TEXT("⚠️ 离开撤离区，撤离已取消！"));
+	if (ULSHUDWidget* HUD = Cast<ULSHUDWidget>(HUDWidgetInstance))
+	{
+		HUD->HideExtractionProgress();
+	}
+	LS_SCREEN_DEBUG(1101, 3.0f, FColor::Yellow, TEXT("⚠️ 离开撤离区，撤离已取消！"));
 }
 
 void ALSPlayerController::Client_OnExtractionSuccess_Implementation(const FLSRaidReport& Report)
 {
-	GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Green,
+	if (ULSHUDWidget* HUD = Cast<ULSHUDWidget>(HUDWidgetInstance))
+	{
+		HUD->ShowExtractionSuccess(Report);
+	}
+	LS_SCREEN_DEBUG(-1, 8.0f, FColor::Green,
 		FString::Printf(TEXT("🎉 撤离成功！带出物资估值: %.0f 金币 | 物品数: %d"),
 			Report.TotalExtractedValue, Report.ExtractedItemCount));
 
@@ -884,7 +923,7 @@ void ALSPlayerController::LSSimulateExtract(const FString& HazardStr)
 	const float TotalVal = BackpackComponent ? BackpackComponent->CalculateTotalLootValue() : 0.0f;
 	const int32 ItemCount = BackpackComponent ? (BackpackComponent->BackpackSlots.Num() + BackpackComponent->SecureBoxSlots.Num()) : 0;
 
-	GEngine->AddOnScreenDebugMessage(-1, 6.0f, FColor::Green,
+	LS_SCREEN_DEBUG(-1, 6.0f, FColor::Green,
 		FString::Printf(TEXT("✅ [模拟撤离] 难度: %s | 估值: %.0f | 物品格: %d"),
 			*HazardStr, TotalVal, ItemCount));
 }
@@ -945,10 +984,7 @@ void ALSPlayerController::SpawnDebugEnemy()
 	if (ALSEnemyBase* NewEnemy = GetWorld()->SpawnActor<ALSEnemyBase>(EnemyClassToSpawn, SpawnLoc, SpawnRot, SpawnParams))
 	{
 		NewEnemy->SpawnDefaultController();
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(2005, 2.5f, FColor::Green,
-				FString::Printf(TEXT("🤖 [调试] 成功在准星前方地面召唤测试敌人！按 [B] 或 [小键盘+] 可反复刷怪")));
-		}
+		LS_SCREEN_DEBUG(2005, 2.5f, FColor::Green,
+			FString::Printf(TEXT("🤖 [调试] 成功在准星前方地面召唤测试敌人！按 [B] 或 [小键盘+] 可反复刷怪")));
 	}
 }

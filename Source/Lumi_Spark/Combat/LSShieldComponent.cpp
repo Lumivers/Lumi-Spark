@@ -1,4 +1,5 @@
 #include "Combat/LSShieldComponent.h"
+#include "Core/LSDebugHelpers.h"
 #include "Net/UnrealNetwork.h"
 #include "Core/LSEventBus.h"
 #include "GameFramework/Character.h"
@@ -168,7 +169,7 @@ void ULSShieldComponent::ApplyShieldBreakStun()
 		World->GetTimerManager().SetTimer(StunRecoveryTimerHandle, this, &ULSShieldComponent::RecoverFromStun, ShieldBreakStunDuration, false);
 	}
 
-	GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Purple, FString::Printf(TEXT("💥 【破盾虚弱】%s 所有护盾已破裂，进入瘫痪虚弱状态！"), *OwnerActor->GetName()));
+	LS_SCREEN_DEBUG(-1, 3.5f, FColor::Purple, FString::Printf(TEXT("💥 【破盾虚弱】%s 所有护盾已破裂，进入瘫痪虚弱状态！"), *OwnerActor->GetName()));
 }
 
 void ULSShieldComponent::RecoverFromStun()

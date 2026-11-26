@@ -1,4 +1,5 @@
 #include "LSWeaponBase.h"
+#include "Core/LSDebugHelpers.h"
 #include "Weapon/LSRecoilComponent.h"
 #include "Core/LSEventBus.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -111,18 +112,18 @@ void ALSWeaponBase::StartFire()
 	{
 		if (bIsReloading)
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 0.5f, FColor::Yellow, TEXT("⏳ 正在换弹中..."));
+			LS_SCREEN_DEBUG(-1, 0.5f, FColor::Yellow, TEXT("⏳ 正在换弹中..."));
 		}
 		else if (CurrentAmmo <= 0)
 		{
 			if (CanReload())
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Orange, TEXT("⚠️ 弹匣已空，正在自动换弹..."));
+				LS_SCREEN_DEBUG(-1, 1.0f, FColor::Orange, TEXT("⚠️ 弹匣已空，正在自动换弹..."));
 				Reload();
 			}
 			else
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("❌ 备弹彻底耗尽！已无弹药！"));
+				LS_SCREEN_DEBUG(-1, 2.0f, FColor::Red, TEXT("❌ 备弹彻底耗尽！已无弹药！"));
 			}
 		}
 		return;
@@ -209,7 +210,7 @@ void ALSWeaponBase::FireOnce()
 		bIsFiring = false;
 		if (CurrentAmmo <= 0 && CanReload())
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Orange, TEXT("⚠️ 弹药打光，自动触发换弹！"));
+			LS_SCREEN_DEBUG(-1, 1.0f, FColor::Orange, TEXT("⚠️ 弹药打光，自动触发换弹！"));
 			Reload();
 		}
 		return;
@@ -565,14 +566,18 @@ void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
 	FPointDamageEvent PointDamageEvent(DamageContext.FinalDamage, Hit, ShotDir, nullptr);
 	HitActor->TakeDamage(DamageContext.FinalDamage, PointDamageEvent, (GetOwner() ? GetOwner()->GetInstigatorController() : nullptr), this);
 
-	// 8. 3D 浮空伤害跳字（纯粹数字，暴击略大加感叹号，小巧不遮挡视口）
-	const bool bIsCrit = bIsGoldenHeadshot || DamageContext.bIsHeadshot;
-	const FColor PopColor = bIsGoldenHeadshot ? FColor(255, 215, 0) : (DamageContext.bIsHeadshot ? FColor(255, 75, 75) : FColor::White);
-	const FString PopText = bIsCrit ? FString::Printf(TEXT("%.0f!"), DamageContext.FinalDamage) : FString::Printf(TEXT("%.0f"), DamageContext.FinalDamage);
-	const float FontScale = bIsCrit ? 1.2f : 1.0f;
-	DrawDebugString(GetWorld(), Hit.ImpactPoint + FVector(0.0f, 0.0f, 15.0f), PopText, nullptr, PopColor, 0.8f, true, FontScale);
+	// 8. 3D 浮空伤害跳字（纯粹数字，暴击略大加感叹号；微小水平偏移防止霰弹 8 弹丸数字重叠）
+	if (LSDebug::IsWorldDamagePopEnabled())
+	{
+		const bool bIsCrit = bIsGoldenHeadshot || DamageContext.bIsHeadshot;
+		const FColor PopColor = bIsGoldenHeadshot ? FColor(255, 215, 0) : (DamageContext.bIsHeadshot ? FColor(255, 75, 75) : FColor::White);
+		const FString PopText = bIsCrit ? FString::Printf(TEXT("%.0f!"), DamageContext.FinalDamage) : FString::Printf(TEXT("%.0f"), DamageContext.FinalDamage);
+		const float FontScale = bIsCrit ? 1.2f : 1.0f;
+		const FVector PopJitter(FMath::FRandRange(-18.0f, 18.0f), FMath::FRandRange(-18.0f, 18.0f), FMath::FRandRange(12.0f, 26.0f));
+		DrawDebugString(GetWorld(), Hit.ImpactPoint + PopJitter, PopText, nullptr, PopColor, 0.8f, true, FontScale);
+	}
 
-	if (GEngine)
+	if (GEngine && LSDebug::IsScreenDebugEnabled())
 	{
 #if WITH_EDITOR
 		const FString DisplayName = HitActor->GetActorLabel();
@@ -592,20 +597,26 @@ void ALSWeaponBase::ProcessHit(const FHitResult& Hit)
 		EventBus->OnDamageDealt.Broadcast(DamageContext);
 	}
 	
-	// 10. 回传给开火客户端，触发本地 HUD 准星 HitMarker 闪红与音效
-	Client_HitConfirm(DamageContext.bIsHeadshot, DamageContext.FinalDamage);
+	// 10. 回传给远端开火客户端，触发本地 HUD 准星 HitMarker 闪红、音效与伤害跳字
+	Client_HitConfirm(DamageContext.bIsHeadshot, DamageContext.FinalDamage, Hit.ImpactPoint);
 }
 
-void ALSWeaponBase::Client_HitConfirm_Implementation(bool bIsHeadshot, float FinalDamage)
+void ALSWeaponBase::Client_HitConfirm_Implementation(bool bIsHeadshot, float FinalDamage, const FVector_NetQuantize& HitLocation)
 {
-	//客户端收到服务端的权威命中确认，在本地广播伤害上下文。
+	// 仅远端客户端补充本地广播；单机与 Listen Server 已在 ProcessHit 中广播过完整上下文，避免双倍跳字与双倍音效
+	if (HasAuthority())
+	{
+		return;
+	}
+
 	if (ULSEventBus* EventBus = ULSEventBus::Get(this))
 	{
 		FLSDamageContext DamageContext;
 		DamageContext.DamageCauser = Cast<AActor>(GetOwner());
 		DamageContext.FinalDamage = FinalDamage;
 		DamageContext.bIsHeadshot = bIsHeadshot;
-		
+		DamageContext.HitResult.ImpactPoint = FVector(HitLocation);
+
 		EventBus->OnDamageDealt.Broadcast(DamageContext);
 	}
 }
@@ -669,7 +680,7 @@ void ALSWeaponBase::FinishReload()
 		CurrentReserveAmmo -= AmmoToLoad;
 	}
 	
-	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("✅ 换弹完成！当前弹药: %d / %s"), CurrentAmmo, bInfiniteAmmo ? TEXT("∞") : *FString::FromInt(CurrentReserveAmmo)));
+	LS_SCREEN_DEBUG(-1, 1.5f, FColor::Green, FString::Printf(TEXT("✅ 换弹完成！当前弹药: %d / %s"), CurrentAmmo, bInfiniteAmmo ? TEXT("∞") : *FString::FromInt(CurrentReserveAmmo)));
 
 	OnAmmoChanged.Broadcast(CurrentAmmo, MagazineSize, CurrentReserveAmmo);
 	OnReloadEnd.Broadcast();
