@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/HitResult.h"
 #include "NativeGameplayTags.h"
 #include "LSTypes.generated.h"
 

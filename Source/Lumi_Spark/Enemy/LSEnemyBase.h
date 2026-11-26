@@ -84,6 +84,13 @@ protected:
 	// 响应生命组件广播更新头顶血条
 	UFUNCTION()
 	void HandleHealthChanged(float CurrentHealth, float MaxHealth, bool bIsDamage);
+
+	// 尝试播放受击音效（内部执行冷却校验与网络多播）
+	void TryPlayHitSound();
+
+	// 多播播放受击音效（确保联机主机与客户端同步听到 3D 受击音效）
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_PlayHitSound();
 	
 	// ─── 专职战斗组件 ───
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -142,8 +149,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "1.0"))
 	float CorpseLifeSpan = 5.0f;
 
+	// ─── 音效表现 ───
+	/** 受击音效（敌人受到非致死伤害时播放，带冷却防止连射鬼畜） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Audio")
+	TObjectPtr<USoundBase> HitSound;
+
+	/** 受击音效冷却时间（秒，默认 0.35 秒；防止高射速武器或霰弹单发多弹丸连续触发） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Audio", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float HitSoundCooldown = 0.35f;
+
 	/** 死亡音效（击杀倒地时播放） */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Death")
 	TObjectPtr<USoundBase> DeathSound;
 
 	/** 能量微粒掉落 Niagara 特效（在怪物体表/击杀位置迸发） */
@@ -167,6 +183,9 @@ protected:
 	FVector LastHitLocation = FVector::ZeroVector;
 	FVector LastHitDirection = FVector::ZeroVector;
 	FName LastHitBoneName = NAME_None;
+
+	// 上次播放受击音效的世界时间（负值确保首次受击必然发声）
+	double LastHitSoundTime = -1.0;
 
 	void ApplyCorrosionReductionToKiller(AActor* Killer);
 };

@@ -170,6 +170,12 @@ bool ALSEnemyBase::ExecuteXenoBlade(AActor* Interactor)
 	// 3. 造成技能穿透伤害
 	HealthComponent->TakeDamage(ExecutionDamage, LSTags::TAG_Damage_Type_Skill, Interactor, Interactor ? Interactor->GetInstigatorController() : nullptr);
 
+	// 非致死处决（精英怪/Boss）触发受击音效
+	if (!bIsDead && !HealthComponent->IsDead())
+	{
+		TryPlayHitSound();
+	}
+
 	OnXenoBladeExecuted.Broadcast(this, Interactor, ExecutionDamage);
 
 	FString RankName = DamageRatio >= 1.0f ? TEXT("普通小怪") : (DamageRatio >= 0.5f ? TEXT("精英怪") : TEXT("首领Boss"));
@@ -265,6 +271,8 @@ float ALSEnemyBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
 		AdjustedDamage *= (1.0f - ResFactor);
 	}
 
+	const float PostResistanceDamage = AdjustedDamage;
+
 	// 2. 先走多层元素破盾判定 (ShieldComponent)
 	if (ShieldComponent && ShieldComponent->HasActiveShield())
 	{
@@ -298,7 +306,13 @@ float ALSEnemyBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
 		}
 	}
 
-	// 5. 受击即刻唤醒 AI 索敌与警戒对准（防止被从背后偷袭时发呆）
+	// 5. 播放受击音效（非致死且非完全免疫时触发；致死一击由 OnDeath 播放死亡音效，避免双重重叠）
+	if (PostResistanceDamage > 0.0f && !bIsDead && (!HealthComponent || !HealthComponent->IsDead()))
+	{
+		TryPlayHitSound();
+	}
+
+	// 6. 受击即刻唤醒 AI 索敌与警戒对准（防止被从背后偷袭时发呆）
 	if (ALSAIController* AIC = Cast<ALSAIController>(GetController()))
 	{
 		// 解析真正的攻击者角色（若 DamageCauser 是武器，取其持有人）
@@ -395,8 +409,8 @@ void ALSEnemyBase::OnDeath(AActor* Killer)
 		HealthBarComponent->SetVisibility(false);
 	}
 
-	// 4. 播放死亡音效
-	if (DeathSound)
+	// 4. 播放死亡音效（Dedicated Server 跳过本地音频）
+	if (DeathSound && GetNetMode() != NM_DedicatedServer)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation());
 	}
@@ -550,4 +564,46 @@ void ALSEnemyBase::SpawnEnergyParticles(AActor* Killer)
 			FString::Printf(TEXT("💀 [击杀确认] %s 已被消灭！获得能量微粒 (+%.0f) | 侵蚀度已净化"),
 				*DisplayName, TotalEnergy));
 	}
+}
+
+void ALSEnemyBase::TryPlayHitSound()
+{
+	if (!HitSound || bIsDead)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 冷却校验：避免高射速武器、霰弹多弹丸或持续伤害在同一时间窗口内反复叠音
+	const double CurrentTime = World->GetTimeSeconds();
+	if (LastHitSoundTime >= 0.0 && (CurrentTime - LastHitSoundTime) < static_cast<double>(HitSoundCooldown))
+	{
+		return;
+	}
+
+	LastHitSoundTime = CurrentTime;
+
+	if (HasAuthority())
+	{
+		Multicast_PlayHitSound();
+	}
+	else if (GetNetMode() != NM_DedicatedServer)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, HitSound, GetActorLocation());
+	}
+}
+
+void ALSEnemyBase::Multicast_PlayHitSound_Implementation()
+{
+	if (GetNetMode() == NM_DedicatedServer || !HitSound)
+	{
+		return;
+	}
+
+	UGameplayStatics::PlaySoundAtLocation(this, HitSound, GetActorLocation());
 }
