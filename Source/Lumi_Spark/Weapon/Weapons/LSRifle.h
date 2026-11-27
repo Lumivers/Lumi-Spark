@@ -25,7 +25,4 @@ public:
 	// 模式切换广播
 	UPROPERTY(BlueprintAssignable, Category = "Weapon|Rifle|Events")
 	FOnLSRifleFireModeChanged OnFireModeSwitched;
-
-protected:
-	virtual void StartFire() override;
 };

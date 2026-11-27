@@ -206,8 +206,7 @@ void ALSWeaponBase::FireOnce()
 {
 	if (!CanFire())
 	{
-		GetWorldTimerManager().ClearTimer(FireTimerHandle);
-		bIsFiring = false;
+		StopFire();
 		if (CurrentAmmo <= 0 && CanReload())
 		{
 			LS_SCREEN_DEBUG(-1, 1.0f, FColor::Orange, TEXT("⚠️ 弹药打光，自动触发换弹！"));

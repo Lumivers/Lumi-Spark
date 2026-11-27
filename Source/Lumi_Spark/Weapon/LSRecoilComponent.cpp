@@ -8,16 +8,19 @@ ULSRecoilComponent::ULSRecoilComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 	
-	//默认提供一组经典突击步枪弹道模式（前几发强上抬，中段衰减，第8发垂直归零仅水平晃动）
+	MaxVerticalPitch = 9.0f;
+	RecoverySpeed = 10.5f;
+
+	// 默认弹道序列（前两发温和稳重方便速点，中后段扫射逐渐放大上抬与左右横摆）
 	RecoilPattern = {
-		FVector2D(0.00f,  0.80f), // 第1发：强垂直初动
-		FVector2D(0.04f,  0.70f), // 第2发：稳定上抬
-		FVector2D(-0.06f, 0.55f), // 第3发：开始向左微偏，上抬减缓
-		FVector2D(0.08f,  0.40f), // 第4发：向右折返
-		FVector2D(-0.10f, 0.25f), // 第5发：继续衰减
-		FVector2D(0.12f,  0.15f), // 第6发：接近顶部
-		FVector2D(-0.14f, 0.05f), // 第7发：垂直几乎见顶
-		FVector2D(0.15f,  0.00f)  // 第8发：垂直彻底封顶，只在水平横向拉扯
+		FVector2D(0.00f,  0.38f), // 第1发：精准点射黄金窗，轻微上抬、无水平甩动
+		FVector2D(0.02f,  0.46f), // 第2发：二连短点依然紧凑可控
+		FVector2D(-0.08f, 0.56f), // 第3发：开始进入扫射爬升阶段
+		FVector2D(0.14f,  0.64f), // 第4发：垂直加速上抬并伴随明显横向拉扯
+		FVector2D(-0.24f, 0.66f), // 第5发：大幅左摆
+		FVector2D(0.32f,  0.62f), // 第6发：大幅右摆
+		FVector2D(-0.40f, 0.54f), // 第7发：强横向摆动持续放大
+		FVector2D(0.46f,  0.46f)  // 第8发：未松手将进入高频不稳定扫射区
 	};
 }
 
@@ -77,15 +80,25 @@ void ULSRecoilComponent::StartRecoil()
 void ULSRecoilComponent::StopRecoil()
 {
 	bIsFiring = false;
-	CurrentPatternIndex = 0; //重置弹道模式索引
 	
 	// 若未启用停火自动回正，停火时必须清空累计池，否则下次开火会直接撞上 MaxVerticalPitch 锁死垂直后坐力
 	if (!bEnableRecovery)
 	{
+		CurrentPatternIndex = 0;
 		AccumulatedRecoil = FVector2D::ZeroVector;
+		return;
 	}
+
+	// 仅在已明显停顿或后坐基本回正时才重置序列索引，防止极限微松左键白嫖第 1 发低后坐
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : -1.0;
+	if (AccumulatedRecoil.IsNearlyZero(0.15f) ||
+		(LastRecoilShotTime >= 0.0 && Now >= 0.0 && (Now - LastRecoilShotTime) >= static_cast<double>(PatternResetDelay)))
+	{
+		CurrentPatternIndex = 0;
+	}
+
 	//停火后启用Tick，让ProcessRecovery可以平滑回正
-	else if (!AccumulatedRecoil.IsNearlyZero(0.01f))
+	if (!AccumulatedRecoil.IsNearlyZero(0.01f))
 	{
 		SetComponentTickEnabled(true);
 	}
@@ -95,6 +108,7 @@ void ULSRecoilComponent::ResetRecoil()
 {
 	bIsFiring = false;
 	CurrentPatternIndex = 0;
+	LastRecoilShotTime = -1.0;
 	AccumulatedRecoil = FVector2D::ZeroVector;
 	PendingRecoilOffset = FVector2D::ZeroVector;
 }
@@ -102,6 +116,13 @@ void ULSRecoilComponent::ResetRecoil()
 void ULSRecoilComponent::ApplyRecoil(bool bIsADS)
 {
 	if (RecoilPattern.IsEmpty()) return;
+
+	// 若与上一枪间隔足够长（节奏速点），重置弹道序列回到稳重的第一发
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : -1.0;
+	if (LastRecoilShotTime >= 0.0 && Now >= 0.0 && (Now - LastRecoilShotTime) >= static_cast<double>(PatternResetDelay))
+	{
+		CurrentPatternIndex = 0;
+	}
 	
 	// 1. 获取当前发数的基础弹道偏移：
 	FVector2D ShotOffset;
@@ -111,17 +132,29 @@ void ULSRecoilComponent::ApplyRecoil(bool bIsADS)
 	}
 	else
 	{
-		// 超过预设弹道（全自动连射中后段）：垂直上抬彻底归零，仅保留水平横向拉扯
-		const float HorizontalJitter = FMath::FRandRange(-0.16f, 0.16f);
-		ShotOffset = FVector2D(HorizontalJitter, 0.0f);
+		// 超过预设弹道（持续全自动扫射中后段）：保留持续上抬压力并交替放大水平横向拉扯
+		const float DirSign = (CurrentPatternIndex % 2 == 0) ? 1.0f : -1.0f;
+		const float HorizontalPull = DirSign * FMath::FRandRange(SprayPatternHorizontalJitter * 0.55f, SprayPatternHorizontalJitter * 1.15f);
+		ShotOffset = FVector2D(HorizontalPull, SprayPatternVerticalClimb);
 	}
 	
-	// 2. 叠加随机散布扰动（保留可记忆弹道的同时避免机械宏）
-	const float RandomYaw = FMath::FRandRange(-RandomSpreadFactor, RandomSpreadFactor);
+	// 2. 叠加渐进式随机散布扰动：前几发点射极稳，连射发数越多随机晃动越大
+	float ActiveRandomFactor = RandomSpreadFactor;
+	if (CurrentPatternIndex < FirstShotPrecisionCount)
+	{
+		ActiveRandomFactor *= EarlyShotRandomScale;
+	}
+	else
+	{
+		const int32 SprayShots = CurrentPatternIndex - FirstShotPrecisionCount;
+		ActiveRandomFactor *= FMath::Min(2.8f, 1.0f + static_cast<float>(SprayShots) * SprayRandomBoostPerShot);
+	}
+
+	const float RandomYaw = FMath::FRandRange(-ActiveRandomFactor, ActiveRandomFactor);
 	// 垂直已近封顶时，不再产生向上的正随机扰动，避免突破天花板
 	const float RandomPitch = (ShotOffset.Y > 0.0f)
-		? FMath::FRandRange(-RandomSpreadFactor * 0.3f, RandomSpreadFactor * 0.3f)
-		: FMath::FRandRange(-RandomSpreadFactor * 0.2f, 0.0f);
+		? FMath::FRandRange(-ActiveRandomFactor * 0.25f, ActiveRandomFactor * 0.25f)
+		: FMath::FRandRange(-ActiveRandomFactor * 0.2f, 0.0f);
 	ShotOffset += FVector2D(RandomYaw, RandomPitch);
 	
 	// 3. 计算最终倍率（开镜时降低后坐力）
@@ -157,8 +190,9 @@ void ULSRecoilComponent::ApplyRecoil(bool bIsADS)
 		ApplyInputToController(-ShotOffset.Y, ShotOffset.X);
 	}
 	
-	// 6. 累加到回正池中并推进连射发数
+	// 6. 累加到回正池中，记录时间戳并推进连射发数
 	AccumulatedRecoil += ShotOffset;
+	LastRecoilShotTime = Now;
 	CurrentPatternIndex++;
 
 	LS_SCREEN_DEBUG(9999, 0.4f, FColor::Orange, 
@@ -168,10 +202,11 @@ void ULSRecoilComponent::ApplyRecoil(bool bIsADS)
 
 void ULSRecoilComponent::ProcessRecovery(float DeltaTime)
 {
-	//若剩余回正量已接近0，直接清零并返回
+	//若剩余回正量已接近0，直接清零并同步复位连射计数
 	if (AccumulatedRecoil.IsNearlyZero(0.01f))
 	{
 		AccumulatedRecoil = FVector2D::ZeroVector;
+		CurrentPatternIndex = 0;
 		return;
 	}
 	

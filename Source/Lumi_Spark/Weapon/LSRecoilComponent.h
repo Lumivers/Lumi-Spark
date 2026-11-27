@@ -72,7 +72,31 @@ protected:
 	
 	//在固定弹道基础上叠加的伪随机扰动半径
 	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Pattern", meta = (ClampMin = "0.0"))
-	float RandomSpreadFactor = 0.08f;
+	float RandomSpreadFactor = 0.12f;
+
+	// 停火超过该时间间隔后重置弹道索引（秒），鼓励节奏速点、避免瞬松瞬点白嫖首发低后坐
+	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Pattern", meta = (ClampMin = "0.02"))
+	float PatternResetDelay = 0.22f;
+
+	// 前几发属于精准点射黄金窗口（随机横摆大幅收敛）
+	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Pattern", meta = (ClampMin = "0", ClampMax = "10"))
+	int32 FirstShotPrecisionCount = 2;
+
+	// 点射窗口内的随机扰动缩放（越小首两发越稳）
+	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Pattern", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float EarlyShotRandomScale = 0.25f;
+
+	// 持续扫射超出预设弹道序列后的水平横向左右扯动幅度
+	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Pattern", meta = (ClampMin = "0.0"))
+	float SprayPatternHorizontalJitter = 0.38f;
+
+	// 持续扫射超出预设弹道序列后仍保留的垂直上抬压力（直到撞上 MaxVerticalPitch）
+	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Pattern", meta = (ClampMin = "0.0"))
+	float SprayPatternVerticalClimb = 0.24f;
+
+	// 扫射中后段每多一发额外叠加的随机扰动倍率增长系数
+	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Pattern", meta = (ClampMin = "0.0"))
+	float SprayRandomBoostPerShot = 0.14f;
 	
 	//是否启用停火后自动回正
 	UPROPERTY(EditDefaultsOnly, Category = "Recoil|Recovery")
@@ -89,6 +113,9 @@ protected:
 private:
 	//当前连射第几发
 	int32 CurrentPatternIndex = 0;
+
+	// 上次触发 ApplyRecoil 的世界时间，用于判定点射停顿重置
+	double LastRecoilShotTime = -1.0;
 	
 	//是否出于开火连射中
 	bool bIsFiring = false;
